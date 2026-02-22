@@ -2,9 +2,7 @@ import os
 import sys
 import subprocess
 from pathlib import Path
-
-# Constants
-DEFAULT_PACKAGE = "com.fadcam.beta"
+from src.core.settings import SettingsManager
 
 def get_pidcat_path():
     """Returns the path to the bundled pidcat script."""
@@ -32,7 +30,9 @@ def run_pidcat_child():
     env = os.environ.copy()
     if dev:
         env['ANDROID_SERIAL'] = dev
-    package = pkg or DEFAULT_PACKAGE
+        
+    settings = SettingsManager.load()
+    package = pkg or settings.get("default_package", "com.fadcam.beta")
     
     pidcat_path = get_pidcat_path()
     

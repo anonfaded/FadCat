@@ -1,5 +1,8 @@
+"""
+FadCat entry point
+"""
 import sys
-from src.cli.cli_app import LogcatCLI
+
 from src.core.pidcat_runner import run_pidcat_child
 
 try:
@@ -9,46 +12,38 @@ try:
 except ImportError:
     QT_AVAILABLE = False
 
-def choose_mode():
-    print('Choose mode:')
-    print('1. CLI')
-    print('2. GUI (PyQt6)')
-    choice = input('Enter 1 or 2: ').strip()
-    if choice == '1':
-        assistant = LogcatCLI()
-        assistant.run()
-    elif choice == '2':
-        if not QT_AVAILABLE:
-            print('PyQt6 not available. Install PyQt6 or run in CLI mode.')
-            return
-        app = QApplication(sys.argv)
-        win = LogcatGUI()
-        win.show()
-        try:
-            app.exec()
-        except KeyboardInterrupt:
-            pass
-    else:
-        print('Invalid choice')
+
+def launch_gui():
+    if not QT_AVAILABLE:
+        print("PyQt6 is not installed. Run: pip install PyQt6")
+        sys.exit(1)
+    app = QApplication(sys.argv)
+    app.setApplicationName("FadCat")
+    app.setOrganizationName("FadCat")
+    win = LogcatGUI()
+    win.show()
+    try:
+        sys.exit(app.exec())
+    except KeyboardInterrupt:
+        pass
+
 
 def main():
+    # internal child-process mode used by ProcessReader
     if '--child-pidcat' in sys.argv:
         run_pidcat_child()
         return
 
-    if len(sys.argv) > 1 and sys.argv[1] == 'gui':
-        if not QT_AVAILABLE:
-            print('PyQt6 not available. Install PyQt6 or run without args for CLI.')
-            sys.exit(1)
-        app = QApplication(sys.argv)
-        win = LogcatGUI()
-        win.show()
-        try:
-            app.exec()
-        except KeyboardInterrupt:
-            pass
-    else:
-        choose_mode()
+    # explicit CLI mode
+    if '--cli' in sys.argv:
+        from src.cli.cli_app import LogcatCLI
+        LogcatCLI().run()
+        return
+
+    # default: GUI
+    launch_gui()
+
 
 if __name__ == '__main__':
     main()
+
