@@ -2,11 +2,13 @@ import os
 import sys
 import subprocess
 from src.utils.adb_utils import get_adb_devices
-from src.core.pidcat_runner import get_pidcat_path, DEFAULT_PACKAGE
+from src.core.pidcat_runner import get_pidcat_path
+from src.core.settings import SettingsManager
 
 class LogcatCLI:
     def __init__(self):
-        self.default_package = DEFAULT_PACKAGE
+        self.settings = SettingsManager.load()
+        self.default_package = self.settings.get("default_package", "com.fadcam.beta")
 
     def run_logcat(self, package=None):
         devices = get_adb_devices()
