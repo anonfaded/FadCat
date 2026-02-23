@@ -1,121 +1,147 @@
-"""
-FadCat — Settings Dialog
-"""
+"""Settings dialog — manage saved packages."""
+from __future__ import annotations
+
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget,
-    QPushButton, QInputDialog, QLabel, QComboBox,
-    QFrame, QDialogButtonBox, QGroupBox
+    QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
+    QListWidget, QListWidgetItem, QPushButton,
+    QComboBox, QLineEdit, QLabel, QDialogButtonBox,
+    QSizePolicy,
 )
-from PyQt6 import QtCore
-from src.core.settings import SettingsManager
-from src.ui.icons import icon_close
+
+from src.core.settings import Settings
+from src.ui import icons
 
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(460)
-        self.setMinimumHeight(380)
-        self.settings = SettingsManager.load()
+        self.setModal(True)
+        self.resize(480, 420)
+        self._settings = Settings()
         self._build_ui()
-        self._connect()
+        self._populate()
+
+    # ── Layout ────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setSpacing(16)
         root.setContentsMargins(20, 20, 20, 20)
+        root.setSpacing(16)
 
-        # ── Packages group ────────────────────────────────────────────────────
-        pkg_group = QGroupBox("Saved packages")
-        pkg_layout = QVBoxLayout(pkg_group)
-        pkg_layout.setSpacing(8)
+        # Package list group
+        grp = QGroupBox("Saved Packages")
+        grp_lay = QVBoxLayout(grp)
+        grp_lay.setContentsMargins(12, 16, 12, 12)
+        grp_lay.setSpacing(8)
 
-        self.package_list = QListWidget()
-        self.package_list.addItems(self.settings.get("packages", []))
-        pkg_layout.addWidget(self.package_list)
+        self.pkg_list = QListWidget()
+        self.pkg_list.setFixedHeight(160)
+        self.pkg_list.itemSelectionChanged.connect(self._on_selection)
+        grp_lay.addWidget(self.pkg_list)
 
+        # Add row
+        add_row = QHBoxLayout()
+        add_row.setSpacing(8)
+        self.edit_add = QLineEdit()
+        self.edit_add.setPlaceholderText("com.example.app")
+        self.edit_add.returnPressed.connect(self._add_package)
+        add_row.addWidget(self.edit_add, stretch=1)
+        btn_add = QPushButton("Add")
+        btn_add.setProperty("role", "primary")
+        btn_add.setFixedWidth(64)
+        btn_add.clicked.connect(self._add_package)
+        add_row.addWidget(btn_add)
+        grp_lay.addLayout(add_row)
+
+        # Remove
         btn_row = QHBoxLayout()
-        self.add_btn = QPushButton("Add")
-        self.remove_btn = QPushButton("Remove")
-        btn_row.addWidget(self.add_btn)
-        btn_row.addWidget(self.remove_btn)
+        btn_row.setSpacing(8)
+        self.btn_remove = QPushButton("Remove Selected")
+        self.btn_remove.setEnabled(False)
+        self.btn_remove.clicked.connect(self._remove_selected)
+        btn_row.addWidget(self.btn_remove)
         btn_row.addStretch()
-        pkg_layout.addLayout(btn_row)
+        grp_lay.addLayout(btn_row)
 
-        root.addWidget(pkg_group)
+        root.addWidget(grp)
 
-        # ── Default package ───────────────────────────────────────────────────
-        default_row = QHBoxLayout()
-        default_row.setSpacing(10)
-        lbl = QLabel("Default package")
-        lbl.setProperty("muted", True)
-        self.default_cb = QComboBox()
-        self._refresh_default_cb()
-        default_row.addWidget(lbl)
-        default_row.addWidget(self.default_cb, 1)
-        root.addLayout(default_row)
+        # Default package
+        def_row = QHBoxLayout()
+        def_row.setSpacing(10)
+        def_row.addWidget(QLabel("Default package:"))
+        self.default_combo = QComboBox()
+        self.default_combo.setMinimumWidth(240)
+        def_row.addWidget(self.default_combo, stretch=1)
+        root.addLayout(def_row)
 
-        # ── Separator ─────────────────────────────────────────────────────────
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setFrameShadow(QFrame.Shadow.Plain)
-        root.addWidget(sep)
+        root.addStretch()
 
-        # ── Buttons ───────────────────────────────────────────────────────────
-        btn_box = QDialogButtonBox()
-        self.save_btn   = btn_box.addButton("Save", QDialogButtonBox.ButtonRole.AcceptRole)
-        self.cancel_btn = btn_box.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
-        self.save_btn.setProperty("role", "primary")
-        root.addWidget(btn_box)
+        # Dialog buttons
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save |
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        save_btn = btns.button(QDialogButtonBox.StandardButton.Save)
+        if save_btn:
+            save_btn.setProperty("role", "primary")
+        btns.accepted.connect(self._save)
+        btns.rejected.connect(self.reject)
+        root.addWidget(btns)
 
-    def _connect(self):
-        self.add_btn.clicked.connect(self._add_package)
-        self.remove_btn.clicked.connect(self._remove_package)
-        self.save_btn.clicked.connect(self._save)
-        self.cancel_btn.clicked.connect(self.reject)
+    # ── Data ──────────────────────────────────────────────────────────────────
 
-    # ── helpers ───────────────────────────────────────────────────────────────
+    def _populate(self):
+        self.pkg_list.clear()
+        for pkg in self._settings.packages:
+            self.pkg_list.addItem(pkg)
+        self._refresh_default_combo()
 
-    def _refresh_default_cb(self):
-        packages = [self.package_list.item(i).text()
-                    for i in range(self.package_list.count())]
-        cur = self.default_cb.currentText() if self.default_cb.count() else ""
-        self.default_cb.blockSignals(True)
-        self.default_cb.clear()
-        self.default_cb.addItems(packages)
-        if cur in packages:
-            self.default_cb.setCurrentText(cur)
-        elif packages:
-            default_pkg = self.settings.get("default_package", "")
-            if default_pkg in packages:
-                self.default_cb.setCurrentText(default_pkg)
-        self.default_cb.blockSignals(False)
+    def _refresh_default_combo(self):
+        current = self.default_combo.currentText()
+        self.default_combo.clear()
+        self.default_combo.addItem("(none)")
+        for i in range(self.pkg_list.count()):
+            self.default_combo.addItem(self.pkg_list.item(i).text())
+        idx = self.default_combo.findText(current)
+        if idx > 0:
+            self.default_combo.setCurrentIndex(idx)
+        elif self._settings.default_package:
+            idx2 = self.default_combo.findText(self._settings.default_package)
+            if idx2 >= 0:
+                self.default_combo.setCurrentIndex(idx2)
+
+    def _on_selection(self):
+        self.btn_remove.setEnabled(len(self.pkg_list.selectedItems()) > 0)
 
     def _add_package(self):
-        pkg, ok = QInputDialog.getText(
-            self, "Add Package",
-            "Package name (e.g. com.example.app):"
-        )
-        if ok and pkg.strip():
-            pkg = pkg.strip()
-            existing = [self.package_list.item(i).text()
-                        for i in range(self.package_list.count())]
-            if pkg not in existing:
-                self.package_list.addItem(pkg)
-                self._refresh_default_cb()
+        text = self.edit_add.text().strip()
+        if not text:
+            return
+        # No duplicates
+        for i in range(self.pkg_list.count()):
+            if self.pkg_list.item(i).text() == text:
+                return
+        self.pkg_list.addItem(text)
+        self.edit_add.clear()
+        self._refresh_default_combo()
 
-    def _remove_package(self):
-        item = self.package_list.currentItem()
-        if item:
-            self.package_list.takeItem(self.package_list.row(item))
-            self._refresh_default_cb()
+    def _remove_selected(self):
+        for item in self.pkg_list.selectedItems():
+            self.pkg_list.takeItem(self.pkg_list.row(item))
+        self._refresh_default_combo()
 
     def _save(self):
-        packages = [self.package_list.item(i).text()
-                    for i in range(self.package_list.count())]
-        self.settings["packages"]        = packages
-        self.settings["default_package"] = self.default_cb.currentText()
-        SettingsManager.save(self.settings)
+        packages = [
+            self.pkg_list.item(i).text()
+            for i in range(self.pkg_list.count())
+        ]
+        default = self.default_combo.currentText()
+        if default == "(none)":
+            default = ""
+        self._settings.packages = packages
+        self._settings.default_package = default
+        self._settings.save()
         self.accept()
 

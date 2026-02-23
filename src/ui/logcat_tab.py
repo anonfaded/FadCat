@@ -1,549 +1,474 @@
-"""
-FadCat — LogcatTab
-"""
-import os
+"""LogcatTab — single device/package logcat session view."""
+from __future__ import annotations
+
 import re
-import sys
+from datetime import datetime
+from pathlib import Path
 
-from PyQt6 import QtWidgets, QtGui, QtCore
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QTextEdit, QComboBox, QMessageBox, QFrame,
-    QFileDialog, QSizePolicy, QApplication
+    QWidget, QVBoxLayout, QHBoxLayout, QFrame,
+    QLabel, QComboBox, QPushButton, QLineEdit,
+    QTextEdit, QFileDialog, QApplication, QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 
-from src.utils.adb_utils import get_adb_devices
-from src.core.pidcat_runner import get_pidcat_path
 from src.core.process_reader import ProcessReader
-from src.core.settings import SettingsManager
-from src.ui.icons import (
-    icon_play, icon_stop, icon_refresh, icon_clear,
-    icon_copy, icon_save, icon_up, icon_down, icon_search,
-    icon_filter, icon_device, icon_package, icon_close
-)
+from src.utils.adb_utils import get_adb_devices
+from src.ui import icons
 
-SGR_RE      = re.compile(r'\x1b\[(?P<code>[0-9;]*)m')
-ESC_PRESENT = re.compile(r'\x1b\[')
+
+# ── ANSI colour table ─────────────────────────────────────────────────────────
+_ANSI_RESET = re.compile(r"\x1b\[([0-9;]*)m")
+
+_FG = {
+    30: "#3D3D3D", 31: "#E8302A", 32: "#3CB371", 33: "#E8A020",
+    34: "#4A9FE8", 35: "#B05CBF", 36: "#3CB3B3", 37: "#E8E8E8",
+    90: "#606060", 91: "#FF5F5F", 92: "#5FD87A", 93: "#FFD050",
+    94: "#70B8FF", 95: "#D07AFF", 96: "#50D8D8", 97: "#FFFFFF",
+}
+_BG = {
+    40: "#1A1A1A", 41: "#4A1010", 42: "#0E3820", 43: "#3A2800",
+    44: "#0E2540", 45: "#2E1040", 46: "#0E2E2E", 47: "#3A3A3A",
+}
+
+_DEFAULT_FG = QColor("#E8E8E8")
+_DEFAULT_BG = QColor("#141414")
+
+
+def _parse_ansi(text: str) -> list[tuple[str, QColor, QColor, bool, bool]]:
+    """Return list of (chunk, fg, bg, bold, italic)."""
+    result: list[tuple[str, QColor, QColor, bool, bool]] = []
+    fg = _DEFAULT_FG
+    bg = _DEFAULT_BG
+    bold = False
+    italic = False
+    pos = 0
+    for m in _ANSI_RESET.finditer(text):
+        if m.start() > pos:
+            result.append((text[pos:m.start()], fg, bg, bold, italic))
+        codes = [int(c) for c in m.group(1).split(";") if c.isdigit()]
+        if not codes:
+            codes = [0]
+        for c in codes:
+            if c == 0:
+                fg, bg, bold, italic = _DEFAULT_FG, _DEFAULT_BG, False, False
+            elif c == 1:
+                bold = True
+            elif c == 3:
+                italic = True
+            elif c in _FG:
+                fg = QColor(_FG[c])
+            elif c in _BG:
+                bg = QColor(_BG[c])
+        pos = m.end()
+    if pos < len(text):
+        result.append((text[pos:], fg, bg, bold, italic))
+    return result
 
 
 class LogcatTab(QWidget):
-    """One logcat session — lives inside a QTabWidget tab."""
+    """A single logcat capture session."""
 
     status_changed = pyqtSignal()
 
+    # ── Construction ──────────────────────────────────────────────────────────
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.settings = SettingsManager.load()
-        self._setup_ui()
-        self._setup_connections()
-        self._setup_state()
-        self.refresh_devices()
+        self._reader: ProcessReader | None = None
+        self._thread: QThread | None = None
+        self._running = False
+        self._match_positions: list[int] = []
+        self._match_idx = 0
+        self._total_lines = 0
 
-    # ── UI construction ──────────────────────────────────────────────────────
+        self._build_ui()
 
-    def _setup_ui(self):
+    def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+
         root.addWidget(self._build_control_bar())
+        root.addWidget(self._build_h_sep())
         root.addWidget(self._build_search_bar())
-        root.addWidget(self._build_log_area())
+        root.addWidget(self._build_h_sep())
+        root.addWidget(self._build_log_area(), stretch=1)
+
+    # ── Control bar ───────────────────────────────────────────────────────────
 
     def _build_control_bar(self) -> QFrame:
         bar = QFrame()
+        bar.setFixedHeight(52)
         bar.setObjectName("controlBar")
-        bar.setFixedHeight(46)
-        lay = QHBoxLayout(bar)
-        lay.setContentsMargins(10, 0, 10, 0)
-        lay.setSpacing(6)
+        bar.setStyleSheet("QFrame#controlBar { background: #242424; }")
 
-        device_lbl = QLabel("Device")
-        device_lbl.setProperty("muted", True)
-        self.device_cb = QComboBox()
-        self.device_cb.setMinimumWidth(160)
-        self.device_cb.setMaximumWidth(260)
-        self.device_cb.setToolTip("Connected ADB device")
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(12, 6, 12, 6)
+        h.setSpacing(6)
 
-        self.refresh_btn = QPushButton()
-        self.refresh_btn.setIcon(icon_refresh())
-        self.refresh_btn.setToolTip("Refresh devices")
-        self.refresh_btn.setProperty("role", "icon")
-        self.refresh_btn.setFixedSize(30, 30)
+        # Device
+        h.addWidget(QLabel("Device"))
+        self.device_combo = QComboBox()
+        self.device_combo.setMinimumWidth(160)
+        self.device_combo.setToolTip("Select ADB device")
+        h.addWidget(self.device_combo)
 
-        pkg_lbl = QLabel("Package")
-        pkg_lbl.setProperty("muted", True)
-        self.package_cb = QComboBox()
-        self.package_cb.setEditable(True)
-        self.package_cb.setMinimumWidth(220)
-        self.package_cb.setMaximumWidth(360)
-        self.package_cb.addItems(self.settings.get("packages", []))
-        self.package_cb.setCurrentText(self.settings.get("default_package", ""))
-        self.package_cb.setToolTip("Target package (e.g. com.example.app)")
-        if self.package_cb.lineEdit():
-            self.package_cb.lineEdit().setPlaceholderText("com.example.app")
+        btn_refresh = QPushButton()
+        btn_refresh.setIcon(icons.icon_refresh())
+        btn_refresh.setProperty("role", "tool")
+        btn_refresh.setToolTip("Refresh devices")
+        btn_refresh.setFixedSize(30, 28)
+        btn_refresh.clicked.connect(self.refresh_devices)
+        h.addWidget(btn_refresh)
 
-        lay.addWidget(device_lbl)
-        lay.addWidget(self.device_cb)
-        lay.addWidget(self.refresh_btn)
+        h.addWidget(self._build_v_sep())
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFrameShadow(QFrame.Shadow.Plain)
-        sep.setFixedHeight(20)
-        lay.addWidget(sep)
+        # Package
+        h.addWidget(QLabel("Package"))
+        self.pkg_combo = QComboBox()
+        self.pkg_combo.setEditable(True)
+        self.pkg_combo.setMinimumWidth(200)
+        self.pkg_combo.setToolTip("Package name (empty = all)")
+        self._load_packages()
+        h.addWidget(self.pkg_combo)
 
-        lay.addWidget(pkg_lbl)
-        lay.addWidget(self.package_cb)
-        lay.addStretch()
+        h.addStretch(1)
 
-        self.start_btn = QPushButton("Start")
-        self.start_btn.setIcon(icon_play())
-        self.start_btn.setProperty("role", "start")
-        self.start_btn.setToolTip("Start logcat")
+        # Start / Stop
+        self.btn_start = QPushButton("  Start")
+        self.btn_start.setIcon(icons.icon_play())
+        self.btn_start.setProperty("role", "start")
+        self.btn_start.setFixedHeight(32)
+        self.btn_start.clicked.connect(self.start_capture)
+        h.addWidget(self.btn_start)
 
-        self.stop_btn = QPushButton("Stop")
-        self.stop_btn.setIcon(icon_stop())
-        self.stop_btn.setProperty("role", "stop")
-        self.stop_btn.setToolTip("Stop logcat")
-        self.stop_btn.setEnabled(False)
+        self.btn_stop = QPushButton("  Stop")
+        self.btn_stop.setIcon(icons.icon_stop())
+        self.btn_stop.setProperty("role", "stop")
+        self.btn_stop.setFixedHeight(32)
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.clicked.connect(self.stop_capture)
+        h.addWidget(self.btn_stop)
 
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.VLine)
-        sep2.setFrameShadow(QFrame.Shadow.Plain)
-        sep2.setFixedHeight(20)
+        h.addWidget(self._build_v_sep())
 
-        self.clear_btn = QPushButton()
-        self.clear_btn.setIcon(icon_clear())
-        self.clear_btn.setToolTip("Clear logs  Ctrl+L")
-        self.clear_btn.setProperty("role", "icon")
-        self.clear_btn.setFixedSize(30, 30)
+        # Clear / Copy / Save
+        for tip, ico, slot in [
+            ("Clear log",  icons.icon_clear(), self.clear_log),
+            ("Copy all",   icons.icon_copy(),  self.copy_log),
+            ("Save to…",   icons.icon_save(),  self.save_log),
+        ]:
+            b = QPushButton()
+            b.setIcon(ico)
+            b.setProperty("role", "tool")
+            b.setToolTip(tip)
+            b.setFixedSize(30, 28)
+            b.clicked.connect(slot)
+            h.addWidget(b)
 
-        self.copy_btn = QPushButton()
-        self.copy_btn.setIcon(icon_copy())
-        self.copy_btn.setToolTip("Copy all logs to clipboard")
-        self.copy_btn.setProperty("role", "icon")
-        self.copy_btn.setFixedSize(30, 30)
-
-        self.save_btn = QPushButton()
-        self.save_btn.setIcon(icon_save())
-        self.save_btn.setToolTip("Save logs to file")
-        self.save_btn.setProperty("role", "icon")
-        self.save_btn.setFixedSize(30, 30)
-
-        lay.addWidget(self.start_btn)
-        lay.addWidget(self.stop_btn)
-        lay.addWidget(sep2)
-        lay.addWidget(self.clear_btn)
-        lay.addWidget(self.copy_btn)
-        lay.addWidget(self.save_btn)
+        self.refresh_devices()
         return bar
+
+    # ── Search bar ────────────────────────────────────────────────────────────
 
     def _build_search_bar(self) -> QFrame:
         bar = QFrame()
+        bar.setFixedHeight(44)
         bar.setObjectName("searchBar")
-        bar.setFixedHeight(38)
-        lay = QHBoxLayout(bar)
-        lay.setContentsMargins(10, 0, 10, 0)
-        lay.setSpacing(4)
+        bar.setStyleSheet("QFrame#searchBar { background: #1E1E1E; }")
 
-        self._search_icon_lbl = QLabel()
-        self._search_icon_lbl.setPixmap(icon_search().pixmap(14, 14))
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(12, 6, 12, 6)
+        h.setSpacing(6)
 
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search\u2026")
-        self.search_edit.setMinimumWidth(160)
-        self.search_edit.setMaximumWidth(300)
-        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setPlaceholderText("Search / highlight…")
+        self.search_edit.setFixedHeight(28)
+        self.search_edit.textChanged.connect(self._on_search_changed)
+        h.addWidget(self.search_edit, stretch=1)
 
-        self.case_btn = QPushButton("Aa")
-        self.case_btn.setToolTip("Case sensitive")
-        self.case_btn.setCheckable(True)
-        self.case_btn.setProperty("role", "toggle")
-        self.case_btn.setFixedHeight(26)
-        self.case_btn.setFixedWidth(32)
+        for text, attr, tip in [
+            ("Aa", "btn_case",  "Case sensitive"),
+            (".*", "btn_regex", "Regular expression"),
+            ("⌥G", "btn_grep",  "Grep mode (hide non-matching lines)"),
+        ]:
+            b = QPushButton(text)
+            b.setProperty("role", "toggle")
+            b.setCheckable(True)
+            b.setToolTip(tip)
+            b.setFixedSize(32, 28)
+            b.toggled.connect(self._on_search_changed)
+            setattr(self, attr, b)
+            h.addWidget(b)
 
-        self.grep_btn = QPushButton("Grep")
-        self.grep_btn.setToolTip("Filter: show only matching lines")
-        self.grep_btn.setCheckable(True)
-        self.grep_btn.setProperty("role", "toggle")
-        self.grep_btn.setFixedHeight(26)
-        self.grep_btn.setFixedWidth(44)
+        h.addWidget(self._build_v_sep())
 
-        self.prev_btn = QPushButton()
-        self.prev_btn.setIcon(icon_up())
-        self.prev_btn.setProperty("role", "icon")
-        self.prev_btn.setFixedSize(26, 26)
-        self.prev_btn.setToolTip("Previous match")
+        btn_prev = QPushButton()
+        btn_prev.setIcon(icons.icon_up())
+        btn_prev.setProperty("role", "tool")
+        btn_prev.setFixedSize(28, 28)
+        btn_prev.setToolTip("Previous match")
+        btn_prev.clicked.connect(self._prev_match)
+        h.addWidget(btn_prev)
 
-        self.next_btn = QPushButton()
-        self.next_btn.setIcon(icon_down())
-        self.next_btn.setProperty("role", "icon")
-        self.next_btn.setFixedSize(26, 26)
-        self.next_btn.setToolTip("Next match")
+        btn_next = QPushButton()
+        btn_next.setIcon(icons.icon_down())
+        btn_next.setProperty("role", "tool")
+        btn_next.setFixedSize(28, 28)
+        btn_next.setToolTip("Next match")
+        btn_next.clicked.connect(self._next_match)
+        h.addWidget(btn_next)
 
-        self.match_lbl = QLabel("0/0")
-        self.match_lbl.setProperty("muted", True)
-        self.match_lbl.setMinimumWidth(40)
-        self.match_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_match = QLabel("0 / 0")
+        self.lbl_match.setStyleSheet("color: #888888; font-size: 11px;")
+        self.lbl_match.setFixedWidth(54)
+        self.lbl_match.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        h.addWidget(self.lbl_match)
 
-        sep_v = QFrame()
-        sep_v.setFrameShape(QFrame.Shape.VLine)
-        sep_v.setFrameShadow(QFrame.Shadow.Plain)
-        sep_v.setFixedHeight(18)
+        h.addWidget(self._build_v_sep())
 
-        self.auto_scroll_btn = QPushButton("Auto-scroll")
-        self.auto_scroll_btn.setCheckable(True)
-        self.auto_scroll_btn.setChecked(True)
-        self.auto_scroll_btn.setProperty("role", "toggle")
-        self.auto_scroll_btn.setFixedHeight(26)
+        self.btn_autoscroll = QPushButton("Auto-scroll")
+        self.btn_autoscroll.setProperty("role", "toggle")
+        self.btn_autoscroll.setCheckable(True)
+        self.btn_autoscroll.setChecked(True)
+        self.btn_autoscroll.setFixedHeight(28)
+        h.addWidget(self.btn_autoscroll)
 
-        self.wrap_btn = QPushButton("Wrap")
-        self.wrap_btn.setCheckable(True)
-        self.wrap_btn.setChecked(True)
-        self.wrap_btn.setProperty("role", "toggle")
-        self.wrap_btn.setFixedHeight(26)
-        self.wrap_btn.toggled.connect(self.toggle_wrap)
+        self.btn_wrap = QPushButton("Wrap")
+        self.btn_wrap.setProperty("role", "toggle")
+        self.btn_wrap.setCheckable(True)
+        self.btn_wrap.setChecked(False)
+        self.btn_wrap.setFixedHeight(28)
+        self.btn_wrap.toggled.connect(self._toggle_wrap)
+        h.addWidget(self.btn_wrap)
 
-        lay.addWidget(self._search_icon_lbl)
-        lay.addSpacing(2)
-        lay.addWidget(self.search_edit)
-        lay.addWidget(self.case_btn)
-        lay.addWidget(self.grep_btn)
-        lay.addWidget(self.prev_btn)
-        lay.addWidget(self.next_btn)
-        lay.addWidget(self.match_lbl)
-        lay.addWidget(sep_v)
-        lay.addWidget(self.auto_scroll_btn)
-        lay.addWidget(self.wrap_btn)
-        lay.addStretch()
         return bar
 
+    # ── Log area ──────────────────────────────────────────────────────────────
+
     def _build_log_area(self) -> QTextEdit:
-        self.log_widget = QTextEdit()
-        self.log_widget.setReadOnly(True)
-        self.log_widget.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.WidgetWidth)
-        self.log_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        return self.log_widget
+        self.log_view = QTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.log_view.setUndoRedoEnabled(False)
+        fixed = QFont("Menlo", 12)
+        fixed.setStyleHint(QFont.StyleHint.Monospace)
+        self.log_view.setFont(fixed)
+        return self.log_view
 
-    # ── wiring ───────────────────────────────────────────────────────────────
+    # ── Separators ────────────────────────────────────────────────────────────
 
-    def _setup_connections(self):
-        self.refresh_btn.clicked.connect(self.refresh_devices)
-        self.start_btn.clicked.connect(self.start_logcat)
-        self.stop_btn.clicked.connect(self.stop_logcat)
-        self.clear_btn.clicked.connect(self.clear_logs)
-        self.copy_btn.clicked.connect(self.copy_logs)
-        self.save_btn.clicked.connect(self.save_logs)
+    @staticmethod
+    def _build_v_sep() -> QFrame:
+        f = QFrame()
+        f.setFrameShape(QFrame.Shape.VLine)
+        f.setStyleSheet("background: #333333; max-width: 1px; border: none; margin: 4px 2px;")
+        return f
 
-        self.search_edit.textChanged.connect(self._on_search_changed)
-        self.search_edit.returnPressed.connect(self.navigate_next)
-        self.case_btn.toggled.connect(self._on_search_changed)
-        self.grep_btn.toggled.connect(self._on_grep_toggled)
-        self.auto_scroll_btn.toggled.connect(self._on_autoscroll_toggled)
+    @staticmethod
+    def _build_h_sep() -> QFrame:
+        f = QFrame()
+        f.setFrameShape(QFrame.Shape.HLine)
+        f.setFixedHeight(1)
+        f.setStyleSheet("background: #333333; border: none;")
+        return f
 
-        self.prev_btn.clicked.connect(self.navigate_prev)
-        self.next_btn.clicked.connect(self.navigate_next)
-
-    def _setup_state(self):
-        self.reader = None
-        self.devices = []
-        self.search_matches = []
-        self.current_match_idx = -1
-        self._debounce = None
-        self.all_logs_text = ""
-
-    # ── public API ────────────────────────────────────────────────────────────
-
-    def apply_settings(self, settings: dict):
-        self.settings = settings
-        current_pkg = self.package_cb.currentText()
-        self.package_cb.blockSignals(True)
-        self.package_cb.clear()
-        self.package_cb.addItems(settings.get("packages", []))
-        if current_pkg in settings.get("packages", []):
-            self.package_cb.setCurrentText(current_pkg)
-        else:
-            self.package_cb.setCurrentText(settings.get("default_package", ""))
-        self.package_cb.blockSignals(False)
-
-    # ── device management ─────────────────────────────────────────────────────
+    # ── Device management ─────────────────────────────────────────────────────
 
     def refresh_devices(self):
-        self.devices = get_adb_devices()
-        self.device_cb.blockSignals(True)
-        self.device_cb.clear()
-        if self.devices:
-            self.device_cb.addItems(self.devices)
-            self.start_btn.setEnabled(True)
+        current = self.device_combo.currentText()
+        self.device_combo.clear()
+        devices = get_adb_devices()
+        if devices:
+            self.device_combo.addItems(devices)
+            idx = self.device_combo.findText(current)
+            if idx >= 0:
+                self.device_combo.setCurrentIndex(idx)
         else:
-            self.device_cb.addItem("No devices")
-            self.start_btn.setEnabled(False)
-        self.device_cb.blockSignals(False)
+            self.device_combo.addItem("(no devices)")
         self.status_changed.emit()
 
-    # ── logcat control ────────────────────────────────────────────────────────
+    # ── Package management ────────────────────────────────────────────────────
 
-    def start_logcat(self):
-        package = self.package_cb.currentText().strip()
-        device  = self.device_cb.currentText().strip()
-        if not package or not self.devices:
+    def _load_packages(self):
+        from src.core.settings import Settings
+        s = Settings()
+        self.pkg_combo.clear()
+        self.pkg_combo.addItem("")
+        for p in s.packages:
+            self.pkg_combo.addItem(p)
+        if s.default_package:
+            idx = self.pkg_combo.findText(s.default_package)
+            if idx >= 0:
+                self.pkg_combo.setCurrentIndex(idx)
+
+    def reload_packages(self):
+        current = self.pkg_combo.currentText()
+        self._load_packages()
+        idx = self.pkg_combo.findText(current)
+        if idx >= 0:
+            self.pkg_combo.setCurrentIndex(idx)
+
+    # ── Capture ───────────────────────────────────────────────────────────────
+
+    def start_capture(self):
+        if self._running:
             return
-
-        env = os.environ.copy()
-        env['PYTHONUNBUFFERED'] = '1'
-        if device and device != "No devices":
-            env['ANDROID_SERIAL'] = device
-
-        pidcat_path = get_pidcat_path()
-        if device and device != "No devices":
-            cmd = [sys.executable, pidcat_path, '-s', device, package]
-        else:
-            cmd = [sys.executable, pidcat_path, package]
-
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-
-        self.reader = ProcessReader(cmd, env)
-        self.reader.line_ready.connect(self._handle_line)
-        self.reader.finished.connect(self._on_reader_finished)
-        self.reader.start()
+        device = self.device_combo.currentText()
+        if not device or device == "(no devices)":
+            return
+        package = self.pkg_combo.currentText().strip()
+        self._running = True
+        self.btn_start.setEnabled(False)
+        self.btn_stop.setEnabled(True)
         self.status_changed.emit()
 
-    def stop_logcat(self):
-        if self.reader and getattr(self.reader, 'process', None):
-            try:
-                self.reader.process.terminate()
-            except Exception:
-                pass
+        self._thread = QThread()
+        self._reader = ProcessReader(device=device, package=package or None)
+        self._reader.moveToThread(self._thread)
+        self._thread.started.connect(self._reader.run)
+        self._reader.line_received.connect(self._append_line)
+        self._reader.finished.connect(self._on_reader_finished)
+        self._thread.start()
+
+    def stop_capture(self):
+        if self._reader:
+            self._reader.stop()
 
     def _on_reader_finished(self):
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
+        self._running = False
+        self.btn_start.setEnabled(True)
+        self.btn_stop.setEnabled(False)
+        if self._thread:
+            self._thread.quit()
+            self._thread.wait()
         self.status_changed.emit()
 
-    # ── log handling ──────────────────────────────────────────────────────────
+    # ── Log output ────────────────────────────────────────────────────────────
 
-    _NOISE = ('gralloc4', 'register: id=', 'unregister: id=', 'flushmediametrics')
+    def _append_line(self, raw: str):
+        self._total_lines += 1
+        text = raw.rstrip("\n")
 
-    def _handle_line(self, ln: str):
-        ln_lower = ln.lower()
-        if any(p in ln_lower for p in self._NOISE):
-            return
+        cursor = self.log_view.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
 
-        self.all_logs_text += (ln if ln.endswith('\n') else ln + '\n')
+        chunks = _parse_ansi(text)
+        for chunk_text, fg, bg, bold, italic in chunks:
+            fmt = QTextCharFormat()
+            fmt.setForeground(fg)
+            if bg != _DEFAULT_BG:
+                fmt.setBackground(bg)
+            if bold:
+                fmt.setFontWeight(QFont.Weight.Bold)
+            if italic:
+                fmt.setFontItalic(True)
+            cursor.insertText(chunk_text, fmt)
 
-        if self.grep_btn.isChecked():
-            query = self.search_edit.text()
-            if query and not self._line_matches(ln, query):
-                return
+        fmt_nl = QTextCharFormat()
+        cursor.insertText("\n", fmt_nl)
 
-        if ESC_PRESENT.search(ln):
-            self._insert_colored(ln)
-        else:
-            self.log_widget.append(ln.rstrip('\n'))
+        if self.btn_autoscroll.isChecked():
+            self.log_view.setTextCursor(cursor)
+            self.log_view.ensureCursorVisible()
 
-        if self.auto_scroll_btn.isChecked():
-            self._scroll_bottom()
-
-    def _line_matches(self, line: str, query: str) -> bool:
-        clean = SGR_RE.sub('', line)
-        if self.case_btn.isChecked():
-            return query in clean
-        return query.lower() in clean.lower()
-
-    def _insert_colored(self, line: str):
-        FG = {
-            30: '#6b6f75', 31: '#ff5555', 32: '#50fa7b', 33: '#f1fa8c',
-            34: '#6272a4', 35: '#ff79c6', 36: '#8be9fd', 37: '#e6e6e6',
-            90: '#5a5f66', 91: '#ff6e6e', 92: '#69ff94', 93: '#ffffa5',
-            94: '#caa9ff', 95: '#ff92df', 96: '#a4ffff', 97: '#ffffff'
-        }
-        color, bold = None, False
-        for m in SGR_RE.finditer(line):
-            codes = m.group('code') or '0'
-            for c in codes.split(';'):
-                try:
-                    ci = int(c)
-                except ValueError:
-                    continue
-                if ci == 0:
-                    if color is None:
-                        bold = False
-                elif ci == 1:
-                    bold = True
-                elif (30 <= ci <= 37) or (90 <= ci <= 97):
-                    if color is None:
-                        color = FG.get(ci)
-
-        clean = SGR_RE.sub('', line)
-        cursor = self.log_widget.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-        fmt = QtGui.QTextCharFormat()
-        if color:
-            fmt.setForeground(QtGui.QBrush(QtGui.QColor(color)))
-        if bold:
-            fmt.setFontWeight(QtGui.QFont.Weight.Bold)
-        text = clean.rstrip('\n') + '\n'
-        cursor.insertText(text, fmt)
-        self.log_widget.setTextCursor(cursor)
-
-    # ── search ────────────────────────────────────────────────────────────────
+    # ── Search / highlight ────────────────────────────────────────────────────
 
     def _on_search_changed(self):
-        if self.grep_btn.isChecked():
-            self._apply_grep()
-            return
-        if self._debounce:
-            self._debounce.stop()
-        self._debounce = QTimer()
-        self._debounce.setSingleShot(True)
-        self._debounce.timeout.connect(self.search_logs)
-        self._debounce.start(250)
-
-    def _on_grep_toggled(self, checked: bool):
-        if checked:
-            self._apply_grep()
-        else:
-            self.log_widget.clear()
-            if self.all_logs_text:
-                for line in self.all_logs_text.splitlines():
-                    if ESC_PRESENT.search(line):
-                        self._insert_colored(line)
-                    else:
-                        self.log_widget.append(line)
-            self.search_logs()
-
-    def _apply_grep(self):
         query = self.search_edit.text()
-        if not query:
-            return
-        doc = self.all_logs_text or self.log_widget.toPlainText()
-        self.log_widget.clear()
-        for line in doc.splitlines():
-            if self._line_matches(line, query):
-                if ESC_PRESENT.search(line):
-                    self._insert_colored(line)
-                else:
-                    self.log_widget.append(line)
+        self._match_positions = []
+        self._match_idx = 0
 
-    def search_logs(self):
-        query = self.search_edit.text()
-        if not query:
-            self._clear_search_highlights()
-            return
-        if self.grep_btn.isChecked():
-            self._apply_grep()
-            return
+        extra = []
+        if query:
+            from PyQt6.QtGui import QTextDocument
+            find_flags = QTextDocument.FindFlag(0)
+            if self.btn_case.isChecked():
+                find_flags |= QTextDocument.FindFlag.FindCaseSensitively
 
-        hay = self.log_widget.toPlainText()
-        self.search_matches = []
-        qlen = len(query)
-        pos  = 0
-        if not self.case_btn.isChecked():
-            needle, stack = query.lower(), hay.lower()
-        else:
-            needle, stack = query, hay
-        while True:
-            idx = stack.find(needle, pos)
-            if idx == -1:
-                break
-            self.search_matches.append((idx, qlen))
-            pos = idx + max(1, qlen)
+            doc = self.log_view.document()
+            cursor = doc.find(query, 0, find_flags)
+            while not cursor.isNull():
+                fmt = QTextCharFormat()
+                fmt.setBackground(QColor("#3D1510"))
+                fmt.setForeground(QColor("#FFD050"))
+                self._match_positions.append(cursor.position())
+                extra.append((cursor, fmt))
+                cursor = doc.find(query, cursor, find_flags)
 
-        self.current_match_idx = 0 if self.search_matches else -1
-        self._render_highlights()
+        self.log_view.setExtraSelections(
+            [self._make_extra(c, f) for c, f in extra]
+        )
+        count = len(self._match_positions)
+        cur_label = f"{min(self._match_idx + 1, count)} / {count}" if count else "0 / 0"
+        self.lbl_match.setText(cur_label)
 
-    def navigate_next(self):
-        if not self.search_matches:
-            self.search_logs()
-            return
-        self.current_match_idx = (self.current_match_idx + 1) % len(self.search_matches)
-        self._render_highlights()
+    @staticmethod
+    def _make_extra(cursor, fmt) -> "QTextEdit.ExtraSelection":
+        sel = QTextEdit.ExtraSelection()
+        sel.cursor = cursor
+        sel.format = fmt
+        return sel
 
-    def navigate_prev(self):
-        if not self.search_matches:
-            return
-        self.current_match_idx = (self.current_match_idx - 1) % len(self.search_matches)
-        self._render_highlights()
+    def _prev_match(self):
+        if self._match_positions:
+            self._match_idx = (self._match_idx - 1) % len(self._match_positions)
+            self._jump_to_match()
 
-    def _clear_search_highlights(self):
-        self.search_matches = []
-        self.current_match_idx = -1
-        self.match_lbl.setText("0/0")
-        self.log_widget.setExtraSelections([])
+    def _next_match(self):
+        if self._match_positions:
+            self._match_idx = (self._match_idx + 1) % len(self._match_positions)
+            self._jump_to_match()
 
-    def _render_highlights(self):
-        extras = []
-        for i, (start, length) in enumerate(self.search_matches):
-            sel = QtWidgets.QTextEdit.ExtraSelection()
-            cur = self.log_widget.textCursor()
-            cur.setPosition(start)
-            cur.setPosition(start + length, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            sel.cursor = cur
-            fmt = QtGui.QTextCharFormat()
-            if i == self.current_match_idx:
-                fmt.setBackground(QtGui.QBrush(QtGui.QColor('#ffcc00')))
-                fmt.setForeground(QtGui.QBrush(QtGui.QColor('#000000')))
-            else:
-                fmt.setBackground(QtGui.QBrush(QtGui.QColor('#4a4a2a')))
-            sel.format = fmt
-            extras.append(sel)
+    def _jump_to_match(self):
+        pos = self._match_positions[self._match_idx]
+        cursor = self.log_view.textCursor()
+        cursor.setPosition(pos)
+        self.log_view.setTextCursor(cursor)
+        self.log_view.ensureCursorVisible()
+        count = len(self._match_positions)
+        self.lbl_match.setText(f"{self._match_idx + 1} / {count}")
 
-        self.log_widget.setExtraSelections(extras)
+    def _toggle_wrap(self, checked: bool):
+        mode = QTextEdit.LineWrapMode.WidgetWidth if checked else QTextEdit.LineWrapMode.NoWrap
+        self.log_view.setLineWrapMode(mode)
 
-        if self.current_match_idx != -1 and self.search_matches:
-            s, l = self.search_matches[self.current_match_idx]
-            cur = self.log_widget.textCursor()
-            cur.setPosition(s)
-            cur.setPosition(s + l, QtGui.QTextCursor.MoveMode.KeepAnchor)
-            self.log_widget.setTextCursor(cur)
+    # ── Actions ───────────────────────────────────────────────────────────────
 
-        total = len(self.search_matches)
-        cur_n = (self.current_match_idx + 1) if self.current_match_idx != -1 else 0
-        self.match_lbl.setText(f"{cur_n}/{total}")
-
-    # ── helpers ───────────────────────────────────────────────────────────────
-
-    def _scroll_bottom(self):
-        sb = self.log_widget.verticalScrollBar()
-        sb.setValue(sb.maximum())
-
-    def _on_autoscroll_toggled(self, checked: bool):
-        if checked:
-            self._scroll_bottom()
-
-    def toggle_wrap(self, checked: bool):
-        mode = (QtWidgets.QTextEdit.LineWrapMode.WidgetWidth if checked
-                else QtWidgets.QTextEdit.LineWrapMode.NoWrap)
-        self.log_widget.setLineWrapMode(mode)
-
-    # ── user actions ──────────────────────────────────────────────────────────
-
-    def clear_logs(self):
-        self.log_widget.clear()
-        self.all_logs_text = ""
-        self._clear_search_highlights()
+    def clear_log(self):
+        self.log_view.clear()
+        self._total_lines = 0
+        self._match_positions = []
+        self.lbl_match.setText("0 / 0")
         self.status_changed.emit()
 
-    def copy_logs(self):
-        clip = QApplication.clipboard()
-        if clip:
-            clip.setText(self.log_widget.toPlainText())
+    def copy_log(self):
+        QApplication.clipboard().setText(self.log_view.toPlainText())
 
-    def save_logs(self):
+    def save_log(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Logs", "fadcat.txt", "Text files (*.txt);;All files (*)"
+            self, "Save log", f"logcat_{datetime.now():%Y%m%d_%H%M%S}.txt",
+            "Text files (*.txt);;All files (*)"
         )
         if path:
-            try:
-                with open(path, 'w', encoding='utf-8') as f:
-                    f.write(self.log_widget.toPlainText())
-            except Exception as exc:
-                QMessageBox.critical(self, "Save Failed", str(exc))
+            Path(path).write_text(self.log_view.toPlainText(), encoding="utf-8")
 
-    # ── lifecycle ─────────────────────────────────────────────────────────────
+    # ── Public helpers ────────────────────────────────────────────────────────
 
-    def closeEvent(self, event):
-        self.stop_logcat()
-        super().closeEvent(event)
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    @property
+    def line_count(self) -> int:
+        return self._total_lines
+
+    @property
+    def current_device(self) -> str:
+        return self.device_combo.currentText()
+
+    @property
+    def current_package(self) -> str:
+        return self.pkg_combo.currentText().strip()

@@ -30,3 +30,30 @@ class SettingsManager:
                 json.dump(settings, f, indent=4)
         except Exception as e:
             print(f"Error saving settings: {e}")
+
+
+class Settings:
+    """Convenience wrapper for settings."""
+    
+    def __init__(self):
+        self._data = SettingsManager.load()
+    
+    @property
+    def packages(self) -> list[str]:
+        return self._data.get("packages", [])
+    
+    @packages.setter
+    def packages(self, value: list[str]):
+        self._data["packages"] = value
+    
+    @property
+    def default_package(self) -> str:
+        return self._data.get("default_package", "")
+    
+    @default_package.setter
+    def default_package(self, value: str):
+        self._data["default_package"] = value
+    
+    def save(self):
+        SettingsManager.save(self._data)
+
