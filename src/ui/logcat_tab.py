@@ -5,8 +5,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint
+from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon, QBrush
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QComboBox, QPushButton, QLineEdit,
@@ -16,6 +16,29 @@ from PyQt6.QtWidgets import (
 from src.core.process_reader import ProcessReader
 from src.utils.adb_utils import get_adb_devices
 from src.ui import icons
+
+
+# ── Custom ComboBox with proper dropdown arrow ────────────────────────────────
+class CustomComboBox(QComboBox):
+    """QComboBox with a proper Python-drawn dropdown arrow."""
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # Draw custom dropdown arrow
+        if self.isEnabled():
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            # Calculate arrow position (right side of combobox) - use red accent color
+            arrow_x = self.width() - 22
+            arrow_y = (self.height() - 6) // 2
+            # Draw downward triangle with red accent
+            points = [
+                QPoint(arrow_x, arrow_y),
+                QPoint(arrow_x + 8, arrow_y),
+                QPoint(arrow_x + 4, arrow_y + 6),
+            ]
+            painter.setBrush(QBrush(QColor("#E8302A")))  # Red accent
+            painter.setPen(QColor("#E8302A"))
+            painter.drawConvexPolygon(QPolygon(points))
 
 
 # ── ANSI colour table ─────────────────────────────────────────────────────────
@@ -90,71 +113,93 @@ class LogcatTab(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        root.addWidget(self._build_control_bar())
-        root.addWidget(self._build_h_sep())
-        root.addWidget(self._build_search_bar())
-        root.addWidget(self._build_h_sep())
+        # Both bars already have border-bottom — no need for separator widgets
+        root.addWidget(self._build_control_bar(), stretch=0)
+        root.addWidget(self._build_search_bar(), stretch=0)
         root.addWidget(self._build_log_area(), stretch=1)
 
     # ── Control bar ───────────────────────────────────────────────────────────
 
     def _build_control_bar(self) -> QFrame:
+        """Control bar with device/package selection, start/stop, and tools."""
         bar = QFrame()
         bar.setFixedHeight(52)
+        bar.setMinimumHeight(52)
         bar.setObjectName("controlBar")
-        bar.setStyleSheet("QFrame#controlBar { background: #242424; }")
+        bar.setStyleSheet("QFrame#controlBar { background: #242424; border-bottom: 1px solid #333333; }")
 
         h = QHBoxLayout(bar)
-        h.setContentsMargins(12, 6, 12, 6)
+        h.setContentsMargins(8, 6, 8, 6)
         h.setSpacing(6)
 
-        # Device
-        h.addWidget(QLabel("Device"))
-        self.device_combo = QComboBox()
-        self.device_combo.setMinimumWidth(160)
+        # Device label with styling
+        lbl_device = QLabel("Device")
+        lbl_device.setStyleSheet("color: #E8E8E8; font-weight: 500; font-size: 11px; padding: 0px 4px;")
+        lbl_device.setMaximumWidth(50)
+        lbl_device.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        h.addWidget(lbl_device, stretch=0)
+        
+        self.device_combo = CustomComboBox()
+        self.device_combo.setMinimumWidth(180)
+        self.device_combo.setMaximumWidth(280)
+        self.device_combo.setFixedHeight(30)
         self.device_combo.setToolTip("Select ADB device")
-        h.addWidget(self.device_combo)
+        h.addWidget(self.device_combo, stretch=1)
 
         btn_refresh = QPushButton()
         btn_refresh.setIcon(icons.icon_refresh())
         btn_refresh.setProperty("role", "tool")
         btn_refresh.setToolTip("Refresh devices")
-        btn_refresh.setFixedSize(30, 28)
+        btn_refresh.setFixedSize(30, 30)
+        btn_refresh.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         btn_refresh.clicked.connect(self.refresh_devices)
-        h.addWidget(btn_refresh)
+        h.addWidget(btn_refresh, stretch=0)
 
-        h.addWidget(self._build_v_sep())
+        h.addWidget(self._build_v_sep(), stretch=0)
 
-        # Package
-        h.addWidget(QLabel("Package"))
-        self.pkg_combo = QComboBox()
+        # Package label with styling
+        lbl_pkg = QLabel("Package")
+        lbl_pkg.setStyleSheet("color: #E8E8E8; font-weight: 500; font-size: 11px; padding: 0px 4px;")
+        lbl_pkg.setMaximumWidth(60)
+        lbl_pkg.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        h.addWidget(lbl_pkg, stretch=0)
+        
+        self.pkg_combo = CustomComboBox()
         self.pkg_combo.setEditable(True)
-        self.pkg_combo.setMinimumWidth(200)
+        self.pkg_combo.setMinimumWidth(180)
+        self.pkg_combo.setMaximumWidth(280)
+        self.pkg_combo.setFixedHeight(30)
         self.pkg_combo.setToolTip("Package name (empty = all)")
         self._load_packages()
-        h.addWidget(self.pkg_combo)
+        h.addWidget(self.pkg_combo, stretch=1)
 
         h.addStretch(1)
 
-        # Start / Stop
-        self.btn_start = QPushButton("  Start")
+        # === Action Buttons ===
+        self.btn_start = QPushButton("Start")
         self.btn_start.setIcon(icons.icon_play())
         self.btn_start.setProperty("role", "start")
-        self.btn_start.setFixedHeight(32)
+        self.btn_start.setFixedHeight(30)
+        self.btn_start.setMinimumWidth(70)
+        self.btn_start.setMaximumWidth(90)
+        self.btn_start.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.btn_start.clicked.connect(self.start_capture)
-        h.addWidget(self.btn_start)
+        h.addWidget(self.btn_start, stretch=0)
 
-        self.btn_stop = QPushButton("  Stop")
+        self.btn_stop = QPushButton("Stop")
         self.btn_stop.setIcon(icons.icon_stop())
         self.btn_stop.setProperty("role", "stop")
-        self.btn_stop.setFixedHeight(32)
+        self.btn_stop.setFixedHeight(30)
+        self.btn_stop.setMinimumWidth(70)
+        self.btn_stop.setMaximumWidth(90)
+        self.btn_stop.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self.stop_capture)
-        h.addWidget(self.btn_stop)
+        h.addWidget(self.btn_stop, stretch=0)
 
-        h.addWidget(self._build_v_sep())
+        h.addWidget(self._build_v_sep(), stretch=0)
 
-        # Clear / Copy / Save
+        # === Tool Buttons ===
         for tip, ico, slot in [
             ("Clear log",  icons.icon_clear(), self.clear_log),
             ("Copy all",   icons.icon_copy(),  self.copy_log),
@@ -164,9 +209,10 @@ class LogcatTab(QWidget):
             b.setIcon(ico)
             b.setProperty("role", "tool")
             b.setToolTip(tip)
-            b.setFixedSize(30, 28)
+            b.setFixedSize(30, 30)
+            b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             b.clicked.connect(slot)
-            h.addWidget(b)
+            h.addWidget(b, stretch=0)
 
         self.refresh_devices()
         return bar
@@ -174,21 +220,27 @@ class LogcatTab(QWidget):
     # ── Search bar ────────────────────────────────────────────────────────────
 
     def _build_search_bar(self) -> QFrame:
+        """Search/filter bar with search input and tool buttons."""
         bar = QFrame()
         bar.setFixedHeight(44)
+        bar.setMinimumHeight(44)
         bar.setObjectName("searchBar")
-        bar.setStyleSheet("QFrame#searchBar { background: #1E1E1E; }")
+        bar.setStyleSheet("QFrame#searchBar { background: #1E1E1E; border-bottom: 1px solid #333333; }")
 
         h = QHBoxLayout(bar)
-        h.setContentsMargins(12, 6, 12, 6)
+        h.setContentsMargins(8, 4, 8, 4)
         h.setSpacing(6)
 
+        # Search input
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search / highlight…")
-        self.search_edit.setFixedHeight(28)
+        self.search_edit.setFixedHeight(32)
+        self.search_edit.setMinimumWidth(150)
+        self.search_edit.setTextMargins(4, 2, 4, 2)
         self.search_edit.textChanged.connect(self._on_search_changed)
         h.addWidget(self.search_edit, stretch=1)
 
+        # === Toggle Buttons ===
         for text, attr, tip in [
             ("Aa", "btn_case",  "Case sensitive"),
             (".*", "btn_regex", "Regular expression"),
@@ -198,32 +250,36 @@ class LogcatTab(QWidget):
             b.setProperty("role", "toggle")
             b.setCheckable(True)
             b.setToolTip(tip)
-            b.setFixedSize(32, 28)
+            b.setFixedSize(36, 32)
+            b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             b.toggled.connect(self._on_search_changed)
             setattr(self, attr, b)
-            h.addWidget(b)
+            h.addWidget(b, stretch=0)
 
-        h.addWidget(self._build_v_sep())
+        h.addWidget(self._build_v_sep(), stretch=0)
 
+        # === Navigation Buttons ===
         btn_prev = QPushButton()
         btn_prev.setIcon(icons.icon_up())
         btn_prev.setProperty("role", "tool")
-        btn_prev.setFixedSize(28, 28)
+        btn_prev.setFixedSize(30, 32)
+        btn_prev.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         btn_prev.setToolTip("Previous match")
         btn_prev.clicked.connect(self._prev_match)
-        h.addWidget(btn_prev)
+        h.addWidget(btn_prev, stretch=0)
 
         btn_next = QPushButton()
         btn_next.setIcon(icons.icon_down())
         btn_next.setProperty("role", "tool")
-        btn_next.setFixedSize(28, 28)
+        btn_next.setFixedSize(30, 32)
+        btn_next.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         btn_next.setToolTip("Next match")
         btn_next.clicked.connect(self._next_match)
-        h.addWidget(btn_next)
+        h.addWidget(btn_next, stretch=0)
 
         self.lbl_match = QLabel("0 / 0")
         self.lbl_match.setStyleSheet("color: #888888; font-size: 11px;")
-        self.lbl_match.setFixedWidth(54)
+        self.lbl_match.setFixedWidth(60)
         self.lbl_match.setAlignment(Qt.AlignmentFlag.AlignCenter)
         h.addWidget(self.lbl_match)
 
@@ -233,14 +289,18 @@ class LogcatTab(QWidget):
         self.btn_autoscroll.setProperty("role", "toggle")
         self.btn_autoscroll.setCheckable(True)
         self.btn_autoscroll.setChecked(True)
-        self.btn_autoscroll.setFixedHeight(28)
+        self.btn_autoscroll.setFixedHeight(32)
+        self.btn_autoscroll.setMinimumWidth(80)
+        self.btn_autoscroll.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         h.addWidget(self.btn_autoscroll)
 
         self.btn_wrap = QPushButton("Wrap")
         self.btn_wrap.setProperty("role", "toggle")
         self.btn_wrap.setCheckable(True)
         self.btn_wrap.setChecked(False)
-        self.btn_wrap.setFixedHeight(28)
+        self.btn_wrap.setFixedHeight(32)
+        self.btn_wrap.setMinimumWidth(60)
+        self.btn_wrap.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.btn_wrap.toggled.connect(self._toggle_wrap)
         h.addWidget(self.btn_wrap)
 
@@ -325,17 +385,32 @@ class LogcatTab(QWidget):
         self.btn_stop.setEnabled(True)
         self.status_changed.emit()
 
+        from src.core.pidcat_runner import get_pidcat_path
+        import sys as _sys
+        
+        pidcat_path = get_pidcat_path()
+        cmd = [_sys.executable, pidcat_path, package or "com.fadcam.beta"]
+        
+        env = None
+        if device:
+            import os
+            env = os.environ.copy()
+            env['ANDROID_SERIAL'] = device
+
         self._thread = QThread()
-        self._reader = ProcessReader(device=device, package=package or None)
+        self._reader = ProcessReader(cmd=cmd, env=env)
         self._reader.moveToThread(self._thread)
         self._thread.started.connect(self._reader.run)
-        self._reader.line_received.connect(self._append_line)
+        self._reader.line_ready.connect(self._append_line)
         self._reader.finished.connect(self._on_reader_finished)
         self._thread.start()
 
     def stop_capture(self):
-        if self._reader:
-            self._reader.stop()
+        if self._reader and self._reader.process:
+            try:
+                self._reader.process.terminate()
+            except Exception:
+                pass
 
     def _on_reader_finished(self):
         self._running = False

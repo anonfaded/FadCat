@@ -3,13 +3,19 @@ FadCat entry point
 """
 import sys
 
+print("DEBUG: FadCat.py starting...")
+
 from src.core.pidcat_runner import run_pidcat_child
+
+print("DEBUG: pidcat_runner imported")
 
 try:
     from PyQt6.QtWidgets import QApplication
     from src.ui.gui_app import LogcatGUI
     QT_AVAILABLE = True
-except ImportError:
+    print("DEBUG: PyQt6 and GUI imported successfully")
+except ImportError as e:
+    print(f"DEBUG: Import error: {e}")
     QT_AVAILABLE = False
 
 
