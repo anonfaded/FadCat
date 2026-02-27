@@ -1,15 +1,57 @@
 """FadCat main window."""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QAction
+from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint
+from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QStatusBar,
-    QLabel, QWidget, QSizePolicy,
+    QLabel, QWidget, QSizePolicy, QTabBar,
 )
 
 from src.ui import theme, icons
 from src.ui.logcat_tab import LogcatTab
+
+
+# ── Custom Tab Bar with proper close buttons ──────────────────────────────────
+class CustomTabBar(QTabBar):
+    """QTabBar with properly drawn close buttons."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._close_button_rects: dict[int, QRect] = {}
+    
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # Draw close buttons on each tab
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self._close_button_rects.clear()
+        
+        for i in range(self.count()):
+            rect = self.tabRect(i)
+            if rect.isNull():
+                continue
+            
+            # Draw X button (top-right of tab)
+            x_pos = rect.right() - 20
+            y_pos = rect.top() + (rect.height() - 14) // 2
+            
+            # Close button rect - larger for clickability
+            close_rect = QRect(x_pos - 2, y_pos - 2, 18, 18)
+            self._close_button_rects[i] = close_rect
+            
+            # Draw X icon (bigger)
+            painter.setPen(QColor("#E8302A"))
+            painter.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+            painter.drawText(close_rect, Qt.AlignmentFlag.AlignCenter, "×")
+    
+    def mouseReleaseEvent(self, event):
+        """Detect clicks on close buttons."""
+        pos = event.pos()
+        for tab_idx, close_rect in self._close_button_rects.items():
+            if close_rect.contains(pos):
+                self.tabCloseRequested.emit(tab_idx)
+                return
+        super().mouseReleaseEvent(event)
 
 
 class LogcatGUI(QMainWindow):
@@ -61,17 +103,18 @@ class LogcatGUI(QMainWindow):
     def _build_toolbar(self):
         tb = QToolBar("Main", self)
         tb.setMovable(False)
+        tb.setIconSize(QSize(18, 18))
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(tb)
 
-        act_new = QAction(icons.icon_new_tab(), "  New Tab", self)
+        act_new = QAction(icons.icon_new_tab(), "New Tab", self)
         act_new.setToolTip("Open a new logcat tab  (Ctrl+T)")
         act_new.triggered.connect(self.add_new_tab)
         tb.addAction(act_new)
 
         tb.addSeparator()
 
-        act_settings = QAction(icons.icon_settings(), "  Settings", self)
+        act_settings = QAction(icons.icon_settings(), "Settings", self)
         act_settings.setToolTip("Open settings  (Ctrl+,)")
         act_settings.triggered.connect(self.open_settings)
         tb.addAction(act_settings)
@@ -89,9 +132,18 @@ class LogcatGUI(QMainWindow):
 
     def _build_central(self):
         self.tabs = QTabWidget()
-        self.tabs.setTabsClosable(True)
+        self.tabs.setTabPosition(QTabWidget.TabPosition.North)
+        self.tabs.setTabsClosable(False)  # Handle close manually via custom tab bar
         self.tabs.setMovable(True)
-        self.tabs.tabCloseRequested.connect(self._on_tab_close_requested)
+        self.tabs.setUsesScrollButtons(True)
+        self.tabs.setDocumentMode(False)
+        
+        # Use custom tab bar with proper close buttons
+        custom_tabbar = CustomTabBar()
+        custom_tabbar.tabCloseRequested.connect(self._on_tab_close_requested)
+        custom_tabbar.setExpanding(False)   # Left-align tabs instead of stretching them
+        self.tabs.setTabBar(custom_tabbar)
+        
         self.tabs.currentChanged.connect(self._refresh_statusbar)
         self.setCentralWidget(self.tabs)
 
