@@ -6,7 +6,23 @@ SETTINGS_FILE = Path.home() / ".fadcat_settings.json"
 DEFAULT_SETTINGS = {
     "packages": ["com.fadcam.beta", "com.android.systemui"],
     "default_package": "com.fadcam.beta",
-    "theme": "dark"
+    "theme": "dark",
+    "ignored_tags": [
+        "gralloc4",          # GPU memory allocation spam (register/unregister)
+        "BufferPoolAccessor*",  # Buffer pool management spam
+        "hwbinder",          # Hardware binder spam
+        "binder",            # General binder spam (very verbose)
+        "libc",              # C library messages
+        "perfetto",          # System tracing (verbose)
+        "PowerManagerService",  # Power management spam
+        "WifiManager",       # Wifi spam
+        "ConnectivityManager",  # Connectivity spam
+        "BluetoothAdapter",  # Bluetooth spam
+        "libEGL",            # OpenGL ES spam
+        "libGLESv2",         # OpenGL ES 2.0 spam
+        "PermissionController",  # Permission spam
+        "system_server",     # System server noise
+    ]
 }
 
 class SettingsManager:
@@ -53,6 +69,14 @@ class Settings:
     @default_package.setter
     def default_package(self, value: str):
         self._data["default_package"] = value
+    
+    @property
+    def ignored_tags(self) -> list[str]:
+        return self._data.get("ignored_tags", DEFAULT_SETTINGS.get("ignored_tags", []))
+    
+    @ignored_tags.setter
+    def ignored_tags(self, value: list[str]):
+        self._data["ignored_tags"] = value
     
     def save(self):
         SettingsManager.save(self._data)

@@ -41,6 +41,12 @@ class LogcatCLI:
             cmd = [sys.executable, pidcat_path, '-s', chosen, package]
         else:
             cmd = [sys.executable, pidcat_path, package]
+        
+        # Add ignored tags from settings
+        ignored_tags = self.settings.get("ignored_tags", [])
+        for tag in ignored_tags:
+            cmd.extend(['-i', tag])
+        
         try:
             subprocess.run(cmd, env=env)
         except KeyboardInterrupt:

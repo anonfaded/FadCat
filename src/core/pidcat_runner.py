@@ -36,8 +36,16 @@ def run_pidcat_child():
     
     pidcat_path = get_pidcat_path()
     
+    # Build pidcat command with ignored tags
+    cmd = [sys.executable, pidcat_path, package]
+    
+    # Add ignored tags from settings
+    ignored_tags = settings.get("ignored_tags", [])
+    for tag in ignored_tags:
+        cmd.extend(['-i', tag])
+    
     try:
-        p = subprocess.Popen([sys.executable, pidcat_path, package], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         for line in iter(p.stdout.readline, ''):
             if not line:
                 break

@@ -386,10 +386,17 @@ class LogcatTab(QWidget):
         self.status_changed.emit()
 
         from src.core.pidcat_runner import get_pidcat_path
+        from src.core.settings import SettingsManager
         import sys as _sys
         
         pidcat_path = get_pidcat_path()
         cmd = [_sys.executable, pidcat_path, package or "com.fadcam.beta"]
+        
+        # Add ignored tags from settings
+        settings = SettingsManager.load()
+        ignored_tags = settings.get("ignored_tags", [])
+        for tag in ignored_tags:
+            cmd.extend(['-i', tag])
         
         env = None
         if device:
