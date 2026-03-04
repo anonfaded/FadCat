@@ -392,6 +392,10 @@ class LogcatTab(QWidget):
         pidcat_path = get_pidcat_path()
         cmd = [_sys.executable, pidcat_path, package or "com.fadcam.beta"]
         
+        # Add device serial to pidcat command
+        if device:
+            cmd.extend(['-s', device])
+        
         # Add ignored tags from settings
         settings = SettingsManager.load()
         ignored_tags = settings.get("ignored_tags", [])
@@ -399,10 +403,6 @@ class LogcatTab(QWidget):
             cmd.extend(['-i', tag])
         
         env = None
-        if device:
-            import os
-            env = os.environ.copy()
-            env['ANDROID_SERIAL'] = device
 
         self._thread = QThread()
         self._reader = ProcessReader(cmd=cmd, env=env)
