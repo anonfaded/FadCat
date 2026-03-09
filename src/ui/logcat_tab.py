@@ -136,11 +136,11 @@ class LogcatTab(QWidget):
         h.addWidget(lbl_device, stretch=0)
 
         self.device_combo = CustomComboBox()
-        self.device_combo.setMinimumWidth(200)
-        self.device_combo.setMaximumWidth(260)
+        self.device_combo.setMinimumWidth(100)
+        self.device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.device_combo.setFixedHeight(34)
         self.device_combo.setToolTip("Select ADB device")
-        h.addWidget(self.device_combo, stretch=0)
+        h.addWidget(self.device_combo, stretch=2)
 
         btn_refresh = QPushButton()
         btn_refresh.setIcon(icons.icon_refresh())
@@ -160,32 +160,24 @@ class LogcatTab(QWidget):
 
         self.pkg_combo = CustomComboBox()
         self.pkg_combo.setEditable(True)
-        self.pkg_combo.setMinimumWidth(200)
-        self.pkg_combo.setMaximumWidth(260)
+        self.pkg_combo.setMinimumWidth(100)
+        self.pkg_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.pkg_combo.setFixedHeight(34)
         self.pkg_combo.setToolTip("Package name (empty = all)")
         self._load_packages()
-        h.addWidget(self.pkg_combo, stretch=0)
+        h.addWidget(self.pkg_combo, stretch=2)
 
         h.addStretch(1)
 
-        # Start/Stop
-        self.btn_start = QPushButton("Start")
-        self.btn_start.setIcon(icons.icon_play())
-        self.btn_start.setProperty("role", "start")
-        self.btn_start.setFixedHeight(34)
-        self.btn_start.setMinimumWidth(85)
-        self.btn_start.clicked.connect(self.start_capture)
-        h.addWidget(self.btn_start, stretch=0)
-
-        self.btn_stop = QPushButton("Stop")
-        self.btn_stop.setIcon(icons.icon_stop())
-        self.btn_stop.setProperty("role", "stop")
-        self.btn_stop.setFixedHeight(34)
-        self.btn_stop.setMinimumWidth(85)
-        self.btn_stop.setEnabled(False)
-        self.btn_stop.clicked.connect(self.stop_capture)
-        h.addWidget(self.btn_stop, stretch=0)
+        # Start/Stop Toggle
+        self.btn_toggle = QPushButton("Start")
+        self.btn_toggle.setIcon(icons.icon_play())
+        self.btn_toggle.setProperty("role", "start")
+        self.btn_toggle.setFixedHeight(34)
+        self.btn_toggle.setMinimumWidth(90)
+        self.btn_toggle.setToolTip("Toggle Capture")
+        self.btn_toggle.clicked.connect(self.toggle_capture)
+        h.addWidget(self.btn_toggle, stretch=0)
 
         h.addWidget(self._build_v_sep(), stretch=0)
 
@@ -203,7 +195,7 @@ class LogcatTab(QWidget):
         return bar
 
     def _icon_btn(self, icon, text, slot, tip=None) -> QPushButton:
-        b = QPushButton(f"  {text}")
+        b = QPushButton(f" {text}")
         b.setIcon(icon)
         b.setProperty("role", "tool-text")
         b.setFixedHeight(34)
@@ -227,18 +219,19 @@ class LogcatTab(QWidget):
 
         # Search input
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search logs...")
+        self.search_edit.setPlaceholderText("Search logs... (⌘F)")
         self.search_edit.setFixedHeight(34)
-        self.search_edit.setMinimumWidth(200)
+        self.search_edit.setMinimumWidth(100)
+        self.search_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.search_edit.textChanged.connect(self._on_search_changed)
-        h.addWidget(self.search_edit, stretch=1)
+        h.addWidget(self.search_edit, stretch=4)
 
         # Filter toggles
         self.btn_case = QPushButton("Aa")
         self.btn_case.setProperty("role", "toggle")
         self.btn_case.setCheckable(True)
         self.btn_case.setToolTip("Case sensitive")
-        self.btn_case.setFixedSize(48, 34)
+        self.btn_case.setFixedSize(36, 34)
         self.btn_case.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_case, stretch=0)
 
@@ -246,15 +239,17 @@ class LogcatTab(QWidget):
         self.btn_regex.setProperty("role", "toggle")
         self.btn_regex.setCheckable(True)
         self.btn_regex.setToolTip("Regular expression")
-        self.btn_regex.setFixedSize(48, 34)
+        self.btn_regex.setFixedSize(36, 34)
         self.btn_regex.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_regex, stretch=0)
 
         self.btn_grep = QPushButton("Grep ⌥G")
+        self.btn_grep.setIcon(icons.icon_grep())
         self.btn_grep.setProperty("role", "toggle")
         self.btn_grep.setCheckable(True)
         self.btn_grep.setToolTip("Grep mode - hide non-matching lines (⌥G)")
-        self.btn_grep.setFixedSize(80, 34)
+        self.btn_grep.setMinimumWidth(80)
+        self.btn_grep.setFixedHeight(34)
         self.btn_grep.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_grep, stretch=0)
 
@@ -265,7 +260,7 @@ class LogcatTab(QWidget):
         btn_prev.setIcon(icons.icon_up())
         btn_prev.setProperty("role", "nav-btn")
         btn_prev.setToolTip("Previous match (⇧F3)")
-        btn_prev.setFixedSize(34, 34)
+        btn_prev.setFixedSize(32, 34)
         btn_prev.clicked.connect(self._prev_match)
         h.addWidget(btn_prev, stretch=0)
 
@@ -273,12 +268,12 @@ class LogcatTab(QWidget):
         btn_next.setIcon(icons.icon_down())
         btn_next.setProperty("role", "nav-btn")
         btn_next.setToolTip("Next match (F3)")
-        btn_next.setFixedSize(34, 34)
+        btn_next.setFixedSize(32, 34)
         btn_next.clicked.connect(self._next_match)
         h.addWidget(btn_next, stretch=0)
 
         self.lbl_match = QLabel("0 / 0")
-        self.lbl_match.setStyleSheet("color: #888888; font-size: 12px; min-width: 60px;")
+        self.lbl_match.setStyleSheet("color: #888888; font-size: 11px; min-width: 45px;")
         self.lbl_match.setAlignment(Qt.AlignmentFlag.AlignCenter)
         h.addWidget(self.lbl_match, stretch=0)
 
@@ -290,7 +285,7 @@ class LogcatTab(QWidget):
         self.btn_autoscroll.setCheckable(True)
         self.btn_autoscroll.setChecked(True)
         self.btn_autoscroll.setFixedHeight(34)
-        self.btn_autoscroll.setMinimumWidth(95)
+        self.btn_autoscroll.setMinimumWidth(85)
         h.addWidget(self.btn_autoscroll, stretch=0)
 
         self.btn_wrap = QPushButton("Wrap")
@@ -298,7 +293,7 @@ class LogcatTab(QWidget):
         self.btn_wrap.setCheckable(True)
         self.btn_wrap.setChecked(False)
         self.btn_wrap.setFixedHeight(34)
-        self.btn_wrap.setMinimumWidth(70)
+        self.btn_wrap.setMinimumWidth(60)
         self.btn_wrap.toggled.connect(self._toggle_wrap)
         h.addWidget(self.btn_wrap, stretch=0)
 
@@ -376,6 +371,12 @@ class LogcatTab(QWidget):
 
     # ── Capture ───────────────────────────────────────────────────────────────
 
+    def toggle_capture(self):
+        if self._running:
+            self.stop_capture()
+        else:
+            self.start_capture()
+
     def start_capture(self):
         if self._running:
             return
@@ -384,8 +385,14 @@ class LogcatTab(QWidget):
             return
         package = self.pkg_combo.currentText().strip()
         self._running = True
-        self.btn_start.setEnabled(False)
-        self.btn_stop.setEnabled(True)
+        
+        # Update Toggle Button
+        self.btn_toggle.setText("Stop")
+        self.btn_toggle.setIcon(icons.icon_stop())
+        self.btn_toggle.setProperty("role", "stop")
+        self.btn_toggle.style().unpolish(self.btn_toggle)
+        self.btn_toggle.style().polish(self.btn_toggle)
+        
         self.status_changed.emit()
 
         from src.core.pidcat_runner import get_pidcat_path
@@ -422,8 +429,14 @@ class LogcatTab(QWidget):
 
     def _on_reader_finished(self):
         self._running = False
-        self.btn_start.setEnabled(True)
-        self.btn_stop.setEnabled(False)
+        
+        # Update Toggle Button
+        self.btn_toggle.setText("Start")
+        self.btn_toggle.setIcon(icons.icon_play())
+        self.btn_toggle.setProperty("role", "start")
+        self.btn_toggle.style().unpolish(self.btn_toggle)
+        self.btn_toggle.style().polish(self.btn_toggle)
+        
         if self._thread:
             self._thread.quit()
             self._thread.wait()

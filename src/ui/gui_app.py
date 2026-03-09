@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint
 from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QStatusBar,
-    QLabel, QWidget, QSizePolicy, QTabBar,
+    QLabel, QWidget, QSizePolicy, QTabBar, QPushButton,
 )
 
 from src.ui import theme, icons
@@ -103,24 +103,50 @@ class LogcatGUI(QMainWindow):
     def _build_toolbar(self):
         tb = QToolBar("Main", self)
         tb.setMovable(False)
-        tb.setIconSize(QSize(18, 18))
-        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        tb.setStyleSheet("QToolBar { background: #242424; border-bottom: 1px solid #333333; padding: 4px 8px; spacing: 6px; }")
+        tb.setStyleSheet("QToolBar { background: #242424; border-bottom: 1px solid #333333; padding: 6px 10px; spacing: 10px; }")
         self.addToolBar(tb)
 
-        act_new = QAction(icons.icon_new_tab(), "New Tab", self)
-        act_new.setToolTip("New Tab (⌘T)")
-        act_new.setShortcut(QKeySequence("Ctrl+T"))
-        act_new.triggered.connect(self.add_new_tab)
-        tb.addAction(act_new)
+        # New Tab Button
+        btn_new = QPushButton("New Tab")
+        btn_new.setIcon(icons.icon_new_tab())
+        btn_new.setToolTip("New Tab (⌘T)")
+        btn_new.clicked.connect(self.add_new_tab)
+        btn_new.setCursor(Qt.CursorShape.PointingHandCursor)
+        tb.addWidget(btn_new)
 
-        tb.addSeparator()
+        # Spacer
+        tb.addWidget(self._create_toolbar_spacer())
 
-        act_settings = QAction(icons.icon_settings(), "Settings", self)
-        act_settings.setToolTip("Settings (⌘,)")
-        act_settings.setShortcut(QKeySequence("Ctrl+,"))
-        act_settings.triggered.connect(self.open_settings)
-        tb.addAction(act_settings)
+        # Branding
+        lbl_brand = QLabel("F  A  D  C  A  T")
+        lbl_brand.setStyleSheet("""
+            QLabel {
+                color: #555555;
+                font-size: 16px;
+                font-weight: 800;
+                letter-spacing: 4px;
+                padding: 0 20px;
+                background: transparent;
+            }
+        """)
+        lbl_brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tb.addWidget(lbl_brand)
+
+        # Spacer
+        tb.addWidget(self._create_toolbar_spacer())
+
+        # Settings Button
+        btn_settings = QPushButton("Settings")
+        btn_settings.setIcon(icons.icon_settings())
+        btn_settings.setToolTip("Settings (⌘,)")
+        btn_settings.clicked.connect(self.open_settings)
+        btn_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        tb.addWidget(btn_settings)
+
+    def _create_toolbar_spacer(self) -> QWidget:
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        return spacer
 
     # ── Central widget ─────────────────────────────────────────────────────────
 

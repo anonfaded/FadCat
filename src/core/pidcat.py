@@ -116,7 +116,7 @@ min_level = LOG_LEVELS_MAP[args.min_level.upper()]
 
 package = args.package
 
-print(f"--- Colored Logcat v{__version__} ---")
+print(f"--- Colored FadCat v{__version__} ---")
 selected_device = check_adb_device()
 
 base_adb_command = ['adb']
