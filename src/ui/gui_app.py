@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint
-from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon
+from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QStatusBar,
     QLabel, QWidget, QSizePolicy, QTabBar,
@@ -82,20 +82,20 @@ class LogcatGUI(QMainWindow):
         mb = self.menuBar()
 
         file_menu = mb.addMenu("File")
-        act_new = file_menu.addAction(icons.icon_new_tab(), "New Tab")
-        act_new.setShortcut("Ctrl+T")
+        act_new = file_menu.addAction(icons.icon_new_tab(), "New Tab\t⌘T")
+        act_new.setShortcut(QKeySequence("Ctrl+T"))
         act_new.triggered.connect(self.add_new_tab)
-        act_close = file_menu.addAction(icons.icon_close(), "Close Tab")
-        act_close.setShortcut("Ctrl+W")
+        act_close = file_menu.addAction(icons.icon_close(), "Close Tab\t⌘W")
+        act_close.setShortcut(QKeySequence("Ctrl+W"))
         act_close.triggered.connect(self._close_current_tab)
         file_menu.addSeparator()
-        act_quit = file_menu.addAction("Quit")
-        act_quit.setShortcut("Ctrl+Q")
+        act_quit = file_menu.addAction("Quit\t⌘Q")
+        act_quit.setShortcut(QKeySequence("Ctrl+Q"))
         act_quit.triggered.connect(self.close)
 
         view_menu = mb.addMenu("View")
-        act_settings = view_menu.addAction(icons.icon_settings(), "Settings…")
-        act_settings.setShortcut("Ctrl+,")
+        act_settings = view_menu.addAction(icons.icon_settings(), "Settings…\t⌘,")
+        act_settings.setShortcut(QKeySequence("Ctrl+,"))
         act_settings.triggered.connect(self.open_settings)
 
     # ── Toolbar ───────────────────────────────────────────────────────────────
@@ -105,28 +105,22 @@ class LogcatGUI(QMainWindow):
         tb.setMovable(False)
         tb.setIconSize(QSize(18, 18))
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        tb.setStyleSheet("QToolBar { background: #242424; border-bottom: 1px solid #333333; padding: 4px 8px; spacing: 6px; }")
         self.addToolBar(tb)
 
         act_new = QAction(icons.icon_new_tab(), "New Tab", self)
-        act_new.setToolTip("Open a new logcat tab  (Ctrl+T)")
+        act_new.setToolTip("New Tab (⌘T)")
+        act_new.setShortcut(QKeySequence("Ctrl+T"))
         act_new.triggered.connect(self.add_new_tab)
         tb.addAction(act_new)
 
         tb.addSeparator()
 
         act_settings = QAction(icons.icon_settings(), "Settings", self)
-        act_settings.setToolTip("Open settings  (Ctrl+,)")
+        act_settings.setToolTip("Settings (⌘,)")
+        act_settings.setShortcut(QKeySequence("Ctrl+,"))
         act_settings.triggered.connect(self.open_settings)
         tb.addAction(act_settings)
-
-        # Right-align spacer
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        tb.addWidget(spacer)
-
-        self.lbl_toolbar_hint = QLabel("")
-        self.lbl_toolbar_hint.setStyleSheet("color: #888888; font-size: 11px; padding-right: 8px;")
-        tb.addWidget(self.lbl_toolbar_hint)
 
     # ── Central widget ─────────────────────────────────────────────────────────
 
@@ -152,13 +146,14 @@ class LogcatGUI(QMainWindow):
     def _build_statusbar(self):
         sb = QStatusBar(self)
         self.setStatusBar(sb)
+        sb.setStyleSheet("QStatusBar { background: #242424; border-top: 1px solid #333333; }")
 
         self.lbl_status_device = QLabel("No device")
-        self.lbl_status_device.setStyleSheet("padding: 0 8px;")
+        self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
         self.lbl_status_lines = QLabel("0 lines")
-        self.lbl_status_lines.setStyleSheet("padding: 0 8px;")
+        self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
         self.lbl_status_state = QLabel("Idle")
-        self.lbl_status_state.setStyleSheet("padding: 0 8px;")
+        self.lbl_status_state.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
 
         sb.addWidget(self.lbl_status_state)
         sb.addWidget(self._sb_sep())
@@ -169,7 +164,7 @@ class LogcatGUI(QMainWindow):
     @staticmethod
     def _sb_sep() -> QLabel:
         sep = QLabel("|")
-        sep.setStyleSheet("color: #333333; padding: 0 2px;")
+        sep.setStyleSheet("color: #333333; padding: 0 4px;")
         return sep
 
     def _refresh_statusbar(self):

@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint
-from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon, QBrush
+from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon, QBrush, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QComboBox, QPushButton, QLineEdit,
@@ -23,20 +23,17 @@ class CustomComboBox(QComboBox):
     """QComboBox with a proper Python-drawn dropdown arrow."""
     def paintEvent(self, event):
         super().paintEvent(event)
-        # Draw custom dropdown arrow
         if self.isEnabled():
             painter = QPainter(self)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            # Calculate arrow position (right side of combobox) - use red accent color
             arrow_x = self.width() - 22
             arrow_y = (self.height() - 6) // 2
-            # Draw downward triangle with red accent
             points = [
                 QPoint(arrow_x, arrow_y),
                 QPoint(arrow_x + 8, arrow_y),
                 QPoint(arrow_x + 4, arrow_y + 6),
             ]
-            painter.setBrush(QBrush(QColor("#E8302A")))  # Red accent
+            painter.setBrush(QBrush(QColor("#E8302A")))
             painter.setPen(QColor("#E8302A"))
             painter.drawConvexPolygon(QPolygon(points))
 
@@ -105,17 +102,17 @@ class LogcatTab(QWidget):
         self._match_positions: list[int] = []
         self._match_idx = 0
         self._total_lines = 0
-        self._raw_lines: list[tuple[str, list]] = []  # (raw_text, parsed_chunks)
+        self._raw_lines: list[tuple[str, list]] = []
         self._visible_line_count = 0
 
         self._build_ui()
+        self._setup_shortcuts()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Both bars already have border-bottom — no need for separator widgets
         root.addWidget(self._build_control_bar(), stretch=0)
         root.addWidget(self._build_search_bar(), stretch=0)
         root.addWidget(self._build_log_area(), stretch=1)
@@ -123,190 +120,202 @@ class LogcatTab(QWidget):
     # ── Control bar ───────────────────────────────────────────────────────────
 
     def _build_control_bar(self) -> QFrame:
-        """Control bar with device/package selection, start/stop, and tools."""
         bar = QFrame()
-        bar.setFixedHeight(52)
-        bar.setMinimumHeight(52)
+        bar.setFixedHeight(56)
         bar.setObjectName("controlBar")
         bar.setStyleSheet("QFrame#controlBar { background: #242424; border-bottom: 1px solid #333333; }")
 
         h = QHBoxLayout(bar)
-        h.setContentsMargins(8, 6, 8, 6)
-        h.setSpacing(6)
+        h.setContentsMargins(12, 8, 12, 8)
+        h.setSpacing(10)
 
-        # Device label with styling
+        # Device
         lbl_device = QLabel("Device")
-        lbl_device.setStyleSheet("color: #E8E8E8; font-weight: 500; font-size: 11px; padding: 0px 4px;")
-        lbl_device.setMaximumWidth(50)
-        lbl_device.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        lbl_device.setStyleSheet("color: #AAAAAA; font-size: 12px; font-weight: 500; background: transparent;")
+        lbl_device.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         h.addWidget(lbl_device, stretch=0)
-        
+
         self.device_combo = CustomComboBox()
-        self.device_combo.setMinimumWidth(180)
-        self.device_combo.setMaximumWidth(280)
-        self.device_combo.setFixedHeight(30)
+        self.device_combo.setMinimumWidth(200)
+        self.device_combo.setMaximumWidth(260)
+        self.device_combo.setFixedHeight(34)
         self.device_combo.setToolTip("Select ADB device")
-        h.addWidget(self.device_combo, stretch=1)
+        h.addWidget(self.device_combo, stretch=0)
 
         btn_refresh = QPushButton()
         btn_refresh.setIcon(icons.icon_refresh())
-        btn_refresh.setProperty("role", "tool")
+        btn_refresh.setProperty("role", "icon-btn")
         btn_refresh.setToolTip("Refresh devices")
-        btn_refresh.setFixedSize(30, 30)
-        btn_refresh.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        btn_refresh.setFixedSize(34, 34)
         btn_refresh.clicked.connect(self.refresh_devices)
         h.addWidget(btn_refresh, stretch=0)
 
         h.addWidget(self._build_v_sep(), stretch=0)
 
-        # Package label with styling
+        # Package
         lbl_pkg = QLabel("Package")
-        lbl_pkg.setStyleSheet("color: #E8E8E8; font-weight: 500; font-size: 11px; padding: 0px 4px;")
-        lbl_pkg.setMaximumWidth(60)
-        lbl_pkg.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        lbl_pkg.setStyleSheet("color: #AAAAAA; font-size: 12px; font-weight: 500; background: transparent;")
+        lbl_pkg.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         h.addWidget(lbl_pkg, stretch=0)
-        
+
         self.pkg_combo = CustomComboBox()
         self.pkg_combo.setEditable(True)
-        self.pkg_combo.setMinimumWidth(180)
-        self.pkg_combo.setMaximumWidth(280)
-        self.pkg_combo.setFixedHeight(30)
+        self.pkg_combo.setMinimumWidth(200)
+        self.pkg_combo.setMaximumWidth(260)
+        self.pkg_combo.setFixedHeight(34)
         self.pkg_combo.setToolTip("Package name (empty = all)")
         self._load_packages()
-        h.addWidget(self.pkg_combo, stretch=1)
+        h.addWidget(self.pkg_combo, stretch=0)
 
         h.addStretch(1)
 
-        # === Action Buttons ===
+        # Start/Stop
         self.btn_start = QPushButton("Start")
         self.btn_start.setIcon(icons.icon_play())
         self.btn_start.setProperty("role", "start")
-        self.btn_start.setFixedHeight(30)
-        self.btn_start.setMinimumWidth(70)
-        self.btn_start.setMaximumWidth(90)
-        self.btn_start.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.btn_start.setFixedHeight(34)
+        self.btn_start.setMinimumWidth(85)
         self.btn_start.clicked.connect(self.start_capture)
         h.addWidget(self.btn_start, stretch=0)
 
         self.btn_stop = QPushButton("Stop")
         self.btn_stop.setIcon(icons.icon_stop())
         self.btn_stop.setProperty("role", "stop")
-        self.btn_stop.setFixedHeight(30)
-        self.btn_stop.setMinimumWidth(70)
-        self.btn_stop.setMaximumWidth(90)
-        self.btn_stop.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.btn_stop.setFixedHeight(34)
+        self.btn_stop.setMinimumWidth(85)
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self.stop_capture)
         h.addWidget(self.btn_stop, stretch=0)
 
         h.addWidget(self._build_v_sep(), stretch=0)
 
-        # === Tool Buttons ===
-        for tip, ico, slot in [
-            ("Clear log",  icons.icon_clear(), self.clear_log),
-            ("Copy all",   icons.icon_copy(),  self.copy_log),
-            ("Save to…",   icons.icon_save(),  self.save_log),
-        ]:
-            b = QPushButton()
-            b.setIcon(ico)
-            b.setProperty("role", "tool")
-            b.setToolTip(tip)
-            b.setFixedSize(30, 30)
-            b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            b.clicked.connect(slot)
-            h.addWidget(b, stretch=0)
+        # Tools
+        self._btn_clear = self._icon_btn(icons.icon_clear(), "Clear", self.clear_log, "Clear log")
+        h.addWidget(self._btn_clear, stretch=0)
+
+        self._btn_copy = self._icon_btn(icons.icon_copy(), "Copy", self.copy_log, "Copy all to clipboard")
+        h.addWidget(self._btn_copy, stretch=0)
+
+        self._btn_save = self._icon_btn(icons.icon_save(), "Save", self.save_log, "Save log to file")
+        h.addWidget(self._btn_save, stretch=0)
 
         self.refresh_devices()
         return bar
 
+    def _icon_btn(self, icon, text, slot, tip=None) -> QPushButton:
+        b = QPushButton(f"  {text}")
+        b.setIcon(icon)
+        b.setProperty("role", "tool-text")
+        b.setFixedHeight(34)
+        b.setMinimumWidth(75)
+        b.clicked.connect(slot)
+        if tip:
+            b.setToolTip(tip)
+        return b
+
     # ── Search bar ────────────────────────────────────────────────────────────
 
     def _build_search_bar(self) -> QFrame:
-        """Search/filter bar with search input and tool buttons."""
         bar = QFrame()
-        bar.setFixedHeight(44)
-        bar.setMinimumHeight(44)
+        bar.setFixedHeight(48)
         bar.setObjectName("searchBar")
         bar.setStyleSheet("QFrame#searchBar { background: #1E1E1E; border-bottom: 1px solid #333333; }")
 
         h = QHBoxLayout(bar)
-        h.setContentsMargins(8, 4, 8, 4)
-        h.setSpacing(6)
+        h.setContentsMargins(12, 6, 12, 6)
+        h.setSpacing(8)
 
         # Search input
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Search / highlight…")
-        self.search_edit.setFixedHeight(32)
-        self.search_edit.setMinimumWidth(150)
-        self.search_edit.setTextMargins(4, 2, 4, 2)
+        self.search_edit.setPlaceholderText("Search logs...")
+        self.search_edit.setFixedHeight(34)
+        self.search_edit.setMinimumWidth(200)
         self.search_edit.textChanged.connect(self._on_search_changed)
         h.addWidget(self.search_edit, stretch=1)
 
-        # === Toggle Buttons ===
-        for text, attr, tip in [
-            ("Aa", "btn_case",  "Case sensitive"),
-            (".*", "btn_regex", "Regular expression"),
-            ("⌥G", "btn_grep",  "Grep mode (hide non-matching lines)"),
-        ]:
-            b = QPushButton(text)
-            b.setProperty("role", "toggle")
-            b.setCheckable(True)
-            b.setToolTip(tip)
-            b.setFixedSize(36, 32)
-            b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            b.toggled.connect(self._on_search_changed)
-            setattr(self, attr, b)
-            h.addWidget(b, stretch=0)
+        # Filter toggles
+        self.btn_case = QPushButton("Aa")
+        self.btn_case.setProperty("role", "toggle")
+        self.btn_case.setCheckable(True)
+        self.btn_case.setToolTip("Case sensitive")
+        self.btn_case.setFixedSize(48, 34)
+        self.btn_case.toggled.connect(self._on_search_changed)
+        h.addWidget(self.btn_case, stretch=0)
+
+        self.btn_regex = QPushButton(".*")
+        self.btn_regex.setProperty("role", "toggle")
+        self.btn_regex.setCheckable(True)
+        self.btn_regex.setToolTip("Regular expression")
+        self.btn_regex.setFixedSize(48, 34)
+        self.btn_regex.toggled.connect(self._on_search_changed)
+        h.addWidget(self.btn_regex, stretch=0)
+
+        self.btn_grep = QPushButton("Grep ⌥G")
+        self.btn_grep.setProperty("role", "toggle")
+        self.btn_grep.setCheckable(True)
+        self.btn_grep.setToolTip("Grep mode - hide non-matching lines (⌥G)")
+        self.btn_grep.setFixedSize(80, 34)
+        self.btn_grep.toggled.connect(self._on_search_changed)
+        h.addWidget(self.btn_grep, stretch=0)
 
         h.addWidget(self._build_v_sep(), stretch=0)
 
-        # === Navigation Buttons ===
+        # Navigation
         btn_prev = QPushButton()
         btn_prev.setIcon(icons.icon_up())
-        btn_prev.setProperty("role", "tool")
-        btn_prev.setFixedSize(30, 32)
-        btn_prev.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        btn_prev.setToolTip("Previous match")
+        btn_prev.setProperty("role", "nav-btn")
+        btn_prev.setToolTip("Previous match (⇧F3)")
+        btn_prev.setFixedSize(34, 34)
         btn_prev.clicked.connect(self._prev_match)
         h.addWidget(btn_prev, stretch=0)
 
         btn_next = QPushButton()
         btn_next.setIcon(icons.icon_down())
-        btn_next.setProperty("role", "tool")
-        btn_next.setFixedSize(30, 32)
-        btn_next.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        btn_next.setToolTip("Next match")
+        btn_next.setProperty("role", "nav-btn")
+        btn_next.setToolTip("Next match (F3)")
+        btn_next.setFixedSize(34, 34)
         btn_next.clicked.connect(self._next_match)
         h.addWidget(btn_next, stretch=0)
 
         self.lbl_match = QLabel("0 / 0")
-        self.lbl_match.setStyleSheet("color: #888888; font-size: 11px;")
-        self.lbl_match.setFixedWidth(60)
+        self.lbl_match.setStyleSheet("color: #888888; font-size: 12px; min-width: 60px;")
         self.lbl_match.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        h.addWidget(self.lbl_match)
+        h.addWidget(self.lbl_match, stretch=0)
 
-        h.addWidget(self._build_v_sep())
+        h.addStretch(1)
 
+        # Options
         self.btn_autoscroll = QPushButton("Auto-scroll")
         self.btn_autoscroll.setProperty("role", "toggle")
         self.btn_autoscroll.setCheckable(True)
         self.btn_autoscroll.setChecked(True)
-        self.btn_autoscroll.setFixedHeight(32)
-        self.btn_autoscroll.setMinimumWidth(80)
-        self.btn_autoscroll.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        h.addWidget(self.btn_autoscroll)
+        self.btn_autoscroll.setFixedHeight(34)
+        self.btn_autoscroll.setMinimumWidth(95)
+        h.addWidget(self.btn_autoscroll, stretch=0)
 
         self.btn_wrap = QPushButton("Wrap")
         self.btn_wrap.setProperty("role", "toggle")
         self.btn_wrap.setCheckable(True)
         self.btn_wrap.setChecked(False)
-        self.btn_wrap.setFixedHeight(32)
-        self.btn_wrap.setMinimumWidth(60)
-        self.btn_wrap.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.btn_wrap.setFixedHeight(34)
+        self.btn_wrap.setMinimumWidth(70)
         self.btn_wrap.toggled.connect(self._toggle_wrap)
-        h.addWidget(self.btn_wrap)
+        h.addWidget(self.btn_wrap, stretch=0)
 
         return bar
+
+    # ── Shortcuts ─────────────────────────────────────────────────────────────
+
+    def _setup_shortcuts(self):
+        # Cmd+F - focus search
+        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self.search_edit.setFocus)
+        
+        # Alt+G - toggle grep
+        QShortcut(QKeySequence("Alt+G"), self).activated.connect(self.btn_grep.toggle)
+        
+        # F3 / Shift+F3 - next/prev match
+        QShortcut(QKeySequence("F3"), self).activated.connect(self._next_match)
+        QShortcut(QKeySequence("Shift+F3"), self).activated.connect(self._prev_match)
 
     # ── Log area ──────────────────────────────────────────────────────────────
 
@@ -326,15 +335,7 @@ class LogcatTab(QWidget):
     def _build_v_sep() -> QFrame:
         f = QFrame()
         f.setFrameShape(QFrame.Shape.VLine)
-        f.setStyleSheet("background: #333333; max-width: 1px; border: none; margin: 4px 2px;")
-        return f
-
-    @staticmethod
-    def _build_h_sep() -> QFrame:
-        f = QFrame()
-        f.setFrameShape(QFrame.Shape.HLine)
-        f.setFixedHeight(1)
-        f.setStyleSheet("background: #333333; border: none;")
+        f.setStyleSheet("background: #333333; max-width: 1px; border: none; margin: 0 4px;")
         return f
 
     # ── Device management ─────────────────────────────────────────────────────
@@ -390,20 +391,18 @@ class LogcatTab(QWidget):
         from src.core.pidcat_runner import get_pidcat_path
         from src.core.settings import SettingsManager
         import sys as _sys
-        
+
         pidcat_path = get_pidcat_path()
         cmd = [_sys.executable, pidcat_path, package or "com.fadcam.beta"]
-        
-        # Add device serial to pidcat command
+
         if device:
             cmd.extend(['-s', device])
-        
-        # Add ignored tags from settings
+
         settings = SettingsManager.load()
         ignored_tags = settings.get("ignored_tags", [])
         for tag in ignored_tags:
             cmd.extend(['-i', tag])
-        
+
         env = None
 
         self._thread = QThread()
@@ -437,10 +436,8 @@ class LogcatTab(QWidget):
         text = raw.rstrip("\n")
         chunks = _parse_ansi(text)
         
-        # Store raw line for grep filtering
         self._raw_lines.append((text, chunks))
         
-        # Only append to view if not in grep mode or if it matches
         if self.btn_grep.isChecked() and self.search_edit.text():
             if not self._line_matches(text, self.search_edit.text()):
                 self._visible_line_count += 1
@@ -455,7 +452,6 @@ class LogcatTab(QWidget):
             self.log_view.ensureCursorVisible()
     
     def _render_line_to_view(self, text: str, chunks: list):
-        """Render a parsed line to the log view."""
         cursor = self.log_view.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
 
@@ -474,7 +470,6 @@ class LogcatTab(QWidget):
         cursor.insertText("\n", fmt_nl)
     
     def _line_matches(self, text: str, query: str) -> bool:
-        """Check if a line matches the search query."""
         if not query:
             return True
         try:
@@ -489,14 +484,10 @@ class LogcatTab(QWidget):
             return False
     
     def _apply_grep_filter(self):
-        """Re-render log view with grep filter applied."""
         query = self.search_edit.text()
         grep_mode = self.btn_grep.isChecked()
         
-        # Block signals to prevent multiple updates
         self.log_view.blockSignals(True)
-        
-        # Clear and rebuild
         self.log_view.clear()
         self._match_positions = []
         self._match_idx = 0
@@ -509,18 +500,14 @@ class LogcatTab(QWidget):
             self._render_line_to_view(text, chunks)
         
         self.log_view.blockSignals(False)
-        
-        # Apply highlights
         self._apply_highlights(query)
         self._update_line_count_label()
         
-        # Scroll to bottom
         if self.btn_autoscroll.isChecked():
             scrollbar = self.log_view.verticalScrollBar()
             scrollbar.setValue(scrollbar.maximum())
 
     def _apply_highlights(self, query: str):
-        """Apply highlight selections for search query."""
         if not query:
             self.log_view.setExtraSelections([])
             self._match_positions = []
@@ -550,28 +537,14 @@ class LogcatTab(QWidget):
         self._update_line_count_label()
 
     def _update_line_count_label(self):
-        """Update the match count label with filtered line count."""
-        displayed = self._total_lines - self._visible_line_count
         count = len(self._match_positions)
         if count > 0:
             self.lbl_match.setText(f"{min(self._match_idx + 1, count)} / {count}")
         else:
-            self.lbl_match.setText(f"0 / 0")
+            self.lbl_match.setText("0 / 0")
         self.status_changed.emit()
 
-    # ── Search / highlight ────────────────────────────────────────────────────
-
-    def _on_search_changed(self):
-        if self.btn_grep.isChecked():
-            self._apply_grep_filter()
-        else:
-            # Grep mode off - restore all lines
-            self._restore_all_lines()
-            query = self.search_edit.text()
-            self._apply_highlights(query)
-    
     def _restore_all_lines(self):
-        """Restore all stored lines to the view (exit grep filter)."""
         self.log_view.blockSignals(True)
         self.log_view.clear()
         self._match_positions = []
@@ -584,9 +557,18 @@ class LogcatTab(QWidget):
         self.log_view.blockSignals(False)
         self.status_changed.emit()
         
-        # Scroll to bottom
         scrollbar = self.log_view.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+
+    # ── Search / highlight ────────────────────────────────────────────────────
+
+    def _on_search_changed(self):
+        if self.btn_grep.isChecked():
+            self._apply_grep_filter()
+        else:
+            self._restore_all_lines()
+            query = self.search_edit.text()
+            self._apply_highlights(query)
 
     @staticmethod
     def _make_extra(cursor, fmt) -> "QTextEdit.ExtraSelection":
