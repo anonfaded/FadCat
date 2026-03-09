@@ -565,8 +565,28 @@ class LogcatTab(QWidget):
         if self.btn_grep.isChecked():
             self._apply_grep_filter()
         else:
+            # Grep mode off - restore all lines
+            self._restore_all_lines()
             query = self.search_edit.text()
             self._apply_highlights(query)
+    
+    def _restore_all_lines(self):
+        """Restore all stored lines to the view (exit grep filter)."""
+        self.log_view.blockSignals(True)
+        self.log_view.clear()
+        self._match_positions = []
+        self._match_idx = 0
+        self._visible_line_count = 0
+        
+        for text, chunks in self._raw_lines:
+            self._render_line_to_view(text, chunks)
+        
+        self.log_view.blockSignals(False)
+        self.status_changed.emit()
+        
+        # Scroll to bottom
+        scrollbar = self.log_view.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
     @staticmethod
     def _make_extra(cursor, fmt) -> "QTextEdit.ExtraSelection":
