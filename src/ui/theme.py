@@ -314,7 +314,7 @@ QComboBox {
     color: #E8E8E8;
     border: 1px solid #333333;
     border-radius: 5px;
-    padding: 6px 12px;
+    padding: 6px 28px 6px 12px;
     font-size: 13px;
     qproperty-cursor: LinkingHandCursor;
 }

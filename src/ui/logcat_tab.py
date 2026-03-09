@@ -231,7 +231,7 @@ class LogcatTab(QWidget):
         self.btn_case.setProperty("role", "toggle")
         self.btn_case.setCheckable(True)
         self.btn_case.setToolTip("Case sensitive")
-        self.btn_case.setFixedSize(36, 34)
+        self.btn_case.setFixedSize(44, 34)
         self.btn_case.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_case, stretch=0)
 
@@ -239,7 +239,7 @@ class LogcatTab(QWidget):
         self.btn_regex.setProperty("role", "toggle")
         self.btn_regex.setCheckable(True)
         self.btn_regex.setToolTip("Regular expression")
-        self.btn_regex.setFixedSize(36, 34)
+        self.btn_regex.setFixedSize(44, 34)
         self.btn_regex.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_regex, stretch=0)
 
@@ -248,7 +248,7 @@ class LogcatTab(QWidget):
         self.btn_grep.setProperty("role", "toggle")
         self.btn_grep.setCheckable(True)
         self.btn_grep.setToolTip("Grep mode - hide non-matching lines (⌥G)")
-        self.btn_grep.setMinimumWidth(80)
+        self.btn_grep.setMinimumWidth(95)
         self.btn_grep.setFixedHeight(34)
         self.btn_grep.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_grep, stretch=0)
@@ -260,7 +260,7 @@ class LogcatTab(QWidget):
         btn_prev.setIcon(icons.icon_up())
         btn_prev.setProperty("role", "nav-btn")
         btn_prev.setToolTip("Previous match (⇧F3)")
-        btn_prev.setFixedSize(32, 34)
+        btn_prev.setFixedSize(34, 34)
         btn_prev.clicked.connect(self._prev_match)
         h.addWidget(btn_prev, stretch=0)
 
@@ -268,12 +268,12 @@ class LogcatTab(QWidget):
         btn_next.setIcon(icons.icon_down())
         btn_next.setProperty("role", "nav-btn")
         btn_next.setToolTip("Next match (F3)")
-        btn_next.setFixedSize(32, 34)
+        btn_next.setFixedSize(34, 34)
         btn_next.clicked.connect(self._next_match)
         h.addWidget(btn_next, stretch=0)
 
         self.lbl_match = QLabel("0 / 0")
-        self.lbl_match.setStyleSheet("color: #888888; font-size: 11px; min-width: 45px;")
+        self.lbl_match.setStyleSheet("color: #888888; font-size: 11px; min-width: 50px;")
         self.lbl_match.setAlignment(Qt.AlignmentFlag.AlignCenter)
         h.addWidget(self.lbl_match, stretch=0)
 
@@ -281,19 +281,21 @@ class LogcatTab(QWidget):
 
         # Options
         self.btn_autoscroll = QPushButton("Auto-scroll")
+        self.btn_autoscroll.setIcon(icons.icon_autoscroll())
         self.btn_autoscroll.setProperty("role", "toggle")
         self.btn_autoscroll.setCheckable(True)
         self.btn_autoscroll.setChecked(True)
         self.btn_autoscroll.setFixedHeight(34)
-        self.btn_autoscroll.setMinimumWidth(85)
+        self.btn_autoscroll.setMinimumWidth(110)
         h.addWidget(self.btn_autoscroll, stretch=0)
 
         self.btn_wrap = QPushButton("Wrap")
+        self.btn_wrap.setIcon(icons.icon_wrap())
         self.btn_wrap.setProperty("role", "toggle")
         self.btn_wrap.setCheckable(True)
         self.btn_wrap.setChecked(False)
         self.btn_wrap.setFixedHeight(34)
-        self.btn_wrap.setMinimumWidth(60)
+        self.btn_wrap.setMinimumWidth(85)
         self.btn_wrap.toggled.connect(self._toggle_wrap)
         h.addWidget(self.btn_wrap, stretch=0)
 

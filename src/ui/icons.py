@@ -38,18 +38,19 @@ def icon_stop() -> QIcon:
 
 
 def icon_refresh() -> QIcon:
-    """Circular refresh arrow - original style."""
+    """Circular refresh arrow - better gap and head."""
     def draw(painter):
         pen = QPen(QColor("#FFFFFF"), 2)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        # Draw arc
-        painter.drawArc(3, 3, 18, 18, 30 * 16, -270 * 16)
+        # Draw arc with clear gap
+        painter.drawArc(4, 4, 16, 16, 40 * 16, 280 * 16)
         # Arrow head
         painter.setBrush(QBrush(QColor("#FFFFFF")))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawPolygon(QPolygon([QPoint(19, 5), QPoint(21, 9), QPoint(16, 7)]))
+        head = QPolygon([QPoint(16, 4), QPoint(22, 6), QPoint(18, 10)])
+        painter.drawPolygon(head)
     return _create_icon(draw)
 
 
@@ -92,7 +93,7 @@ def icon_copy() -> QIcon:
 
 
 def icon_save() -> QIcon:
-    """Modern save icon - floppy/diskette style but cleaner."""
+    """Modern save icon - high contrast."""
     def draw(painter):
         painter.setBrush(QBrush(QColor("#FFFFFF")))
         painter.setPen(Qt.PenStyle.NoPen)
@@ -105,27 +106,73 @@ def icon_save() -> QIcon:
         path.lineTo(4, 21)
         path.closeSubpath()
         painter.drawPath(path)
-        # Metal shutter area
-        painter.setBrush(QBrush(QColor("#242424")))
-        painter.drawRoundedRect(7, 3, 10, 7, 1, 1)
-        # Label area
-        painter.drawRoundedRect(6, 13, 12, 8, 1, 1)
+        # Cutouts for detail
+        painter.setBrush(QBrush(QColor("#2A2A2A")))
+        painter.drawRoundedRect(7, 3, 10, 6, 1, 1) # Top shutter
+        painter.drawRoundedRect(7, 14, 10, 7, 1, 1) # Bottom label
         # Shutter notch
         painter.setBrush(QBrush(QColor("#FFFFFF")))
-        painter.drawRect(13, 4, 2, 4)
+        painter.drawRect(QRectF(13, 4, 2, 3))
     return _create_icon(draw)
 
 
 def icon_settings() -> QIcon:
-    """Gear/settings icon."""
+    """Modern gear icon - more standard look."""
     def draw(painter):
         painter.setBrush(QBrush(QColor("#FFFFFF")))
         painter.setPen(Qt.PenStyle.NoPen)
-        # Outer gear circle
-        painter.drawEllipse(QPoint(12, 12), 9, 9)
-        # Inner hole
+        # Outer teeth
+        for i in range(8):
+            painter.save()
+            painter.translate(12, 12)
+            painter.rotate(i * 45)
+            painter.drawRoundedRect(-3, -10, 6, 4, 1, 1)
+            painter.restore()
+        # Main body
+        painter.drawEllipse(QPoint(12, 12), 7, 7)
+        # Hole
         painter.setBrush(QBrush(QColor("#242424")))
-        painter.drawEllipse(QPoint(12, 12), 4, 4)
+        painter.drawEllipse(QPoint(12, 12), 3, 3)
+    return _create_icon(draw)
+
+
+def icon_autoscroll() -> QIcon:
+    """Down arrow with a stop line."""
+    def draw(painter):
+        pen = QPen(QColor("#FFFFFF"), 2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        # Arrow shaft
+        painter.drawLine(12, 4, 12, 16)
+        # Arrow head
+        painter.setBrush(QBrush(QColor("#FFFFFF")))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawPolygon(QPolygon([QPoint(8, 12), QPoint(16, 12), QPoint(12, 18)]))
+        # Stop line
+        painter.setPen(pen)
+        painter.drawLine(6, 20, 18, 20)
+    return _create_icon(draw)
+
+
+def icon_wrap() -> QIcon:
+    """Return arrow for line wrap."""
+    def draw(painter):
+        pen = QPen(QColor("#FFFFFF"), 2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Path: straight then curves back
+        path = QPainterPath()
+        path.moveTo(4, 8)
+        path.lineTo(16, 8)
+        path.arcTo(QRectF(12, 8, 8, 8), 90, -180)
+        path.lineTo(6, 16)
+        painter.drawPath(path)
+        # Arrow head at end of return
+        painter.setBrush(QBrush(QColor("#FFFFFF")))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawPolygon(QPolygon([QPoint(8, 13), QPoint(8, 19), QPoint(4, 16)]))
     return _create_icon(draw)
 
 

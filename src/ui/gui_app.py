@@ -156,7 +156,8 @@ class LogcatGUI(QMainWindow):
         self.tabs.setTabsClosable(False)  # Handle close manually via custom tab bar
         self.tabs.setMovable(True)
         self.tabs.setUsesScrollButtons(True)
-        self.tabs.setDocumentMode(False)
+        self.tabs.setDocumentMode(True)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         
         # Use custom tab bar with proper close buttons
         custom_tabbar = CustomTabBar()
