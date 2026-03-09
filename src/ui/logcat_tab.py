@@ -105,6 +105,8 @@ class LogcatTab(QWidget):
         self._match_positions: list[int] = []
         self._match_idx = 0
         self._total_lines = 0
+        self._raw_lines: list[tuple[str, list]] = []  # (raw_text, parsed_chunks)
+        self._visible_line_count = 0
 
         self._build_ui()
 
@@ -433,11 +435,30 @@ class LogcatTab(QWidget):
     def _append_line(self, raw: str):
         self._total_lines += 1
         text = raw.rstrip("\n")
-
+        chunks = _parse_ansi(text)
+        
+        # Store raw line for grep filtering
+        self._raw_lines.append((text, chunks))
+        
+        # Only append to view if not in grep mode or if it matches
+        if self.btn_grep.isChecked() and self.search_edit.text():
+            if not self._line_matches(text, self.search_edit.text()):
+                self._visible_line_count += 1
+                self._update_line_count_label()
+                return
+            self._render_line_to_view(text, chunks)
+        else:
+            self._render_line_to_view(text, chunks)
+        
+        if self.btn_autoscroll.isChecked():
+            self.log_view.setTextCursor(self.log_view.textCursor())
+            self.log_view.ensureCursorVisible()
+    
+    def _render_line_to_view(self, text: str, chunks: list):
+        """Render a parsed line to the log view."""
         cursor = self.log_view.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
 
-        chunks = _parse_ansi(text)
         for chunk_text, fg, bg, bold, italic in chunks:
             fmt = QTextCharFormat()
             fmt.setForeground(fg)
@@ -451,41 +472,101 @@ class LogcatTab(QWidget):
 
         fmt_nl = QTextCharFormat()
         cursor.insertText("\n", fmt_nl)
-
-        if self.btn_autoscroll.isChecked():
-            self.log_view.setTextCursor(cursor)
-            self.log_view.ensureCursorVisible()
-
-    # ── Search / highlight ────────────────────────────────────────────────────
-
-    def _on_search_changed(self):
+    
+    def _line_matches(self, text: str, query: str) -> bool:
+        """Check if a line matches the search query."""
+        if not query:
+            return True
+        try:
+            if self.btn_regex.isChecked():
+                flags = 0 if self.btn_case.isChecked() else re.IGNORECASE
+                return bool(re.search(query, text, flags))
+            else:
+                if self.btn_case.isChecked():
+                    return query in text
+                return query.lower() in text.lower()
+        except re.error:
+            return False
+    
+    def _apply_grep_filter(self):
+        """Re-render log view with grep filter applied."""
         query = self.search_edit.text()
+        grep_mode = self.btn_grep.isChecked()
+        
+        # Block signals to prevent multiple updates
+        self.log_view.blockSignals(True)
+        
+        # Clear and rebuild
+        self.log_view.clear()
         self._match_positions = []
         self._match_idx = 0
+        self._visible_line_count = 0
+        
+        for text, chunks in self._raw_lines:
+            if grep_mode and query and not self._line_matches(text, query):
+                self._visible_line_count += 1
+                continue
+            self._render_line_to_view(text, chunks)
+        
+        self.log_view.blockSignals(False)
+        
+        # Apply highlights
+        self._apply_highlights(query)
+        self._update_line_count_label()
+        
+        # Scroll to bottom
+        if self.btn_autoscroll.isChecked():
+            scrollbar = self.log_view.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
 
+    def _apply_highlights(self, query: str):
+        """Apply highlight selections for search query."""
+        if not query:
+            self.log_view.setExtraSelections([])
+            self._match_positions = []
+            self._match_idx = 0
+            self._update_line_count_label()
+            return
+        
+        from PyQt6.QtGui import QTextDocument
+        find_flags = QTextDocument.FindFlag(0)
+        if self.btn_case.isChecked():
+            find_flags |= QTextDocument.FindFlag.FindCaseSensitively
+
+        doc = self.log_view.document()
+        cursor = doc.find(query, 0, find_flags)
         extra = []
-        if query:
-            from PyQt6.QtGui import QTextDocument
-            find_flags = QTextDocument.FindFlag(0)
-            if self.btn_case.isChecked():
-                find_flags |= QTextDocument.FindFlag.FindCaseSensitively
-
-            doc = self.log_view.document()
-            cursor = doc.find(query, 0, find_flags)
-            while not cursor.isNull():
-                fmt = QTextCharFormat()
-                fmt.setBackground(QColor("#3D1510"))
-                fmt.setForeground(QColor("#FFD050"))
-                self._match_positions.append(cursor.position())
-                extra.append((cursor, fmt))
-                cursor = doc.find(query, cursor, find_flags)
+        while not cursor.isNull():
+            fmt = QTextCharFormat()
+            fmt.setBackground(QColor("#3D1510"))
+            fmt.setForeground(QColor("#FFD050"))
+            self._match_positions.append(cursor.position())
+            extra.append((cursor, fmt))
+            cursor = doc.find(query, cursor, find_flags)
 
         self.log_view.setExtraSelections(
             [self._make_extra(c, f) for c, f in extra]
         )
+        self._update_line_count_label()
+
+    def _update_line_count_label(self):
+        """Update the match count label with filtered line count."""
+        displayed = self._total_lines - self._visible_line_count
         count = len(self._match_positions)
-        cur_label = f"{min(self._match_idx + 1, count)} / {count}" if count else "0 / 0"
-        self.lbl_match.setText(cur_label)
+        if count > 0:
+            self.lbl_match.setText(f"{min(self._match_idx + 1, count)} / {count}")
+        else:
+            self.lbl_match.setText(f"0 / 0")
+        self.status_changed.emit()
+
+    # ── Search / highlight ────────────────────────────────────────────────────
+
+    def _on_search_changed(self):
+        if self.btn_grep.isChecked():
+            self._apply_grep_filter()
+        else:
+            query = self.search_edit.text()
+            self._apply_highlights(query)
 
     @staticmethod
     def _make_extra(cursor, fmt) -> "QTextEdit.ExtraSelection":
@@ -522,7 +603,10 @@ class LogcatTab(QWidget):
     def clear_log(self):
         self.log_view.clear()
         self._total_lines = 0
+        self._raw_lines.clear()
+        self._visible_line_count = 0
         self._match_positions = []
+        self._match_idx = 0
         self.lbl_match.setText("0 / 0")
         self.status_changed.emit()
 
@@ -545,7 +629,7 @@ class LogcatTab(QWidget):
 
     @property
     def line_count(self) -> int:
-        return self._total_lines
+        return self._total_lines - self._visible_line_count
 
     @property
     def current_device(self) -> str:
