@@ -153,16 +153,18 @@ class LogcatGUI(QMainWindow):
     def _build_central(self):
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
-        self.tabs.setTabsClosable(False)  # Handle close manually via custom tab bar
+        self.tabs.setTabsClosable(False)
         self.tabs.setMovable(True)
         self.tabs.setUsesScrollButtons(True)
-        self.tabs.setDocumentMode(True)
+        self.tabs.setDocumentMode(False)
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
+        self.tabs.setTabBarAutoHide(False)
         
         # Use custom tab bar with proper close buttons
         custom_tabbar = CustomTabBar()
         custom_tabbar.tabCloseRequested.connect(self._on_tab_close_requested)
-        custom_tabbar.setExpanding(False)   # Left-align tabs instead of stretching them
+        custom_tabbar.setUsesScrollButtons(True)
+        custom_tabbar.setExpanding(False)
         self.tabs.setTabBar(custom_tabbar)
         
         self.tabs.currentChanged.connect(self._refresh_statusbar)
