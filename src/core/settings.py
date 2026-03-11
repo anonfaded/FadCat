@@ -56,7 +56,8 @@ DEFAULT_SETTINGS = {
     "show_line_numbers": True,  # Show line numbers in log view
     "log_view_max_lines": 5000, # 0 = unlimited (may cause lag)
     "save_screen_only": True,   # Save only visible logs from the UI
-    "color_line_by_tag": False  # Color full line using tag color (when available)
+    "color_line_by_tag": True,  # Color full line using tag color (when available)
+    "tag_padding": 16           # Minimum tag column width (no truncation)
 }
 
 class SettingsManager:
@@ -179,6 +180,17 @@ class Settings:
     @color_line_by_tag.setter
     def color_line_by_tag(self, value: bool):
         self._data["color_line_by_tag"] = bool(value)
+
+    @property
+    def tag_padding(self) -> int:
+        return int(self._data.get("tag_padding", 16))
+
+    @tag_padding.setter
+    def tag_padding(self, value: int):
+        try:
+            self._data["tag_padding"] = max(4, int(value))
+        except Exception:
+            self._data["tag_padding"] = 16
     
     def save(self):
         SettingsManager.save(self._data)

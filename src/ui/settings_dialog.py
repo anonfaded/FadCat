@@ -194,6 +194,24 @@ class SettingsDialog(QDialog):
         self.color_line_by_tag_check.stateChanged.connect(self._apply_display_changes)
         grp_lines_lay.addWidget(self.color_line_by_tag_check)
 
+        pad_row = QHBoxLayout()
+        pad_label = QLabel("Tag padding (min width):")
+        pad_row.addWidget(pad_label)
+        self.tag_padding_slider = QSlider(Qt.Orientation.Horizontal)
+        self.tag_padding_slider.setRange(4, 80)
+        self.tag_padding_slider.setSingleStep(2)
+        self.tag_padding_slider.setPageStep(4)
+        self.tag_padding_slider.setToolTip(
+            "Minimum width for the tag column. Long tags are never truncated; they just extend past this width."
+        )
+        self.tag_padding_slider.valueChanged.connect(self._apply_display_changes)
+        pad_row.addWidget(self.tag_padding_slider, stretch=1)
+        self.tag_padding_value = QLabel("16")
+        self.tag_padding_value.setMinimumWidth(28)
+        self.tag_padding_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        pad_row.addWidget(self.tag_padding_value)
+        grp_lines_lay.addLayout(pad_row)
+
         disp_lay.addWidget(grp_lines)
         disp_lay.addStretch()
 
@@ -221,6 +239,7 @@ class SettingsDialog(QDialog):
         self.max_lines_spin.blockSignals(True)
         self.save_screen_only_check.blockSignals(True)
         self.color_line_by_tag_check.blockSignals(True)
+        self.tag_padding_slider.blockSignals(True)
         
         # Packages
         self.pkg_list.clear()
@@ -241,6 +260,8 @@ class SettingsDialog(QDialog):
         self.max_lines_spin.setValue(self._settings.log_view_max_lines)
         self.save_screen_only_check.setChecked(self._settings.save_screen_only)
         self.color_line_by_tag_check.setChecked(self._settings.color_line_by_tag)
+        self.tag_padding_slider.setValue(self._settings.tag_padding)
+        self.tag_padding_value.setText(str(self._settings.tag_padding))
         
         # UNBLOCK SIGNALS now that populate is done
         self.watermark_check.blockSignals(False)
@@ -249,6 +270,7 @@ class SettingsDialog(QDialog):
         self.max_lines_spin.blockSignals(False)
         self.save_screen_only_check.blockSignals(False)
         self.color_line_by_tag_check.blockSignals(False)
+        self.tag_padding_slider.blockSignals(False)
             
         self._refresh_default_combo()
 
@@ -317,6 +339,8 @@ class SettingsDialog(QDialog):
         self._settings.log_view_max_lines = self.max_lines_spin.value()
         self._settings.save_screen_only = self.save_screen_only_check.isChecked()
         self._settings.color_line_by_tag = self.color_line_by_tag_check.isChecked()
+        self._settings.tag_padding = self.tag_padding_slider.value()
+        self.tag_padding_value.setText(str(self.tag_padding_slider.value()))
         # SAVE IMMEDIATELY so real-time changes persist
         self._settings.save()
         self.settings_changed.emit()

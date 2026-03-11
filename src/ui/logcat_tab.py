@@ -66,50 +66,35 @@ class LineNumberArea(QWidget):
         painter = QPainter(self)
         painter.fillRect(event.rect(), QColor("#1a1a1a"))
         
-        # Get document and viewport properties
         document = self.text_edit.document()
         viewport_height = self.text_edit.viewport().height()
-        
-        # Font and metrics (synchronized with editor)
-        font = self.text_edit.font()
-        fm = self.text_edit.fontMetrics()
-        
-        painter.setFont(font)
+        painter.setFont(self.text_edit.font())
         painter.setPen(QColor("#555555"))
-        
-        # Start from the actual first block of the document
-        block = document.firstBlock()
-        line_number = 1
-        
-        # Iterate through all blocks and draw only visible ones
+
+        layout = document.documentLayout()
+        scroll_y = self.text_edit.verticalScrollBar().value()
+        cursor = self.text_edit.cursorForPosition(QPoint(0, 0))
+        block = cursor.block()
+        line_number = block.blockNumber() + 1
+
         while block.isValid():
-            # Get viewport coordinates for this block
-            cursor = self.text_edit.textCursor()
-            cursor.setPosition(block.position())
-            cursor_rect = self.text_edit.cursorRect(cursor)
-            
-            block_y = cursor_rect.top()
-            block_height = cursor_rect.height()
-            
-            # Only draw if this block is (at least partially) visible in viewport
-            if block_y >= -block_height and block_y < viewport_height:
-                # Production approach: Draw in exact rect that matches text row
-                # The rect starts at the block's Y and has the block's height
-                # This ensures perfect alignment with the text rows
-                line_rect = QRect(0, block_y, self.width() - 4, block_height)
+            rect = layout.blockBoundingRect(block)
+            block_y = rect.top() - scroll_y
+            block_height = rect.height()
+
+            if block_y > viewport_height:
+                break
+            if block_y + block_height >= 0:
+                line_rect = QRect(0, int(block_y), self.width() - 4, int(block_height))
                 painter.drawText(
                     line_rect,
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                     f"{line_number}"
                 )
-            
-            # Early exit optimization: if block is below viewport, stop iterating
-            if block_y > viewport_height:
-                break
-            
+
             block = block.next()
             line_number += 1
-        
+
         painter.end()
 
 
@@ -390,12 +375,25 @@ def _line_color_from_chunks(chunks: list[tuple[str, QColor, QColor, bool, bool]]
     return None
 
 
+def _contrast_color(color: QColor) -> QColor:
+    r = color.red()
+    g = color.green()
+    b = color.blue()
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+    return QColor("#111111") if luminance > 0.6 else QColor("#FFFFFF")
+
+
 def _extract_tag(text: str) -> str | None:
     clean = _ANSI_STRIP.sub("", text).lstrip()
     m = _TAG_RE.match(clean)
-    if not m:
-        return None
-    return m.group(1).strip()
+    if m:
+        return m.group(1).strip()
+    m2 = _LEVEL_RE.search(clean)
+    if m2:
+        left = clean[:m2.start()].rstrip()
+        if left:
+            return left
+    return None
 
 
 def _extract_level(text: str) -> str | None:
@@ -464,8 +462,13 @@ class LogcatTab(QWidget):
         self._rebuild_grep = False
         self._rebuild_highlight = False
         self._color_line_by_tag = self._settings.color_line_by_tag
+        self._last_tag_color: QColor | None = None
         self._match_ranges: list[tuple[int, int]] = []
         self._base_selections: list[QTextEdit.ExtraSelection] = []
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(140)
+        self._search_timer.timeout.connect(self._apply_search_now)
 
         self._build_ui()
         self._setup_shortcuts()
@@ -1060,6 +1063,13 @@ class LogcatTab(QWidget):
             cmd.extend(['-s', device])
 
         settings = SettingsManager.load()
+        tag_padding = settings.get("tag_padding", 16)
+        try:
+            tag_padding = int(tag_padding)
+        except Exception:
+            tag_padding = 16
+        if tag_padding >= 4:
+            cmd.extend(['-w', str(tag_padding)])
         ignored_tags = settings.get("ignored_tags", [])
         for tag in ignored_tags:
             cmd.extend(['-i', tag])
@@ -1129,6 +1139,14 @@ class LogcatTab(QWidget):
                 tag = _extract_tag(text)
                 level = _extract_level(text)
                 line_color = _line_color_from_chunks(chunks)
+                if tag:
+                    if line_color:
+                        self._last_tag_color = line_color
+                else:
+                    if line_color and self._last_tag_color is None:
+                        self._last_tag_color = line_color
+                    if self._last_tag_color is not None:
+                        line_color = self._last_tag_color
                 self._raw_lines.append((text, chunks, tag, level, line_color))
 
                 if self.btn_grep.isChecked() and self.search_edit.text():
@@ -1171,12 +1189,15 @@ class LogcatTab(QWidget):
         use_line_color = self._color_line_by_tag and line_color is not None
         for chunk_text, fg, bg, bold, italic in chunks:
             fmt = QTextCharFormat()
-            if use_line_color and fg == _DEFAULT_FG and bg == _DEFAULT_BG:
+            if use_line_color and bg != _DEFAULT_BG:
+                fmt.setBackground(line_color)
+                fmt.setForeground(_contrast_color(line_color))
+            elif use_line_color and fg == _DEFAULT_FG and bg == _DEFAULT_BG:
                 fmt.setForeground(line_color)
             else:
                 fmt.setForeground(fg)
-            if bg != _DEFAULT_BG:
-                fmt.setBackground(bg)
+                if bg != _DEFAULT_BG:
+                    fmt.setBackground(bg)
             if bold:
                 fmt.setFontWeight(QFont.Weight.Bold)
             if italic:
@@ -1359,6 +1380,9 @@ class LogcatTab(QWidget):
     # ── Search / highlight ────────────────────────────────────────────────────
 
     def _on_search_changed(self):
+        self._search_timer.start()
+
+    def _apply_search_now(self):
         if self.btn_grep.isChecked():
             self._apply_grep_filter()
         else:

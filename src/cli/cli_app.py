@@ -37,10 +37,22 @@ class LogcatCLI:
         
         pidcat_path = get_pidcat_path()
         
+        tag_padding = self.settings.get("tag_padding", 16)
+        try:
+            tag_padding = int(tag_padding)
+        except Exception:
+            tag_padding = 16
+
         if chosen:
-            cmd = [sys.executable, pidcat_path, '-s', chosen, package]
+            cmd = [sys.executable, pidcat_path, '-s', chosen]
+            if tag_padding >= 4:
+                cmd += ['-w', str(tag_padding)]
+            cmd.append(package)
         else:
-            cmd = [sys.executable, pidcat_path, package]
+            cmd = [sys.executable, pidcat_path]
+            if tag_padding >= 4:
+                cmd += ['-w', str(tag_padding)]
+            cmd.append(package)
         
         # Add ignored tags from settings
         ignored_tags = self.settings.get("ignored_tags", [])
