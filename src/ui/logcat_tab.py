@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect, QEvent
 from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon, QBrush, QKeySequence, QShortcut, QPixmap
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
@@ -190,6 +190,7 @@ class PackageComboBox(CustomComboBox):
         self.setEditable(True)
         if self.lineEdit():
             self.lineEdit().setReadOnly(True)
+            self.lineEdit().installEventFilter(self)
         self._popup = QFrame(None, Qt.WindowType.Popup)
         self._popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._popup.setObjectName("pkgPopup")
@@ -255,6 +256,14 @@ class PackageComboBox(CustomComboBox):
     def hidePopup(self):
         if self._popup.isVisible():
             self._popup.hide()
+
+    def eventFilter(self, obj, event):
+        if obj is self.lineEdit() and event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton:
+                if not self._popup.isVisible():
+                    self.showPopup()
+                return True
+        return super().eventFilter(obj, event)
 
     def _on_item_clicked(self, item):
         if not item or item.data(Qt.ItemDataRole.UserRole) == "header":
