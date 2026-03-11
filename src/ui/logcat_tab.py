@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QComboBox, QPushButton, QLineEdit,
     QTextEdit, QFileDialog, QApplication, QSizePolicy,
+    QListWidget, QListWidgetItem,
 )
 from PyQt6.QtSvg import QSvgRenderer
 
@@ -168,7 +169,119 @@ class CustomComboBox(QComboBox):
             painter.setBrush(QBrush(QColor("#E8302A")))
             painter.setPen(QColor("#E8302A"))
             painter.drawConvexPolygon(QPolygon(points))
+    
+    def mousePressEvent(self, event):
+        """Keep default focus handling; popup is shown on release."""
+        super().mousePressEvent(event)
 
+    def mouseReleaseEvent(self, event):
+        """Show dropdown menu when clicking anywhere on the combo box."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            if not self.view().isVisible():
+                self.showPopup()
+            return
+        super().mouseReleaseEvent(event)
+
+
+class PackageComboBox(CustomComboBox):
+    """ComboBox with a search bar inside the popup."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setEditable(True)
+        if self.lineEdit():
+            self.lineEdit().setReadOnly(True)
+        self._popup = QFrame(None, Qt.WindowType.Popup)
+        self._popup.setObjectName("pkgPopup")
+        self._popup.setStyleSheet(
+            "QFrame#pkgPopup { background: #1E1E1E; border: 1px solid #333333; }"
+        )
+        layout = QVBoxLayout(self._popup)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        self.search_edit = QLineEdit(self._popup)
+        self.search_edit.setPlaceholderText("Search packages...")
+        self.search_edit.setFixedHeight(28)
+        self.search_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.search_edit.setStyleSheet(
+            "QLineEdit { background: #2A2A2A; color: #E8E8E8; border: 1px solid #3A3A3A; padding: 4px 6px; }"
+        )
+        layout.addWidget(self.search_edit, stretch=0)
+
+        self._list_widget = QListWidget(self._popup)
+        self._list_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._list_widget.setStyleSheet(
+            "QListWidget { background: #1E1E1E; color: #E8E8E8; border: none; }"
+            "QListWidget::item:selected { background: #2A2A2A; }"
+        )
+        layout.addWidget(self._list_widget, stretch=1)
+
+        self._list_widget.itemClicked.connect(self._on_item_clicked)
+        self._all_top: list[str] = []
+        self._all_lower: list[str] = []
+
+    def showPopup(self):
+        if self._popup.isVisible():
+            return
+        # Size and position popup
+        width = max(self.width(), 280)
+        height = 320
+        pos = self.mapToGlobal(self.rect().bottomLeft())
+        self._popup.setGeometry(pos.x(), pos.y(), width, height)
+        self._popup.show()
+        # Reset filter on open so list is visible, then focus search
+        if self.search_edit.text():
+            self.search_edit.clear()
+        self.search_edit.setFocus()
+
+    def hidePopup(self):
+        if self._popup.isVisible():
+            self._popup.hide()
+
+    def _on_item_clicked(self, item):
+        if not item or item.data(Qt.ItemDataRole.UserRole) == "header":
+            return
+        self.setCurrentText(item.text())
+        self.hidePopup()
+
+    def set_sectioned_items(self, top_items: list[str], lower_items: list[str], filter_text: str):
+        self._all_top = list(top_items)
+        self._all_lower = list(lower_items)
+        self.apply_filter(filter_text)
+
+    def apply_filter(self, filter_text: str):
+        ftext = (filter_text or "").strip().lower()
+        self._list_widget.clear()
+
+        def add_header(title: str):
+            header = QListWidgetItem(title)
+            header.setData(Qt.ItemDataRole.UserRole, "header")
+            header.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            font = header.font()
+            font.setBold(True)
+            header.setFont(font)
+            header.setForeground(QColor("#E8302A"))
+            header.setToolTip("Section header. Use search to filter packages.")
+            self._list_widget.addItem(header)
+
+        def add_item(text: str):
+            item = QListWidgetItem(text)
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            if text == "Global":
+                item.setToolTip("Global: show all logs (no package filtering).")
+            self._list_widget.addItem(item)
+
+        top_matches = [p for p in self._all_top if not ftext or ftext in p.lower()]
+        if top_matches:
+            add_header("FadCat Packages")
+            for p in top_matches:
+                add_item(p)
+
+        lower_matches = [p for p in self._all_lower if not ftext or ftext in p.lower()]
+        if lower_matches:
+            add_header("Device Packages")
+            for p in lower_matches:
+                add_item(p)
 
 # ── ANSI colour table ─────────────────────────────────────────────────────────
 _ANSI_RESET = re.compile(r"\x1b\[([0-9;]*)m")
@@ -238,12 +351,18 @@ class LogcatTab(QWidget):
         self._raw_lines: list[tuple[str, list]] = []
         self._visible_line_count = 0
         self._settings = Settings()
+        self._pkg_filter_text = ""
+        self._pkg_settings: list[str] = []
+        self._pkg_device: list[str] = []
 
         self._build_ui()
         self._setup_shortcuts()
 
         # Connect device change to fetching packages
         self.device_combo.currentTextChanged.connect(self._on_device_changed)
+        
+        # Connect package selection to save it in settings
+        self.pkg_combo.currentTextChanged.connect(self._on_package_changed)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -295,13 +414,15 @@ class LogcatTab(QWidget):
         lbl_pkg.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         h.addWidget(lbl_pkg, stretch=0)
 
-        self.pkg_combo = CustomComboBox()
-        self.pkg_combo.setEditable(True)
+        self.pkg_combo = PackageComboBox()
         self.pkg_combo.setMinimumWidth(100)
         self.pkg_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.pkg_combo.setFixedHeight(34)
-        self.pkg_combo.setToolTip("Package name (empty = Global)")
-        self.pkg_combo.lineEdit().setPlaceholderText("Global")
+        self.pkg_combo.setToolTip("Package name (select 'Global' for all logs)")
+        if self.pkg_combo.lineEdit():
+            self.pkg_combo.lineEdit().setPlaceholderText("Select a package or Global")
+        # Search bar lives inside popup
+        self.pkg_combo.search_edit.textChanged.connect(self._on_pkg_filter_changed)
         self._load_packages()
         h.addWidget(self.pkg_combo, stretch=2)
 
@@ -526,6 +647,23 @@ class LogcatTab(QWidget):
         # Fetch packages from device
         QTimer.singleShot(100, self._fetch_device_packages)
 
+    def _on_package_changed(self, package: str):
+        """Save package selection to settings."""
+        pkg = (package or "").strip()
+        if not pkg or pkg.lower() == "global":
+            # Save empty/Global as empty string or remove from settings
+            self._settings.default_package = ""
+        else:
+            self._settings.default_package = pkg
+        self._settings.save()
+
+    def _selected_package(self) -> str:
+        """Return normalized package text; empty means Global."""
+        pkg = (self.pkg_combo.currentText() or "").strip()
+        if not pkg or pkg.lower() == "global":
+            return ""
+        return pkg
+
     def _fetch_device_packages(self):
         device = self.device_combo.currentText()
         if not device or device == "(no devices)":
@@ -539,29 +677,15 @@ class LogcatTab(QWidget):
                 pkgs = [line.split(":")[1].strip() for line in res.stdout.splitlines() if ":" in line]
                 pkgs.sort()
                 
-                current_pkg = self.pkg_combo.currentText()
-                self.pkg_combo.blockSignals(True)
-                self.pkg_combo.clear()
-                self.pkg_combo.addItem("") # Global
-                
-                # Add settings packages first
+                current_pkg = self._selected_package()
                 from src.core.settings import Settings
                 s = Settings()
-                for p in s.packages:
-                    if p not in pkgs:
-                        self.pkg_combo.addItem(p)
-                
-                # Add device packages
-                for p in pkgs:
-                    self.pkg_combo.addItem(p)
-                
-                idx = self.pkg_combo.findText(current_pkg)
-                if idx >= 0:
-                    self.pkg_combo.setCurrentIndex(idx)
-                else:
-                    self.pkg_combo.setEditText(current_pkg)
-                
-                self.pkg_combo.blockSignals(False)
+                self._rebuild_package_model(
+                    settings_pkgs=s.packages,
+                    device_pkgs=pkgs,
+                    current_pkg=current_pkg,
+                    filter_text=self._pkg_filter_text,
+                )
         except Exception:
             pass
 
@@ -570,23 +694,46 @@ class LogcatTab(QWidget):
     def _load_packages(self):
         from src.core.settings import Settings
         s = Settings()
-        self.pkg_combo.clear()
-        self.pkg_combo.addItem("") # Label as Global via placeholder
-        for p in s.packages:
-            self.pkg_combo.addItem(p)
-        if s.default_package:
-            idx = self.pkg_combo.findText(s.default_package)
-            if idx >= 0:
-                self.pkg_combo.setCurrentIndex(idx)
+        self._rebuild_package_model(
+            settings_pkgs=s.packages,
+            device_pkgs=[],
+            current_pkg=s.default_package,
+            filter_text=self._pkg_filter_text,
+        )
 
     def reload_packages(self):
-        current = self.pkg_combo.currentText()
+        current = self._selected_package()
         self._load_packages()
-        idx = self.pkg_combo.findText(current)
-        if idx >= 0:
-            self.pkg_combo.setCurrentIndex(idx)
-        else:
-            self.pkg_combo.setEditText(current)
+        self.pkg_combo.setCurrentText(current or "Global")
+
+    def _rebuild_package_model(self, settings_pkgs: list[str], device_pkgs: list[str], current_pkg: str, filter_text: str):
+        self.pkg_combo.blockSignals(True)
+        self._pkg_settings = list(settings_pkgs)
+        self._pkg_device = list(device_pkgs)
+
+        top_items = ["Global"] + [p for p in settings_pkgs if p and p != "Global"]
+        seen = set(settings_pkgs)
+        lower_items = [p for p in device_pkgs if p and p not in seen]
+
+        self.pkg_combo.set_sectioned_items(top_items, lower_items, filter_text)
+
+        # Restore selection or default to Global
+        target = (current_pkg or "").strip()
+        if not target:
+            target = "Global"
+
+        self.pkg_combo.setCurrentText(target)
+
+        self.pkg_combo.blockSignals(False)
+
+    def _on_pkg_filter_changed(self, text: str):
+        self._pkg_filter_text = (text or "").strip()
+        self._rebuild_package_model(
+            settings_pkgs=self._pkg_settings,
+            device_pkgs=self._pkg_device,
+            current_pkg=self._selected_package(),
+            filter_text=self._pkg_filter_text,
+        )
 
     # ── Capture ───────────────────────────────────────────────────────────────
 
@@ -602,7 +749,7 @@ class LogcatTab(QWidget):
         device = self.device_combo.currentText()
         if not device or device == "(no devices)":
             return
-        package = self.pkg_combo.currentText().strip()
+        package = self._selected_package()
         self._running = True
         
         # Update Toggle Button
@@ -620,7 +767,7 @@ class LogcatTab(QWidget):
 
         pidcat_path = get_pidcat_path()
         
-        # If package is empty, pidcat shows everything (Global)
+        # If package is empty, pidcat shows everything (no filtering)
         cmd = [_sys.executable, pidcat_path]
         if package:
             cmd.append(package)
@@ -895,4 +1042,4 @@ class LogcatTab(QWidget):
 
     @property
     def current_package(self) -> str:
-        return self.pkg_combo.currentText().strip()
+        return self._selected_package()
