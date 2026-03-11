@@ -48,10 +48,18 @@ class LineNumberArea(QWidget):
         self.setStyleSheet(
             "QWidget { background-color: #1a1a1a; color: #555555; border-right: 1px solid #333333; padding: 0px; margin: 0px; }"
         )
+        self.update_width()
+
+    def update_width(self):
+        doc = self.text_edit.document()
+        digits = len(str(max(1, doc.blockCount())))
+        fm = self.text_edit.fontMetrics()
+        width = fm.horizontalAdvance("9" * digits) + 10
+        self.setFixedWidth(width)
     
     def sizeHint(self) -> QSize:
         """Return fixed width, height matches parent."""
-        return QSize(50, self.text_edit.height())
+        return QSize(self.width(), self.text_edit.height())
     
     def paintEvent(self, event):
         """Paint line numbers using document blocks and cursor positioning."""
@@ -596,30 +604,32 @@ class LogcatTab(QWidget):
         chip_lay.setContentsMargins(0, 0, 0, 0)
         chip_lay.setSpacing(4)
 
-        def add_level_chip(label: str, color: str, text: str, tooltip: str):
-            btn = QPushButton(text)
+        def add_level_chip(label: str, color: str, icon_fn, tooltip: str):
+            btn = QPushButton()
             btn.setCheckable(True)
             btn.setFixedHeight(24)
-            btn.setFixedWidth(30)
+            btn.setFixedWidth(26)
+            btn.setIcon(icon_fn())
+            btn.setIconSize(QSize(12, 12))
             btn.setStyleSheet(
-                "QPushButton { background: #2A2A2A; color: #CCCCCC; border: 1px solid #3A3A3A; border-radius: 8px; font-size: 12px; }"
+                "QPushButton { background: #2A2A2A; color: #CCCCCC; border: 1px solid #3A3A3A; border-radius: 8px; padding: 0px; }"
                 f"QPushButton:checked {{ background: {color}; color: #111111; border: 1px solid {color}; }}"
             )
             btn.setToolTip(tooltip)
             btn.toggled.connect(lambda checked, lvl=label: self._toggle_level_filter(lvl, checked))
             chip_lay.addWidget(btn)
 
-        add_level_chip("V", "#8A8A8A", "○",
-                       "Verbose: extremely detailed messages. Turn this on only when you need very noisy, low‑level logs.")
-        add_level_chip("D", "#4A9FE8", "🔧",
+        add_level_chip("V", "#8A8A8A", icons.icon_level_v,
+                       "Verbose: extremely detailed messages. Turn this on only when you need very noisy, low-level logs.")
+        add_level_chip("D", "#4A9FE8", icons.icon_level_d,
                        "Debug: developer diagnostics and troubleshooting details. Useful while investigating issues.")
-        add_level_chip("I", "#3CB371", "ℹ",
-                       "Info: normal app status and milestones. Good for general understanding of what the app is doing.")
-        add_level_chip("W", "#E8A020", "⚠",
+        add_level_chip("I", "#3CB371", icons.icon_level_i,
+                       "Info: normal app status and milestones. Good for understanding what the app is doing.")
+        add_level_chip("W", "#E8A020", icons.icon_level_w,
                        "Warning: something unexpected happened, but the app can keep running.")
-        add_level_chip("E", "#E8302A", "✖",
+        add_level_chip("E", "#E8302A", icons.icon_level_e,
                        "Error: something failed. These are important when a feature is broken.")
-        add_level_chip("F", "#FF2D2D", "‼",
+        add_level_chip("F", "#FF2D2D", icons.icon_level_f,
                        "Fatal: serious crash or abort. These usually mean the app stopped.")
 
         h.addWidget(self._level_chip_bar, stretch=0)
@@ -713,6 +723,7 @@ class LogcatTab(QWidget):
         self.line_number_area.setVisible(Settings().show_line_numbers)
         # Connect text and scroll changes to update line numbers
         self.log_view.text_changed.connect(self.line_number_area.update)
+        self.log_view.text_changed.connect(self.line_number_area.update_width)
         self.log_view.verticalScrollBar().valueChanged.connect(self.line_number_area.update)
         
         # Add to layout

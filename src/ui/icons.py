@@ -1,6 +1,8 @@
 """Custom icons with macOS-style design."""
+from pathlib import Path
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QPolygon, QPen, QBrush, QFont, QPainterPath
 from PyQt6.QtCore import Qt, QSize, QPoint, QPointF, QRectF
+from PyQt6.QtSvg import QSvgRenderer
 
 
 def _create_icon(draw_func, size=(24, 24)) -> QIcon:
@@ -10,6 +12,18 @@ def _create_icon(draw_func, size=(24, 24)) -> QIcon:
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     draw_func(painter)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _svg_icon(name: str, size=(16, 16)) -> QIcon:
+    path = Path(__file__).parent.parent / "icons" / name
+    pixmap = QPixmap(size[0], size[1])
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer = QSvgRenderer(str(path))
+    renderer.render(painter)
     painter.end()
     return QIcon(pixmap)
 
@@ -258,3 +272,27 @@ def icon_stop_small() -> QIcon:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(4, 4, 8, 8, 1, 1)
     return _create_icon(draw, (16, 16))
+
+
+def icon_level_v() -> QIcon:
+    return _svg_icon("level_v.svg", size=(16, 16))
+
+
+def icon_level_d() -> QIcon:
+    return _svg_icon("level_d.svg", size=(16, 16))
+
+
+def icon_level_i() -> QIcon:
+    return _svg_icon("level_i.svg", size=(16, 16))
+
+
+def icon_level_w() -> QIcon:
+    return _svg_icon("level_w.svg", size=(16, 16))
+
+
+def icon_level_e() -> QIcon:
+    return _svg_icon("level_e.svg", size=(16, 16))
+
+
+def icon_level_f() -> QIcon:
+    return _svg_icon("level_f.svg", size=(16, 16))
