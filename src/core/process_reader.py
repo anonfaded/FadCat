@@ -16,6 +16,35 @@ class ProcessReader(QtCore.QThread):
         self.env = env or os.environ.copy()
         self.input_text = input_text
         self.process = None
+        self._pty_master = None
+        self._stop_requested = False
+
+    def stop(self):
+        # Terminate the child process and close PTY to break read loop
+        self._stop_requested = True
+        try:
+            self.requestInterruption()
+        except Exception:
+            pass
+        if self.process:
+            try:
+                self.process.terminate()
+            except Exception:
+                pass
+            # Hard kill fallback if terminate doesn't exit quickly
+            try:
+                self.process.wait(timeout=0.5)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+        if self._pty_master is not None:
+            try:
+                os.close(self._pty_master)
+            except Exception:
+                pass
+            self._pty_master = None
 
     def run(self):
         env = dict(self.env)
@@ -31,12 +60,19 @@ class ProcessReader(QtCore.QThread):
         if os.name == 'posix':
             try:
                 import pty
+                import select
                 master, slave = pty.openpty()
+                self._pty_master = master
                 self.process = subprocess.Popen(self.cmd, stdin=slave, stdout=slave, stderr=slave, env=env)
                 os.close(slave)
                 buf = b''
                 while True:
+                    if self._stop_requested or self.isInterruptionRequested():
+                        break
                     try:
+                        r, _, _ = select.select([master], [], [], 0.2)
+                        if not r:
+                            continue
                         chunk = os.read(master, 4096)
                     except OSError:
                         break
@@ -60,8 +96,15 @@ class ProcessReader(QtCore.QThread):
                     os.close(master)
                 except Exception:
                     pass
+                self._pty_master = None
                 if self.process:
-                    self.process.wait()
+                    try:
+                        self.process.wait(timeout=0.5)
+                    except Exception:
+                        try:
+                            self.process.kill()
+                        except Exception:
+                            pass
             finally:
                 self.finished.emit()
             return

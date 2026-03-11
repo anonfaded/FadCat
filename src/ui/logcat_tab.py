@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QComboBox, QPushButton, QLineEdit,
     QTextEdit, QFileDialog, QApplication, QSizePolicy,
-    QListWidget, QListWidgetItem, QToolTip,
+    QListWidget, QListWidgetItem, QMessageBox,
 )
 from PyQt6.QtSvg import QSvgRenderer
 
@@ -389,9 +389,13 @@ class LogcatTab(QWidget):
         self._pkg_filter_text = ""
         self._pkg_settings: list[str] = []
         self._pkg_device: list[str] = []
+        self._pending_restart = False
+        self._last_package = ""
+        self._stopping = False
 
         self._build_ui()
         self._setup_shortcuts()
+        self._last_package = self._selected_package()
 
         # Connect device change to fetching packages
         self.device_combo.currentTextChanged.connect(self._on_device_changed)
@@ -685,12 +689,35 @@ class LogcatTab(QWidget):
     def _on_package_changed(self, package: str):
         """Save package selection to settings."""
         pkg = (package or "").strip()
-        if not pkg or pkg.lower() == "global":
-            # Save empty/Global as empty string or remove from settings
-            self._settings.default_package = ""
-        else:
-            self._settings.default_package = pkg
+        if pkg.lower() == "global":
+            pkg = ""
+
+        if pkg == self._last_package:
+            return
+
+        if self._running:
+            result = QMessageBox.question(
+                self,
+                "Switch Package?",
+                "Changing the package will clear current logs and restart capture. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if result != QMessageBox.StandardButton.Yes:
+                # Revert selection
+                self.pkg_combo.blockSignals(True)
+                self.pkg_combo.setCurrentText(self._last_package or "Global")
+                self.pkg_combo.blockSignals(False)
+                return
+
+            self.clear_log()
+            self._pending_restart = True
+            self.stop_capture()
+
+        # Save selection
+        self._settings.default_package = pkg
         self._settings.save()
+        self._last_package = pkg
 
     def _selected_package(self) -> str:
         """Return normalized package text; empty means Global."""
@@ -782,6 +809,8 @@ class LogcatTab(QWidget):
     def start_capture(self):
         if self._running:
             return
+        if self._reader and self._reader.isRunning():
+            return
         device = self.device_combo.currentText()
         if not device or device == "(no devices)":
             return
@@ -818,23 +847,26 @@ class LogcatTab(QWidget):
 
         env = None
 
-        self._thread = QThread()
         self._reader = ProcessReader(cmd=cmd, env=env)
-        self._reader.moveToThread(self._thread)
-        self._thread.started.connect(self._reader.run)
         self._reader.line_ready.connect(self._append_line)
         self._reader.finished.connect(self._on_reader_finished)
-        self._thread.start()
+        self._reader.start()
 
-    def stop_capture(self):
-        if self._reader and self._reader.process:
+    def stop_capture(self, wait: bool = False):
+        if self._stopping:
+            return
+        self._stopping = True
+        if self._reader:
             try:
-                self._reader.process.terminate()
+                self._reader.stop()
             except Exception:
                 pass
+        if self._reader and wait:
+            self._reader.wait(500)
 
     def _on_reader_finished(self):
         self._running = False
+        self._stopping = False
         
         # Update Toggle Button
         self.btn_toggle.setText("Start")
@@ -843,10 +875,13 @@ class LogcatTab(QWidget):
         self.btn_toggle.style().unpolish(self.btn_toggle)
         self.btn_toggle.style().polish(self.btn_toggle)
         
-        if self._thread:
-            self._thread.quit()
-            self._thread.wait()
+        self._thread = None
+        self._reader = None
         self.status_changed.emit()
+
+        if self._pending_restart:
+            self._pending_restart = False
+            self.start_capture()
 
     # ── Log output ────────────────────────────────────────────────────────────
 
