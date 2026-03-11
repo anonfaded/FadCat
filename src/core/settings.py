@@ -53,7 +53,9 @@ DEFAULT_SETTINGS = {
     "device_names": {},    # Mapping of {serial: custom_name}
     "watermark_opacity": 0.20,  # SVG watermark opacity (0.0-1.0)
     "show_watermark": True,     # Enable/disable watermark
-    "show_line_numbers": True   # Show line numbers in log view
+    "show_line_numbers": True,  # Show line numbers in log view
+    "log_view_max_lines": 5000, # 0 = unlimited (may cause lag)
+    "save_screen_only": True    # Save only visible logs from the UI
 }
 
 class SettingsManager:
@@ -85,7 +87,6 @@ class Settings:
     
     def __init__(self):
         self._data = SettingsManager.load()
-        print(f"[Settings] Loaded: show_watermark={self._data.get('show_watermark')}, watermark_opacity={self._data.get('watermark_opacity')}, show_line_numbers={self._data.get('show_line_numbers')}")
     
     @property
     def packages(self) -> list[str]:
@@ -150,7 +151,25 @@ class Settings:
     @show_line_numbers.setter
     def show_line_numbers(self, value: bool):
         self._data["show_line_numbers"] = value
+
+    @property
+    def log_view_max_lines(self) -> int:
+        return int(self._data.get("log_view_max_lines", 5000))
+
+    @log_view_max_lines.setter
+    def log_view_max_lines(self, value: int):
+        try:
+            self._data["log_view_max_lines"] = int(value)
+        except Exception:
+            self._data["log_view_max_lines"] = 5000
+
+    @property
+    def save_screen_only(self) -> bool:
+        return bool(self._data.get("save_screen_only", True))
+
+    @save_screen_only.setter
+    def save_screen_only(self, value: bool):
+        self._data["save_screen_only"] = bool(value)
     
     def save(self):
         SettingsManager.save(self._data)
-

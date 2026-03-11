@@ -165,6 +165,27 @@ class SettingsDialog(QDialog):
         self.line_numbers_check.stateChanged.connect(self._apply_display_changes)
         grp_lines_lay.addWidget(self.line_numbers_check)
 
+        max_row = QHBoxLayout()
+        max_row.addWidget(QLabel("Max visible lines (0 = unlimited):"))
+        self.max_lines_spin = QSpinBox()
+        self.max_lines_spin.setRange(0, 500000)
+        self.max_lines_spin.setSingleStep(1000)
+        self.max_lines_spin.setToolTip("Higher values can cause lag on older systems.")
+        self.max_lines_spin.valueChanged.connect(self._apply_display_changes)
+        max_row.addWidget(self.max_lines_spin, stretch=1)
+        grp_lines_lay.addLayout(max_row)
+
+        self.max_lines_warn = QLabel("Higher numbers mean more memory and I/O, which can cause lag. Default is 5,000.")
+        self.max_lines_warn.setStyleSheet("color: #AA6A2E; font-size: 11px;")
+        grp_lines_lay.addWidget(self.max_lines_warn)
+
+        self.save_screen_only_check = QCheckBox("Save button: only what you can see on screen")
+        self.save_screen_only_check.setToolTip(
+            "This affects the Save Log button. ON = save only visible lines. OFF = save the full session log."
+        )
+        self.save_screen_only_check.stateChanged.connect(self._apply_display_changes)
+        grp_lines_lay.addWidget(self.save_screen_only_check)
+
         disp_lay.addWidget(grp_lines)
         disp_lay.addStretch()
 
@@ -185,12 +206,12 @@ class SettingsDialog(QDialog):
     # ── Data ──────────────────────────────────────────────────────────────────
 
     def _populate(self):
-        print(f"[SettingsDialog] _populate() called")
-        
         # BLOCK ALL SIGNALS during populate to prevent triggering changes
         self.watermark_check.blockSignals(True)
         self.opacity_slider.blockSignals(True)
         self.line_numbers_check.blockSignals(True)
+        self.max_lines_spin.blockSignals(True)
+        self.save_screen_only_check.blockSignals(True)
         
         # Packages
         self.pkg_list.clear()
@@ -203,18 +224,20 @@ class SettingsDialog(QDialog):
             self.ign_list.addItem(tag)
         
         # Display settings - LOAD CURRENT VALUES
-        print(f"[SettingsDialog] Loading display settings: watermark={self._settings.show_watermark}, opacity={self._settings.watermark_opacity}, line_numbers={self._settings.show_line_numbers}")
         self.watermark_check.setChecked(self._settings.show_watermark)
         opacity_percent = int(self._settings.watermark_opacity * 100)
         self.opacity_slider.setValue(opacity_percent)
         self.opacity_label.setText(f"{opacity_percent}%")
         self.line_numbers_check.setChecked(self._settings.show_line_numbers)
-        print(f"[SettingsDialog] Display settings loaded: slider={opacity_percent}%, watermark_check={self.watermark_check.isChecked()}, line_check={self.line_numbers_check.isChecked()}")
+        self.max_lines_spin.setValue(self._settings.log_view_max_lines)
+        self.save_screen_only_check.setChecked(self._settings.save_screen_only)
         
         # UNBLOCK SIGNALS now that populate is done
         self.watermark_check.blockSignals(False)
         self.opacity_slider.blockSignals(False)
         self.line_numbers_check.blockSignals(False)
+        self.max_lines_spin.blockSignals(False)
+        self.save_screen_only_check.blockSignals(False)
             
         self._refresh_default_combo()
 
@@ -277,13 +300,13 @@ class SettingsDialog(QDialog):
 
     def _apply_display_changes(self):
         """Apply display settings immediately for real-time preview."""
-        print(f"[SettingsDialog] _apply_display_changes() called")
         self._settings.show_watermark = self.watermark_check.isChecked()
         self._settings.watermark_opacity = self.opacity_slider.value() / 100.0
         self._settings.show_line_numbers = self.line_numbers_check.isChecked()
+        self._settings.log_view_max_lines = self.max_lines_spin.value()
+        self._settings.save_screen_only = self.save_screen_only_check.isChecked()
         # SAVE IMMEDIATELY so real-time changes persist
         self._settings.save()
-        print(f"[SettingsDialog] Applied & saved: watermark={self._settings.show_watermark}, opacity={self._settings.watermark_opacity}, line_numbers={self._settings.show_line_numbers}")
         self.settings_changed.emit()
 
     def _save(self):
@@ -302,4 +325,3 @@ class SettingsDialog(QDialog):
         self._apply_display_changes()
         self._settings.save()
         self.accept()
-

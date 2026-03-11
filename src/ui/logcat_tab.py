@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import os
+import tempfile
+import shutil
 import re
 from datetime import datetime
+from collections import deque
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect, QEvent
@@ -383,9 +386,20 @@ class LogcatTab(QWidget):
         self._match_positions: list[int] = []
         self._match_idx = 0
         self._total_lines = 0
-        self._raw_lines: list[tuple[str, list]] = []
-        self._visible_line_count = 0
         self._settings = Settings()
+        self._max_lines = max(0, int(self._settings.log_view_max_lines))
+        maxlen = self._max_lines if self._max_lines > 0 else None
+        self._raw_lines: deque[tuple[str, list]] = deque(maxlen=maxlen)
+        self._pending_lines: deque[str] = deque()
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setInterval(50)
+        self._flush_timer.timeout.connect(self._flush_pending_lines)
+        self._visible_line_count = 0
+        self._log_path = Path(tempfile.gettempdir()) / f"fadcat_log_{id(self)}.txt"
+        try:
+            self._log_fp = open(self._log_path, "w", encoding="utf-8", buffering=1)
+        except Exception:
+            self._log_fp = None
         self._pkg_filter_text = ""
         self._pkg_settings: list[str] = []
         self._pkg_device: list[str] = []
@@ -627,6 +641,7 @@ class LogcatTab(QWidget):
         self.log_view.setReadOnly(True)
         self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.log_view.setUndoRedoEnabled(False)
+        self.log_view.document().setMaximumBlockCount(self._max_lines)
         # Set matching font for synchronization
         fixed = QFont("Menlo", 12)
         fixed.setStyleHint(QFont.StyleHint.Monospace)
@@ -886,21 +901,42 @@ class LogcatTab(QWidget):
     # ── Log output ────────────────────────────────────────────────────────────
 
     def _append_line(self, raw: str):
-        self._total_lines += 1
-        text = raw.rstrip("\n")
-        chunks = _parse_ansi(text)
-        
-        self._raw_lines.append((text, chunks))
-        
-        if self.btn_grep.isChecked() and self.search_edit.text():
-            if not self._line_matches(text, self.search_edit.text()):
-                self._visible_line_count += 1
-                self._update_line_count_label()
-                return
-            self._render_line_to_view(text, chunks)
-        else:
-            self._render_line_to_view(text, chunks)
-        
+        self._pending_lines.append(raw)
+        if not self._flush_timer.isActive():
+            self._flush_timer.start()
+
+    def _flush_pending_lines(self):
+        if not self._pending_lines:
+            self._flush_timer.stop()
+            return
+
+        batch = 0
+        max_batch = 400
+        file_buf = []
+        while self._pending_lines and batch < max_batch:
+            raw = self._pending_lines.popleft()
+            file_buf.append(raw)
+            self._total_lines += 1
+            text = raw.rstrip("\n")
+            chunks = _parse_ansi(text)
+            self._raw_lines.append((text, chunks))
+
+            if self.btn_grep.isChecked() and self.search_edit.text():
+                if not self._line_matches(text, self.search_edit.text()):
+                    self._visible_line_count += 1
+                    batch += 1
+                    continue
+                self._render_line_to_view(text, chunks)
+            else:
+                self._render_line_to_view(text, chunks)
+            batch += 1
+
+        if file_buf and self._log_fp:
+            try:
+                self._log_fp.write("".join(file_buf))
+            except Exception:
+                pass
+
         if self.btn_autoscroll.isChecked():
             self.log_view.setTextCursor(self.log_view.textCursor())
             self.log_view.ensureCursorVisible()
@@ -948,7 +984,7 @@ class LogcatTab(QWidget):
         self._match_idx = 0
         self._visible_line_count = 0
         
-        for text, chunks in self._raw_lines:
+        for text, chunks in list(self._raw_lines):
             if grep_mode and query and not self._line_matches(text, query):
                 self._visible_line_count += 1
                 continue
@@ -1006,7 +1042,7 @@ class LogcatTab(QWidget):
         self._match_idx = 0
         self._visible_line_count = 0
         
-        for text, chunks in self._raw_lines:
+        for text, chunks in list(self._raw_lines):
             self._render_line_to_view(text, chunks)
         
         self.log_view.blockSignals(False)
@@ -1061,6 +1097,18 @@ class LogcatTab(QWidget):
         self.log_view.clear()
         self._total_lines = 0
         self._raw_lines.clear()
+        self._pending_lines.clear()
+        if self._flush_timer.isActive():
+            self._flush_timer.stop()
+        if self._log_fp:
+            try:
+                self._log_fp.close()
+            except Exception:
+                pass
+            try:
+                self._log_fp = open(self._log_path, "w", encoding="utf-8", buffering=1)
+            except Exception:
+                self._log_fp = None
         self._visible_line_count = 0
         self._match_positions = []
         self._match_idx = 0
@@ -1076,15 +1124,37 @@ class LogcatTab(QWidget):
             "Text files (*.txt);;All files (*)"
         )
         if path:
+            if Settings().save_screen_only:
+                Path(path).write_text(self.log_view.toPlainText(), encoding="utf-8")
+                return
+            if self._log_fp:
+                try:
+                    self._log_fp.flush()
+                except Exception:
+                    pass
+            if self._log_path.exists():
+                try:
+                    shutil.copyfile(self._log_path, path)
+                    return
+                except Exception:
+                    pass
             Path(path).write_text(self.log_view.toPlainText(), encoding="utf-8")
 
     def refresh_display(self):
         """Refresh display for settings changes (watermark opacity, line numbers)."""
-        print(f"[LogcatTab] refresh_display() called")
         # Update line numbers visibility
         show_lines = Settings().show_line_numbers
-        print(f"[LogcatTab] Setting line numbers visible={show_lines}")
         self.line_number_area.setVisible(show_lines)
+        # Update max lines for log view
+        new_max = max(0, int(Settings().log_view_max_lines))
+        if new_max != self._max_lines:
+            self._max_lines = new_max
+            maxlen = self._max_lines if self._max_lines > 0 else None
+            if maxlen is not None:
+                self._raw_lines = deque(list(self._raw_lines)[-maxlen:], maxlen=maxlen)
+            else:
+                self._raw_lines = deque(list(self._raw_lines))
+            self.log_view.document().setMaximumBlockCount(self._max_lines)
         # Trigger repaint of line numbers and watermark
         self.line_number_area.update()
         self.log_view.viewport().update()
