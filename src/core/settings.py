@@ -50,7 +50,10 @@ DEFAULT_SETTINGS = {
         "system_server",
     ],
     "session_titles": [], # List of last open session titles
-    "device_names": {}    # Mapping of {serial: custom_name}
+    "device_names": {},    # Mapping of {serial: custom_name}
+    "watermark_opacity": 0.20,  # SVG watermark opacity (0.0-1.0)
+    "show_watermark": True,     # Enable/disable watermark
+    "show_line_numbers": True   # Show line numbers in log view
 }
 
 class SettingsManager:
@@ -82,6 +85,7 @@ class Settings:
     
     def __init__(self):
         self._data = SettingsManager.load()
+        print(f"[Settings] Loaded: show_watermark={self._data.get('show_watermark')}, watermark_opacity={self._data.get('watermark_opacity')}, show_line_numbers={self._data.get('show_line_numbers')}")
     
     @property
     def packages(self) -> list[str]:
@@ -122,6 +126,30 @@ class Settings:
     @device_names.setter
     def device_names(self, value: dict[str, str]):
         self._data["device_names"] = value
+    
+    @property
+    def watermark_opacity(self) -> float:
+        return self._data.get("watermark_opacity", 0.20)
+    
+    @watermark_opacity.setter
+    def watermark_opacity(self, value: float):
+        self._data["watermark_opacity"] = max(0.0, min(1.0, value))
+    
+    @property
+    def show_watermark(self) -> bool:
+        return self._data.get("show_watermark", True)
+    
+    @show_watermark.setter
+    def show_watermark(self, value: bool):
+        self._data["show_watermark"] = value
+    
+    @property
+    def show_line_numbers(self) -> bool:
+        return self._data.get("show_line_numbers", True)
+    
+    @show_line_numbers.setter
+    def show_line_numbers(self, value: bool):
+        self._data["show_line_numbers"] = value
     
     def save(self):
         SettingsManager.save(self._data)

@@ -1,12 +1,13 @@
 """Settings dialog — manage saved packages and ignore list."""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
     QListWidget, QListWidgetItem, QPushButton,
     QComboBox, QLineEdit, QLabel, QDialogButtonBox,
     QSizePolicy, QTabWidget, QWidget, QMessageBox,
+    QCheckBox, QSlider, QSpinBox,
 )
 
 from src.core.settings import Settings, DEFAULT_SETTINGS
@@ -14,6 +15,9 @@ from src.ui import icons
 
 
 class SettingsDialog(QDialog):
+    # Signal to notify that display settings have changed (for real-time preview)
+    settings_changed = pyqtSignal()
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -122,6 +126,50 @@ class SettingsDialog(QDialog):
 
         self.tabs.addTab(ign_tab, "Ignore List")
 
+        # ── Tab 3: Display ────────────────────────────────────────────────────
+        disp_tab = QWidget()
+        disp_lay = QVBoxLayout(disp_tab)
+
+        # Watermark settings
+        grp_watermark = QGroupBox("Watermark")
+        grp_watermark_lay = QVBoxLayout(grp_watermark)
+
+        self.watermark_check = QCheckBox("Show watermark in log area")
+        grp_watermark_lay.addWidget(self.watermark_check)
+
+        opacity_row = QHBoxLayout()
+        opacity_row.addWidget(QLabel("Opacity:"))
+        self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.opacity_slider.setMinimum(0)
+        self.opacity_slider.setMaximum(100)
+        self.opacity_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.opacity_slider.setTickInterval(10)
+        opacity_row.addWidget(self.opacity_slider, stretch=1)
+        self.opacity_label = QLabel("0%")
+        self.opacity_label.setFixedWidth(40)
+        opacity_row.addWidget(self.opacity_label)
+        # Apply changes in real-time
+        self.opacity_slider.valueChanged.connect(self._apply_display_changes)
+        self.opacity_slider.valueChanged.connect(lambda v: self.opacity_label.setText(f"{v}%"))
+        grp_watermark_lay.addLayout(opacity_row)
+
+        self.watermark_check.stateChanged.connect(self._apply_display_changes)
+
+        disp_lay.addWidget(grp_watermark)
+
+        # Line numbers settings
+        grp_lines = QGroupBox("Log View")
+        grp_lines_lay = QVBoxLayout(grp_lines)
+
+        self.line_numbers_check = QCheckBox("Show line numbers")
+        self.line_numbers_check.stateChanged.connect(self._apply_display_changes)
+        grp_lines_lay.addWidget(self.line_numbers_check)
+
+        disp_lay.addWidget(grp_lines)
+        disp_lay.addStretch()
+
+        self.tabs.addTab(disp_tab, "Display")
+
         # Dialog buttons
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save |
@@ -137,6 +185,13 @@ class SettingsDialog(QDialog):
     # ── Data ──────────────────────────────────────────────────────────────────
 
     def _populate(self):
+        print(f"[SettingsDialog] _populate() called")
+        
+        # BLOCK ALL SIGNALS during populate to prevent triggering changes
+        self.watermark_check.blockSignals(True)
+        self.opacity_slider.blockSignals(True)
+        self.line_numbers_check.blockSignals(True)
+        
         # Packages
         self.pkg_list.clear()
         for pkg in self._settings.packages:
@@ -146,6 +201,20 @@ class SettingsDialog(QDialog):
         self.ign_list.clear()
         for tag in self._settings.ignored_tags:
             self.ign_list.addItem(tag)
+        
+        # Display settings - LOAD CURRENT VALUES
+        print(f"[SettingsDialog] Loading display settings: watermark={self._settings.show_watermark}, opacity={self._settings.watermark_opacity}, line_numbers={self._settings.show_line_numbers}")
+        self.watermark_check.setChecked(self._settings.show_watermark)
+        opacity_percent = int(self._settings.watermark_opacity * 100)
+        self.opacity_slider.setValue(opacity_percent)
+        self.opacity_label.setText(f"{opacity_percent}%")
+        self.line_numbers_check.setChecked(self._settings.show_line_numbers)
+        print(f"[SettingsDialog] Display settings loaded: slider={opacity_percent}%, watermark_check={self.watermark_check.isChecked()}, line_check={self.line_numbers_check.isChecked()}")
+        
+        # UNBLOCK SIGNALS now that populate is done
+        self.watermark_check.blockSignals(False)
+        self.opacity_slider.blockSignals(False)
+        self.line_numbers_check.blockSignals(False)
             
         self._refresh_default_combo()
 
@@ -206,6 +275,17 @@ class SettingsDialog(QDialog):
             for tag in DEFAULT_SETTINGS["ignored_tags"]:
                 self.ign_list.addItem(tag)
 
+    def _apply_display_changes(self):
+        """Apply display settings immediately for real-time preview."""
+        print(f"[SettingsDialog] _apply_display_changes() called")
+        self._settings.show_watermark = self.watermark_check.isChecked()
+        self._settings.watermark_opacity = self.opacity_slider.value() / 100.0
+        self._settings.show_line_numbers = self.line_numbers_check.isChecked()
+        # SAVE IMMEDIATELY so real-time changes persist
+        self._settings.save()
+        print(f"[SettingsDialog] Applied & saved: watermark={self._settings.show_watermark}, opacity={self._settings.watermark_opacity}, line_numbers={self._settings.show_line_numbers}")
+        self.settings_changed.emit()
+
     def _save(self):
         packages = [self.pkg_list.item(i).text() for i in range(self.pkg_list.count())]
         ignores = [self.ign_list.item(i).text() for i in range(self.ign_list.count())]
@@ -217,6 +297,9 @@ class SettingsDialog(QDialog):
         self._settings.packages = packages
         self._settings.ignored_tags = ignores
         self._settings.default_package = default
+        
+        # Save all settings including display
+        self._apply_display_changes()
         self._settings.save()
         self.accept()
 

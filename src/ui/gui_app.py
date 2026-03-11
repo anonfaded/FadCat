@@ -352,9 +352,22 @@ class LogcatGUI(QMainWindow):
 
     def open_settings(self):
         """Open the application settings dialog."""
+        print("[FadCat] open_settings() called")
         from src.ui.settings_dialog import SettingsDialog
         dlg = SettingsDialog(self)
+        
+        # Connect real-time preview updates
+        def on_settings_changed():
+            print("[FadCat] on_settings_changed() triggered")
+            for i in range(self.tabs.count()):
+                w = self.tabs.widget(i)
+                if isinstance(w, LogcatTab):
+                    w.refresh_display()
+        
+        dlg.settings_changed.connect(on_settings_changed)
+        
         if dlg.exec():
+            print("[FadCat] Settings dialog accepted, saving...")
             # Refresh all tabs with new settings
             for i in range(self.tabs.count()):
                 w = self.tabs.widget(i)

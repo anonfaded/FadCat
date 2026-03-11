@@ -365,7 +365,8 @@ QTextEdit, QTextEdit > QWidget {
     border: none;
     font-family: monospace;
     font-size: 12px;
-    padding: 10px;
+    padding: 0px;
+    margin: 0px;
 }
 QTextEdit {
     selection-background-color: #E8302A;

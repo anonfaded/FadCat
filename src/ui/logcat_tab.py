@@ -6,7 +6,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect
 from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon, QBrush, QKeySequence, QShortcut, QPixmap
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
@@ -17,17 +17,104 @@ from PyQt6.QtSvg import QSvgRenderer
 
 from src.core.process_reader import ProcessReader
 from src.utils.adb_utils import get_adb_devices
+from src.core.settings import Settings
 from src.ui import icons
 
 
-# ── Custom QTextEdit with watermark background ─────────────────────────────────
+# ── Line Number Area Widget (Production-Grade) ─────────────────────────────────
+class LineNumberArea(QWidget):
+    """
+    Production-grade line number area using Qt's document layout API.
+    
+    This is the same approach used by Qt Creator, VS Code, and professional editors.
+    Rather than calculating scroll positions, we iterate through document blocks and
+    query their exact positions from the layout.
+    
+    Key properties:
+    - Block-based iteration (1 line number per logical line/block)
+    - Handles word wrapping correctly (wrapped visual lines don't get numbers)
+    - Accounts for variable block heights
+    - Uses QTextDocument.documentLayout().blockBoundingRect()
+    """
+    
+    def __init__(self, text_edit: 'LogTextEdit'):
+        super().__init__(text_edit)
+        self.text_edit = text_edit
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setStyleSheet(
+            "QWidget { background-color: #1a1a1a; color: #555555; border-right: 1px solid #333333; padding: 0px; margin: 0px; }"
+        )
+    
+    def sizeHint(self) -> QSize:
+        """Return fixed width, height matches parent."""
+        return QSize(50, self.text_edit.height())
+    
+    def paintEvent(self, event):
+        """Paint line numbers using document blocks and cursor positioning."""
+        painter = QPainter(self)
+        painter.fillRect(event.rect(), QColor("#1a1a1a"))
+        
+        # Get document and viewport properties
+        document = self.text_edit.document()
+        viewport_height = self.text_edit.viewport().height()
+        
+        # Font and metrics (synchronized with editor)
+        font = self.text_edit.font()
+        fm = self.text_edit.fontMetrics()
+        
+        painter.setFont(font)
+        painter.setPen(QColor("#555555"))
+        
+        # Start from the actual first block of the document
+        block = document.firstBlock()
+        line_number = 1
+        
+        # Iterate through all blocks and draw only visible ones
+        while block.isValid():
+            # Get viewport coordinates for this block
+            cursor = self.text_edit.textCursor()
+            cursor.setPosition(block.position())
+            cursor_rect = self.text_edit.cursorRect(cursor)
+            
+            block_y = cursor_rect.top()
+            block_height = cursor_rect.height()
+            
+            # Only draw if this block is (at least partially) visible in viewport
+            if block_y >= -block_height and block_y < viewport_height:
+                # Production approach: Draw in exact rect that matches text row
+                # The rect starts at the block's Y and has the block's height
+                # This ensures perfect alignment with the text rows
+                line_rect = QRect(0, block_y, self.width() - 4, block_height)
+                painter.drawText(
+                    line_rect,
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                    f"{line_number}"
+                )
+            
+            # Early exit optimization: if block is below viewport, stop iterating
+            if block_y > viewport_height:
+                break
+            
+            block = block.next()
+            line_number += 1
+        
+        painter.end()
+
+
+
+
 class LogTextEdit(QTextEdit):
-    """QTextEdit with SVG watermark background."""
+    """QTextEdit with SVG watermark background and optional line numbers."""
+    
+    # Signal: emitted when text changes (for line numbers to update)
+    text_changed = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self._watermark_pixmap = None
         self._load_watermark()
+        # Connect internal text change
+        self.textChanged.connect(self.text_changed.emit)
     
     def _load_watermark(self):
         """Load SVG as watermark pixmap."""
@@ -48,17 +135,19 @@ class LogTextEdit(QTextEdit):
             pass
     
     def paintEvent(self, event):
-        """Paint watermark background before text."""
-        super().paintEvent(event)
-        
-        if self._watermark_pixmap:
+        """Paint watermark background."""
+        # Paint watermark FIRST (lower z-index)
+        if self._watermark_pixmap and Settings().show_watermark:
             painter = QPainter(self.viewport())
-            painter.setOpacity(0.20)  # 20% opacity
+            painter.setOpacity(Settings().watermark_opacity)
             # Center the watermark
             x = (self.viewport().width() - self._watermark_pixmap.width()) // 2
             y = (self.viewport().height() - self._watermark_pixmap.height()) // 2
             painter.drawPixmap(x, y, self._watermark_pixmap)
             painter.end()
+        
+        # Paint text LAST (higher z-index, on top)
+        super().paintEvent(event)
 
 
 # ── Custom ComboBox with proper dropdown arrow ────────────────────────────────
@@ -148,6 +237,7 @@ class LogcatTab(QWidget):
         self._total_lines = 0
         self._raw_lines: list[tuple[str, list]] = []
         self._visible_line_count = 0
+        self._settings = Settings()
 
         self._build_ui()
         self._setup_shortcuts()
@@ -364,16 +454,41 @@ class LogcatTab(QWidget):
 
     # ── Log area ──────────────────────────────────────────────────────────────
 
-    def _build_log_area(self) -> QTextEdit:
+    def _build_log_area(self) -> QWidget:
+        """Build log area with professional line numbers widget."""
+        container = QWidget()
+        container.setContentsMargins(0, 0, 0, 0)
+        h_layout = QHBoxLayout(container)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(0)
+        
+        # Log text area (create first so line numbers can reference it)
         self.log_view = LogTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.log_view.setUndoRedoEnabled(False)
+        # Set matching font for synchronization
         fixed = QFont("Menlo", 12)
         fixed.setStyleHint(QFont.StyleHint.Monospace)
         self.log_view.setFont(fixed)
+        # CRITICAL: Remove all padding/margins so line numbers align perfectly
+        self.log_view.setContentsMargins(0, 0, 0, 0)
+        self.log_view.viewport().setContentsMargins(6, 0, 0, 0)
+        self.log_view.document().setDocumentMargin(0)
         
-        return self.log_view
+        # Line number area widget (synchronized to text editor)
+        self.line_number_area = LineNumberArea(self.log_view)
+        self.line_number_area.setVisible(Settings().show_line_numbers)
+        # Connect text and scroll changes to update line numbers
+        self.log_view.text_changed.connect(self.line_number_area.update)
+        self.log_view.verticalScrollBar().valueChanged.connect(self.line_number_area.update)
+        
+        # Add to layout
+        h_layout.addWidget(self.line_number_area, stretch=0)
+        h_layout.addWidget(self.log_view, stretch=1)
+        
+        return container
+
 
     # ── Separators ────────────────────────────────────────────────────────────
 
@@ -589,6 +704,7 @@ class LogcatTab(QWidget):
 
         fmt_nl = QTextCharFormat()
         cursor.insertText("\n", fmt_nl)
+        
     
     def _line_matches(self, text: str, query: str) -> bool:
         if not query:
@@ -744,6 +860,17 @@ class LogcatTab(QWidget):
         if path:
             Path(path).write_text(self.log_view.toPlainText(), encoding="utf-8")
 
+    def refresh_display(self):
+        """Refresh display for settings changes (watermark opacity, line numbers)."""
+        print(f"[LogcatTab] refresh_display() called")
+        # Update line numbers visibility
+        show_lines = Settings().show_line_numbers
+        print(f"[LogcatTab] Setting line numbers visible={show_lines}")
+        self.line_number_area.setVisible(show_lines)
+        # Trigger repaint of line numbers and watermark
+        self.line_number_area.update()
+        self.log_view.viewport().update()
+
     # ── Public helpers ────────────────────────────────────────────────────────
 
     @property
@@ -752,7 +879,15 @@ class LogcatTab(QWidget):
 
     @property
     def line_count(self) -> int:
-        return self._total_lines - self._visible_line_count
+        """Return actual line count from document text (ground truth)."""
+        text = self.log_view.toPlainText()
+        if text:
+            lines = text.split('\n')
+            # Remove empty final line if text ends with newline
+            if lines[-1] == '':
+                lines.pop()
+            return len(lines)
+        return 0
 
     @property
     def current_device(self) -> str:

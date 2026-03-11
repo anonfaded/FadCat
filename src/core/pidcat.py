@@ -301,7 +301,7 @@ if not args.all:
     except subprocess.CalledProcessError:
         print("⚠️ Warning: Error executing PS command. Will still attempt to capture logs.")
 
-print("\n--- Listening for logcat messages... (Press Ctrl+C to exit) ---\n")
+print("\n--- Listening for logcat messages... ---\n")
 
 try:
     while adb and adb.poll() is None:
