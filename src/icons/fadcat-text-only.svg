@@ -9,6 +9,6 @@
     </style>
   </defs>
 
-  <!-- Text: "fadCat" in red/white -->
-  <text x="0" y="7" class="pixel-text"><tspan fill="#ff2222">fad</tspan><tspan fill="#ffffff">Cat</tspan></text>
+  <!-- Text: "FadCat" in red/white -->
+  <text x="0" y="7" class="pixel-text"><tspan fill="#ff2222">Fad</tspan><tspan fill="#ffffff">Cat</tspan></text>
 </svg>

@@ -1,8 +1,16 @@
-<?xml version='1.0' encoding='utf-8'?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:ns1="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:ns2="http://www.inkscape.org/namespaces/inkscape" width="488" height="160" viewBox="0 0 61 20" version="1.1" id="svg23">
-  <ns1:namedview id="namedview23" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" ns2:showpageshadow="2" ns2:pageopacity="0.0" ns2:pagecheckerboard="0" ns2:deskcolor="#d1d1d1" />
-  <defs id="defs1">
-    <style id="style1">
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="520"
+   height="160"
+   viewBox="0 0 65 20"
+   version="1.1"
+   id="svg23"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1">
+    <style
+       id="style1">
       @font-face {
         font-family: 'Press Start 2P';
         src: url('file:///Users/faded/Documents/repos/github/FadCat/src/icons/PressStart2P.ttf') format('truetype');
@@ -10,38 +18,177 @@
       .pixel-text { font-family: 'Press Start 2P', monospace; font-size: 7px; font-weight: bold; }
     </style>
   </defs>
-  
-  
-  <rect x="1" y="1" width="3" height="3" fill="#111" id="rect1" />
-  <rect x="2" y="2" width="1" height="1" fill="#cc0000" id="rect2" />
-  <rect x="16" y="1" width="3" height="3" fill="#111" id="rect3" />
-  <rect x="17" y="2" width="1" height="1" fill="#cc0000" id="rect4" />
-  
-  <rect x="2" y="4" width="16" height="14" fill="#111" id="rect5" />
-  <rect x="1" y="5" width="18" height="12" fill="#111" id="rect6" />
-  
-  <rect x="3" y="7" width="5" height="4" fill="#ff2222" id="rect7" />
-  <rect x="12" y="7" width="5" height="4" fill="#ff2222" id="rect8" />
-  <rect x="3" y="7" width="2" height="1" fill="#ff9999" id="rect9" />
-  <rect x="12" y="7" width="2" height="1" fill="#ff9999" id="rect10" />
-  
-  <rect x="9" y="12" width="2" height="1" fill="#555" id="rect11" />
-  <rect x="9.5" y="13" width="1" height="1" fill="#3d3d3d" id="rect12" />
-  
-  <rect x="5" y="14" width="3" height="1" fill="#555" id="rect13" />
-  <rect x="6" y="13" width="1" height="1" fill="#4a4a4a" id="rect14" />
-  <rect x="5" y="12" width="1" height="1" fill="#3d3d3d" id="rect15" />
-  <rect x="6" y="15" width="1" height="1" fill="#4a4a4a" id="rect16" />
-  <rect x="5" y="16" width="1" height="1" fill="#3d3d3d" id="rect17" />
-  
-  <rect x="12" y="14" width="3" height="1" fill="#555" id="rect18" />
-  <rect x="13" y="13" width="1" height="1" fill="#4a4a4a" id="rect19" />
-  <rect x="14" y="12" width="1" height="1" fill="#3d3d3d" id="rect20" />
-  <rect x="13" y="15" width="1" height="1" fill="#4a4a4a" id="rect21" />
-  <rect x="14" y="16" width="1" height="1" fill="#3d3d3d" id="rect22" />
-  
-  <g id="text23" class="pixel-text" style="font-weight:bold;font-size:7px;font-family:'Press Start 2P', monospace" aria-label="fadCat">
-    <path style="fill:#ff2222" d="m 22.625,17.125 v -3.5 h -1.75 V 12.75 h 1.75 V 11.875 H 23.5 V 11 h 2.625 v 0.875 h -1.75 v 0.875 h 1.75 v 0.875 h -1.75 v 3.5 z m 5.25,0 V 16.25 H 27 v -0.875 h 0.875 V 14.5 h 3.5 v -0.875 h -3.5 V 12.75 h 4.375 v 0.875 h 0.875 v 3.5 z M 28.75,16.25 h 2.625 V 15.375 H 28.75 Z m 6.125,0.875 V 16.25 H 34 v -2.625 h 0.875 V 12.75 h 3.5 V 11 h 1.75 v 6.125 z M 35.75,16.25 h 2.625 V 13.625 H 35.75 Z" id="path23" />
-    <path style="fill:#ffffff" d="M 42.75,17.125 V 16.25 H 41.875 V 15.375 H 41 V 12.75 h 0.875 V 11.875 H 42.75 V 11 h 3.5 v 0.875 h 0.875 v 0.875 h -1.75 v -0.875 h -1.75 V 12.75 H 42.75 v 2.625 h 0.875 v 0.875 h 1.75 v -0.875 h 1.75 V 16.25 H 46.25 v 0.875 z m 6.125,0 V 16.25 H 48 v -0.875 h 0.875 V 14.5 h 3.5 v -0.875 h -3.5 V 12.75 h 4.375 v 0.875 h 0.875 v 3.5 z M 49.75,16.25 h 2.625 V 15.375 H 49.75 Z m 7.875,0.875 v -3.5 h -1.75 V 12.75 h 1.75 V 11 h 1.75 v 1.75 h 1.75 v 0.875 h -1.75 v 3.5 z" id="path24" />
+  <rect
+     x="1"
+     y="1"
+     width="3"
+     height="3"
+     fill="#111"
+     id="rect1" />
+  <rect
+     x="2"
+     y="2"
+     width="1"
+     height="1"
+     fill="#cc0000"
+     id="rect2" />
+  <rect
+     x="16"
+     y="1"
+     width="3"
+     height="3"
+     fill="#111"
+     id="rect3" />
+  <rect
+     x="17"
+     y="2"
+     width="1"
+     height="1"
+     fill="#cc0000"
+     id="rect4" />
+  <rect
+     x="2"
+     y="4"
+     width="16"
+     height="14"
+     fill="#111"
+     id="rect5" />
+  <rect
+     x="1"
+     y="5"
+     width="18"
+     height="12"
+     fill="#111"
+     id="rect6" />
+  <rect
+     x="3"
+     y="7"
+     width="5"
+     height="4"
+     fill="#ff2222"
+     id="rect7" />
+  <rect
+     x="12"
+     y="7"
+     width="5"
+     height="4"
+     fill="#ff2222"
+     id="rect8" />
+  <rect
+     x="3"
+     y="7"
+     width="2"
+     height="1"
+     fill="#ff9999"
+     id="rect9" />
+  <rect
+     x="12"
+     y="7"
+     width="2"
+     height="1"
+     fill="#ff9999"
+     id="rect10" />
+  <rect
+     x="9"
+     y="12"
+     width="2"
+     height="1"
+     fill="#555"
+     id="rect11" />
+  <rect
+     x="9.5"
+     y="13"
+     width="1"
+     height="1"
+     fill="#3d3d3d"
+     id="rect12" />
+  <rect
+     x="5"
+     y="14"
+     width="3"
+     height="1"
+     fill="#555"
+     id="rect13" />
+  <rect
+     x="6"
+     y="13"
+     width="1"
+     height="1"
+     fill="#4a4a4a"
+     id="rect14" />
+  <rect
+     x="5"
+     y="12"
+     width="1"
+     height="1"
+     fill="#3d3d3d"
+     id="rect15" />
+  <rect
+     x="6"
+     y="15"
+     width="1"
+     height="1"
+     fill="#4a4a4a"
+     id="rect16" />
+  <rect
+     x="5"
+     y="16"
+     width="1"
+     height="1"
+     fill="#3d3d3d"
+     id="rect17" />
+  <rect
+     x="12"
+     y="14"
+     width="3"
+     height="1"
+     fill="#555"
+     id="rect18" />
+  <rect
+     x="13"
+     y="13"
+     width="1"
+     height="1"
+     fill="#4a4a4a"
+     id="rect19" />
+  <rect
+     x="14"
+     y="12"
+     width="1"
+     height="1"
+     fill="#3d3d3d"
+     id="rect20" />
+  <rect
+     x="13"
+     y="15"
+     width="1"
+     height="1"
+     fill="#4a4a4a"
+     id="rect21" />
+  <rect
+     x="14"
+     y="16"
+     width="1"
+     height="1"
+     fill="#3d3d3d"
+     id="rect22" />
+  <g
+     id="text23"
+     class="pixel-text"
+     style="font-weight:bold;font-size:7px;font-family:'Press Start 2P', monospace"
+     aria-label="FadCat">
+    <g
+       id="text2"
+       class="pixel-text"
+       aria-label="FadCat">
+      <path
+         style="fill:#ff2222"
+         d="M 22,16.125 V 10 h 6.125 v 0.875 H 23.75 v 1.75 h 3.5 V 13.5 h -3.5 v 2.625 z m 7.875,0 V 15.25 H 29 v -0.875 h 0.875 V 13.5 h 3.5 v -0.875 h -3.5 V 11.75 h 4.375 v 0.875 h 0.875 v 3.5 z M 30.75,15.25 h 2.625 V 14.375 H 30.75 Z m 6.125,0.875 V 15.25 H 36 v -2.625 h 0.875 V 11.75 h 3.5 V 10 h 1.75 v 6.125 z M 37.75,15.25 h 2.625 V 12.625 H 37.75 Z"
+         id="path2" />
+      <path
+         style="fill:#ffffff"
+         d="M 44.75,16.125 V 15.25 H 43.875 V 14.375 H 43 V 11.75 h 0.875 V 10.875 H 44.75 V 10 h 3.5 v 0.875 h 0.875 v 0.875 h -1.75 v -0.875 h -1.75 V 11.75 H 44.75 v 2.625 h 0.875 v 0.875 h 1.75 v -0.875 h 1.75 V 15.25 H 48.25 v 0.875 z m 6.125,0 V 15.25 H 50 v -0.875 h 0.875 V 13.5 h 3.5 v -0.875 h -3.5 V 11.75 h 4.375 v 0.875 h 0.875 v 3.5 z M 51.75,15.25 h 2.625 V 14.375 H 51.75 Z m 7.875,0.875 v -3.5 h -1.75 V 11.75 h 1.75 V 10 h 1.75 v 1.75 h 1.75 v 0.875 h -1.75 v 3.5 z"
+         id="path3" />
+    </g>
   </g>
 </svg>

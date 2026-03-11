@@ -1,0 +1,46 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:ns1="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:ns2="http://www.inkscape.org/namespaces/inkscape" width="500" height="128" viewBox="0 0 75 20" version="1.1" id="svg23">
+  <ns1:namedview id="namedview23" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" ns2:showpageshadow="2" ns2:pageopacity="0.0" ns2:pagecheckerboard="0" ns2:deskcolor="#d1d1d1" />
+  <defs id="defs1">
+    <style id="style1">
+      @font-face {
+        font-family: 'Press Start 2P';
+        src: url('file:///Users/faded/Documents/repos/github/FadCat/src/icons/PressStart2P.ttf') format('truetype');
+      }
+      .pixel-text { font-family: 'Press Start 2P', monospace; font-size: 7px; font-weight: bold; }
+    </style>
+  </defs>
+  
+  
+  <rect x="1" y="1" width="3" height="3" fill="#111" id="rect1" />
+  <rect x="2" y="2" width="1" height="1" fill="#cc0000" id="rect2" />
+  <rect x="16" y="1" width="3" height="3" fill="#111" id="rect3" />
+  <rect x="17" y="2" width="1" height="1" fill="#cc0000" id="rect4" />
+  
+  <rect x="2" y="4" width="16" height="14" fill="#111" id="rect5" />
+  <rect x="1" y="5" width="18" height="12" fill="#111" id="rect6" />
+  
+  <rect x="3" y="7" width="5" height="4" fill="#ff2222" id="rect7" />
+  <rect x="12" y="7" width="5" height="4" fill="#ff2222" id="rect8" />
+  <rect x="3" y="7" width="2" height="1" fill="#ff9999" id="rect9" />
+  <rect x="12" y="7" width="2" height="1" fill="#ff9999" id="rect10" />
+  
+  <rect x="9" y="12" width="2" height="1" fill="#555" id="rect11" />
+  <rect x="9.5" y="13" width="1" height="1" fill="#3d3d3d" id="rect12" />
+  
+  <rect x="5" y="14" width="3" height="1" fill="#555" id="rect13" />
+  <rect x="6" y="13" width="1" height="1" fill="#4a4a4a" id="rect14" />
+  <rect x="5" y="12" width="1" height="1" fill="#3d3d3d" id="rect15" />
+  <rect x="6" y="15" width="1" height="1" fill="#4a4a4a" id="rect16" />
+  <rect x="5" y="16" width="1" height="1" fill="#3d3d3d" id="rect17" />
+  
+  <rect x="12" y="14" width="3" height="1" fill="#555" id="rect18" />
+  <rect x="13" y="13" width="1" height="1" fill="#4a4a4a" id="rect19" />
+  <rect x="14" y="12" width="1" height="1" fill="#3d3d3d" id="rect20" />
+  <rect x="13" y="15" width="1" height="1" fill="#4a4a4a" id="rect21" />
+  <rect x="14" y="16" width="1" height="1" fill="#3d3d3d" id="rect22" />
+  
+  <g id="text23" class="pixel-text" style="font-weight:bold;font-size:7px;font-family:'Press Start 2P', monospace" aria-label="FadCat">
+    <text x="22" y="17" class="pixel-text"><tspan fill="#ff2222">Fad</tspan><tspan fill="#ffffff">Cat</tspan></text>
+  </g>
+</svg>
