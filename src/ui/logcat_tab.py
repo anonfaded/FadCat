@@ -9,10 +9,10 @@ from datetime import datetime
 from collections import deque
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect, QEvent, QObject, QRectF
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect, QEvent, QObject, QRectF, QPointF
 from PyQt6.QtGui import (
     QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon,
-    QBrush, QKeySequence, QShortcut, QPixmap, QTextLayout, QTextOption
+    QBrush, QKeySequence, QShortcut, QPixmap, QTextLayout, QTextOption, QFontMetrics
 )
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
@@ -153,7 +153,7 @@ class LogTextEdit(QTextEdit):
 
 # ── Virtual Log View (high-performance) ──────────────────────────────────────
 class LogLine:
-    __slots__ = ("text", "plain", "chunks", "tag", "level", "line_color", "layout_cache")
+    __slots__ = ("text", "plain", "chunks", "tag", "level", "line_color", "layout_cache", "plain_width", "tag_width")
 
     def __init__(self, text: str, plain: str, chunks: list, tag: str | None, level: str | None, line_color: QColor | None):
         self.text = text
@@ -163,6 +163,8 @@ class LogLine:
         self.level = level
         self.line_color = line_color
         self.layout_cache: dict[tuple[int, bool], tuple[QTextLayout, int]] = {}
+        self.plain_width: int | None = None
+        self.tag_width: int | None = None
 
 
 class VirtualLogView(QAbstractScrollArea):
@@ -181,9 +183,15 @@ class VirtualLogView(QAbstractScrollArea):
         self._last_width = 0
         self._gutter_padding = 10
         self._max_line_width = 0
+        self._line_height_cache = None
+        self._tag_col_width_cache = 0
+        self._selection_anchor: tuple[int, int] | None = None
+        self._selection_active: tuple[int, int] | None = None
         self.setViewportMargins(0, 0, 0, 0)
         self.verticalScrollBar().setSingleStep(24)
         self.horizontalScrollBar().setSingleStep(24)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
 
     def _load_watermark(self):
         try:
@@ -206,16 +214,22 @@ class VirtualLogView(QAbstractScrollArea):
             self._visible_indices = list(range(len(lines)))
         else:
             self._visible_indices = [i for i in self._visible_indices if 0 <= i < len(self._lines)]
+        self._selection_anchor = None
+        self._selection_active = None
         self._recompute_layout_cache()
         self.viewport().update()
 
     def set_visible_indices(self, indices: list[int]):
         self._visible_indices = [i for i in indices if 0 <= i < len(self._lines)]
+        self._selection_anchor = None
+        self._selection_active = None
         self._recompute_layout_cache()
         self.viewport().update()
 
     def sync_visible_indices(self, indices: list[int], incremental: bool = False):
         self._visible_indices = [i for i in indices if 0 <= i < len(self._lines)]
+        self._selection_anchor = None
+        self._selection_active = None
         if incremental:
             self._recompute_layout_cache(incremental=True)
         else:
@@ -231,6 +245,8 @@ class VirtualLogView(QAbstractScrollArea):
         self._visible_indices.clear()
         self._highlight_map.clear()
         self._current_match = None
+        self._selection_anchor = None
+        self._selection_active = None
         self._prefix_heights = []
         self._total_height = 0
         self._update_scrollbars()
@@ -289,15 +305,155 @@ class VirtualLogView(QAbstractScrollArea):
             lines = [l.plain for l in self._lines]
         return "\n".join(lines)
 
+    def selected_text(self) -> str:
+        sel = self._normalized_selection()
+        if sel is None:
+            return ""
+        (s_line, s_col), (e_line, e_col) = sel
+        parts: list[str] = []
+        for line_idx in range(s_line, e_line + 1):
+            if line_idx < 0 or line_idx >= len(self._lines):
+                continue
+            text = self._lines[line_idx].plain
+            if line_idx == s_line and line_idx == e_line:
+                parts.append(text[s_col:e_col])
+            elif line_idx == s_line:
+                parts.append(text[s_col:])
+            elif line_idx == e_line:
+                parts.append(text[:e_col])
+            else:
+                parts.append(text)
+        return "\n".join(parts)
+
+    def _normalized_selection(self) -> tuple[tuple[int, int], tuple[int, int]] | None:
+        if self._selection_anchor is None or self._selection_active is None:
+            return None
+        a_line, a_col = self._selection_anchor
+        b_line, b_col = self._selection_active
+        if (a_line, a_col) <= (b_line, b_col):
+            return (a_line, a_col), (b_line, b_col)
+        return (b_line, b_col), (a_line, a_col)
+
+    def _x_to_index(self, text: str, target_x: float, fm: QFontMetrics) -> int:
+        if target_x <= 0:
+            return 0
+        lo, hi = 0, len(text)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            w = fm.horizontalAdvance(text[:mid])
+            if w < target_x:
+                lo = mid + 1
+            else:
+                hi = mid
+        return min(len(text), lo)
+
+    def _pos_to_line_col(self, pos: QPoint) -> tuple[int, int] | None:
+        if not self._visible_indices:
+            return None
+        scroll_y = self.verticalScrollBar().value()
+        scroll_x = self.horizontalScrollBar().value()
+        abs_y = pos.y() + scroll_y
+        vis_idx = self._find_visible_start(abs_y)
+        if vis_idx < 0:
+            vis_idx = 0
+        if vis_idx >= len(self._visible_indices):
+            vis_idx = len(self._visible_indices) - 1
+        line_idx = self._visible_indices[vis_idx]
+        line = self._lines[line_idx]
+        line_top = self._line_top(vis_idx)
+        x0 = self._gutter_width() + 6 - scroll_x
+        width = self._available_width()
+        fm = self.fontMetrics()
+        if self._wrap:
+            layout, _h, pad_len, gap_len, tag_len = self._get_wrap_layout(line, width)
+            for li in range(layout.lineCount()):
+                l = layout.lineAt(li)
+                y0 = line_top - scroll_y + l.y()
+                if y0 <= pos.y() < y0 + l.height():
+                    x_rel = pos.x() - x0
+                    if x_rel <= 0:
+                        return (line_idx, 0)
+                    col = l.xToCursor(x_rel)
+                    disp_idx = l.textStart() + col
+                    orig_idx = self._wrap_to_original_index(disp_idx, pad_len, gap_len, tag_len, len(line.plain))
+                    return (line_idx, orig_idx)
+            return (line_idx, len(line.plain))
+        # Non-wrap with fixed tag column
+        tag_col_w = self._tag_column_width()
+        badge_idx = None
+        for ci, (ct, _fg, bg, _b, _i) in enumerate(line.chunks):
+            if bg != _DEFAULT_BG and ct.strip() in _LEVEL_SET:
+                badge_idx = ci
+                break
+        if badge_idx is None:
+            x_rel = pos.x() - x0
+            return (line_idx, self._x_to_index(line.plain, x_rel, fm))
+        tag_chunks = line.chunks[:badge_idx]
+        tag_text = "".join(ct for ct, *_ in tag_chunks)
+        tag_text_width = fm.horizontalAdvance(tag_text)
+        tag_start_x = x0 + max(0, tag_col_w - tag_text_width)
+        msg_start_x = x0 + tag_col_w + 6
+        if pos.x() < msg_start_x:
+            x_rel = pos.x() - tag_start_x
+            return (line_idx, self._x_to_index(tag_text, x_rel, fm))
+        x_rel = pos.x() - msg_start_x
+        offset = len(tag_text)
+        return (line_idx, offset + self._x_to_index(line.plain[offset:], x_rel, fm))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            pos = self._pos_to_line_col(event.position().toPoint())
+            if pos is not None:
+                self._selection_anchor = pos
+                self._selection_active = pos
+                self.viewport().update()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton and self._selection_anchor is not None:
+            pos = self._pos_to_line_col(event.position().toPoint())
+            if pos is not None:
+                self._selection_active = pos
+                self.viewport().update()
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = self._pos_to_line_col(event.position().toPoint())
+            if pos is not None:
+                self._selection_active = pos
+                self.viewport().update()
+                return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.matches(QKeySequence.StandardKey.Copy):
+            text = self.selected_text()
+            if text:
+                QApplication.clipboard().setText(text)
+                return
+        if event.key() == Qt.Key.Key_Escape:
+            self._selection_anchor = None
+            self._selection_active = None
+            self.viewport().update()
+            return
+        super().keyPressEvent(event)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self.viewport().width() != self._last_width:
             self._last_width = self.viewport().width()
+            self._line_height_cache = None
             self._recompute_layout_cache()
 
     def _line_height(self) -> int:
-        fm = self.fontMetrics()
-        return fm.height() + 4
+        if self._line_height_cache is None:
+            fm = self.fontMetrics()
+            self._line_height_cache = fm.height() + 4
+        return self._line_height_cache
 
     def _gutter_width(self) -> int:
         if not self._show_line_numbers:
@@ -308,11 +464,20 @@ class VirtualLogView(QAbstractScrollArea):
     def _available_width(self) -> int:
         return max(10, self.viewport().width() - self._gutter_width() - 8)
 
+    def _tag_column_width(self) -> int:
+        try:
+            pad = int(Settings().tag_padding)
+        except Exception:
+            pad = 16
+        min_width = self.fontMetrics().horizontalAdvance("M" * max(4, pad))
+        return max(min_width, self._tag_col_width_cache)
+
     def _recompute_layout_cache(self, incremental: bool = False):
         if not self._visible_indices:
             self._prefix_heights = []
             self._total_height = 0
             self._max_line_width = 0
+            self._tag_col_width_cache = 0
             self._update_scrollbars()
             return
 
@@ -323,15 +488,20 @@ class VirtualLogView(QAbstractScrollArea):
             start = len(self._prefix_heights)
             heights = self._prefix_heights[:]
             total = heights[-1] if heights else 0
+            last_line = None
             for idx in self._visible_indices[start:]:
                 if idx >= len(self._lines):
                     continue
                 line = self._lines[idx]
+                last_line = line
                 h = self._layout_height(line, width)
                 total += h
                 heights.append(total)
-                if not self._wrap:
-                    max_width = max(max_width, self.fontMetrics().horizontalAdvance(line.plain))
+            if not self._wrap:
+                if last_line is not None:
+                    if not hasattr(last_line, "plain_width") or last_line.plain_width is None:
+                        last_line.plain_width = self.fontMetrics().horizontalAdvance(last_line.plain)
+                    max_width = max(max_width, last_line.plain_width)
             self._prefix_heights = heights
             self._total_height = total
             if max_width:
@@ -349,7 +519,21 @@ class VirtualLogView(QAbstractScrollArea):
             total += h
             self._prefix_heights.append(total)
             if not self._wrap:
-                max_width = max(max_width, self.fontMetrics().horizontalAdvance(line.plain))
+                if not hasattr(line, "plain_width") or line.plain_width is None:
+                    line.plain_width = self.fontMetrics().horizontalAdvance(line.plain)
+                max_width = max(max_width, line.plain_width)
+            if not hasattr(line, "tag_width") or line.tag_width is None:
+                if line.tag:
+                    line.tag_width = self.fontMetrics().horizontalAdvance(line.tag)
+                else:
+                    line.tag_width = 0
+            self._tag_col_width_cache = max(self._tag_col_width_cache, line.tag_width)
+            if not hasattr(line, "tag_width") or line.tag_width is None:
+                if line.tag:
+                    line.tag_width = self.fontMetrics().horizontalAdvance(line.tag)
+                else:
+                    line.tag_width = 0
+            self._tag_col_width_cache = max(self._tag_col_width_cache, line.tag_width)
         self._total_height = total
         self._max_line_width = max_width
         self._update_scrollbars()
@@ -361,23 +545,98 @@ class VirtualLogView(QAbstractScrollArea):
         cached = line.layout_cache.get(key)
         if cached:
             return cached[1]
-        layout = self._build_layout(line, width)
-        height = int(layout.boundingRect().height()) + 4
-        line.layout_cache[key] = (layout, height)
+        layout, height, pad_len, gap_len, tag_len = self._build_layout(line, width)
+        line.layout_cache[key] = (layout, height, pad_len, gap_len, tag_len)
         return height
 
-    def _build_layout(self, line: LogLine, width: int) -> QTextLayout:
-        layout = QTextLayout(line.plain, self.font())
+    def _wrap_to_display_index(self, idx: int, pad_len: int, gap_len: int, tag_len: int) -> int:
+        if idx <= 0:
+            return max(0, pad_len)
+        d = idx + pad_len
+        if idx >= tag_len:
+            d += gap_len
+        return d
+
+    def _wrap_to_original_index(self, idx: int, pad_len: int, gap_len: int, tag_len: int, max_len: int) -> int:
+        if idx <= pad_len:
+            return 0
+        d = idx - pad_len
+        if d <= tag_len:
+            return min(max_len, d)
+        if d <= tag_len + gap_len:
+            return min(max_len, tag_len)
+        return min(max_len, d - gap_len)
+
+    def _cursor_x(self, line_obj: QTextLine, pos: int) -> float:
+        x = line_obj.cursorToX(pos)
+        if isinstance(x, tuple):
+            return float(x[0])
+        return float(x)
+
+    def _get_wrap_layout(self, line: LogLine, width: int) -> tuple[QTextLayout, int, int, int, int]:
+        key = (width, True)
+        cached = line.layout_cache.get(key)
+        if cached:
+            if len(cached) == 2:
+                return cached[0], cached[1], 0, 0, 0
+            return cached[0], cached[1], cached[2], cached[3], cached[4]
+        layout, height, pad_len, gap_len, tag_len = self._build_layout(line, width)
+        line.layout_cache[key] = (layout, height, pad_len, gap_len, tag_len)
+        return layout, height, pad_len, gap_len, tag_len
+
+    def _build_layout(self, line: LogLine, width: int) -> tuple[QTextLayout, int, int, int, int]:
+        display_chunks = line.chunks
+        pad_len = 0
+        gap_len = 0
+        tag_len = 0
+        indent_px = 0.0
+        if self._wrap:
+            badge_idx = None
+            for ci, (ct, _fg, bg, _b, _i) in enumerate(line.chunks):
+                if bg != _DEFAULT_BG and ct.strip() in _LEVEL_SET:
+                    badge_idx = ci
+                    break
+            if badge_idx is not None:
+                tag_chunks = line.chunks[:badge_idx]
+                rest_chunks = line.chunks[badge_idx:]
+                tag_text = "".join(ct for ct, *_ in tag_chunks)
+                tag_len = len(tag_text)
+                fm = self.fontMetrics()
+                char_w = max(1, fm.horizontalAdvance("M"))
+                tag_text_width = fm.horizontalAdvance(tag_text.rstrip())
+                tag_col_w = self._tag_column_width()
+                indent_px = float(tag_col_w + 6)
+                pad_px = max(0, tag_col_w - tag_text_width)
+                pad_len = max(0, int(round(pad_px / char_w)))
+                gap_len = max(1, int(round(6 / char_w)))
+                display_chunks = []
+                if pad_len:
+                    display_chunks.append((" " * pad_len, _DEFAULT_FG, _DEFAULT_BG, False, False))
+                display_chunks.extend(tag_chunks)
+                display_chunks.append((" " * gap_len, _DEFAULT_FG, _DEFAULT_BG, False, False))
+                display_chunks.extend(rest_chunks)
+
+        display_plain = "".join(ct for ct, *_ in display_chunks)
+        layout = QTextLayout(display_plain, self.font())
         ranges = []
         pos = 0
-        use_line_color = line.line_color is not None and Settings().color_line_by_tag
-        for chunk_text, fg, bg, bold, italic in line.chunks:
+        use_line_color = line.line_color is not None
+        level = line.level
+        for chunk_text, fg, bg, bold, italic in display_chunks:
             length = len(chunk_text)
             fmt = QTextCharFormat()
-            if use_line_color and bg != _DEFAULT_BG:
-                fmt.setBackground(line.line_color)
-                fmt.setForeground(_contrast_color(line.line_color))
-            elif use_line_color and fg == _DEFAULT_FG and bg == _DEFAULT_BG:
+            token = chunk_text.strip()
+            if token in _LEVEL_SET:
+                level_key = level or token
+                if level_key in _LEVEL_COLORS:
+                    badge_bg = _LEVEL_COLORS[level_key]
+                    fmt.setForeground(_contrast_color(badge_bg))
+                    fmt.setBackground(badge_bg)
+                else:
+                    fmt.setForeground(fg)
+                    if bg != _DEFAULT_BG:
+                        fmt.setBackground(bg)
+            elif use_line_color and bg == _DEFAULT_BG:
                 fmt.setForeground(line.line_color)
             else:
                 fmt.setForeground(fg)
@@ -398,13 +657,19 @@ class VirtualLogView(QAbstractScrollArea):
         option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere if self._wrap else QTextOption.WrapMode.NoWrap)
         layout.setTextOption(option)
         layout.beginLayout()
+        height = 0.0
+        line_no = 0
         while True:
             line_obj = layout.createLine()
             if not line_obj.isValid():
                 break
-            line_obj.setLineWidth(width)
+            indent = indent_px if line_no > 0 else 0.0
+            line_obj.setLineWidth(max(10.0, float(width) - indent))
+            line_obj.setPosition(QPointF(indent, height))
+            height += line_obj.height()
+            line_no += 1
         layout.endLayout()
-        return layout
+        return layout, int(height) + 4, pad_len, gap_len, tag_len
 
     def _update_scrollbars(self):
         page = self.viewport().height()
@@ -454,6 +719,7 @@ class VirtualLogView(QAbstractScrollArea):
 
         scroll_y = self.verticalScrollBar().value()
         scroll_x = self.horizontalScrollBar().value()
+        tag_col_w = self._tag_column_width()
         x0 = gutter_w + 6
         x0 -= scroll_x
         y0 = -scroll_y
@@ -472,6 +738,24 @@ class VirtualLogView(QAbstractScrollArea):
             line_idx = self._visible_indices[i]
             line = self._lines[line_idx]
             line_h = self._layout_height(line, width)
+            badge_idx = None
+            tag_text = ""
+            tag_text_len = 0
+            tag_text_width = 0
+            tag_start_x = x0
+            msg_start_x = x0
+            if not self._wrap:
+                for ci, (ct, _fg, bg, _b, _i) in enumerate(line.chunks):
+                    if bg != _DEFAULT_BG and ct.strip() in _LEVEL_SET:
+                        badge_idx = ci
+                        break
+                if badge_idx is not None:
+                    tag_chunks = line.chunks[:badge_idx]
+                    tag_text = "".join(ct for ct, *_ in tag_chunks)
+                    tag_text_len = len(tag_text)
+                    tag_text_width = fm.horizontalAdvance(tag_text)
+                    tag_start_x = x0 + max(0, tag_col_w - tag_text_width)
+                    msg_start_x = x0 + tag_col_w + 6
 
             if self._show_line_numbers:
                 painter.setPen(QColor("#555555"))
@@ -482,6 +766,57 @@ class VirtualLogView(QAbstractScrollArea):
                     str(i + 1),
                 )
 
+            # Selection (draw before highlights)
+            selection = self._normalized_selection()
+            if selection is not None:
+                (s_line, s_col), (e_line, e_col) = selection
+                if s_line <= line_idx <= e_line:
+                    sel_start = s_col if line_idx == s_line else 0
+                    sel_end = e_col if line_idx == e_line else len(line.plain)
+                    if sel_start != sel_end:
+                        sel_color = QColor("#243B55")
+                        if self._wrap:
+                            layout, _h, pad_len, gap_len, tag_len = self._get_wrap_layout(line, width)
+                            sel_start = self._wrap_to_display_index(sel_start, pad_len, gap_len, tag_len)
+                            sel_end = self._wrap_to_display_index(sel_end, pad_len, gap_len, tag_len)
+                            for li in range(layout.lineCount()):
+                                l = layout.lineAt(li)
+                                line_start = l.textStart()
+                                line_end = line_start + l.textLength()
+                                s = max(sel_start, line_start)
+                                e = min(sel_end, line_end)
+                                if s < e:
+                                    x_start = self._cursor_x(l, s - line_start)
+                                    x_end = self._cursor_x(l, e - line_start)
+                                    rect = QRectF(
+                                        x0 + x_start,
+                                        y + l.y(),
+                                        x_end - x_start,
+                                        l.height(),
+                                    )
+                                    painter.fillRect(rect, sel_color)
+                        else:
+                            if badge_idx is None:
+                                x_start = x0 + fm.horizontalAdvance(line.plain[:sel_start])
+                                x_end = x0 + fm.horizontalAdvance(line.plain[:sel_end])
+                                rect = QRect(int(x_start), int(y), int(x_end - x_start), int(line_h))
+                                painter.fillRect(rect, sel_color)
+                            else:
+                                if sel_start < tag_text_len:
+                                    s = sel_start
+                                    e = min(sel_end, tag_text_len)
+                                    x_start = tag_start_x + fm.horizontalAdvance(line.plain[:s])
+                                    x_end = tag_start_x + fm.horizontalAdvance(line.plain[:e])
+                                    rect = QRect(int(x_start), int(y), int(x_end - x_start), int(line_h))
+                                    painter.fillRect(rect, sel_color)
+                                if sel_end > tag_text_len:
+                                    s = max(sel_start, tag_text_len)
+                                    e = sel_end
+                                    x_start = msg_start_x + fm.horizontalAdvance(line.plain[tag_text_len:s])
+                                    x_end = msg_start_x + fm.horizontalAdvance(line.plain[tag_text_len:e])
+                                    rect = QRect(int(x_start), int(y), int(x_end - x_start), int(line_h))
+                                    painter.fillRect(rect, sel_color)
+
             # Highlights (draw first)
             if line_idx in self._highlight_map:
                 highlights = self._highlight_map[line_idx]
@@ -490,10 +825,9 @@ class VirtualLogView(QAbstractScrollArea):
                         continue
                     color = QColor("#1E3A8A") if is_current else QColor("#3D1510")
                     if self._wrap:
-                        layout = line.layout_cache.get((width, True))
-                        if not layout:
-                            layout = self._build_layout(line, width)
-                            line.layout_cache[(width, True)] = (layout, int(layout.boundingRect().height()) + 4)
+                        layout, _h, pad_len, gap_len, tag_len = self._get_wrap_layout(line, width)
+                        start = self._wrap_to_display_index(start, pad_len, gap_len, tag_len)
+                        end = self._wrap_to_display_index(end, pad_len, gap_len, tag_len)
                         for li in range(layout.lineCount()):
                             l = layout.lineAt(li)
                             line_start = l.textStart()
@@ -501,8 +835,8 @@ class VirtualLogView(QAbstractScrollArea):
                             sel_start = max(start, line_start)
                             sel_end = min(end, line_end)
                             if sel_start < sel_end:
-                                x_start = l.cursorToX(sel_start - line_start)
-                                x_end = l.cursorToX(sel_end - line_start)
+                                x_start = self._cursor_x(l, sel_start - line_start)
+                                x_end = self._cursor_x(l, sel_end - line_start)
                                 rect = QRectF(
                                     x0 + x_start,
                                     y + l.y(),
@@ -511,27 +845,90 @@ class VirtualLogView(QAbstractScrollArea):
                                 )
                                 painter.fillRect(rect, color)
                     else:
-                        x_start = fm.horizontalAdvance(line.plain[:start])
-                        x_end = fm.horizontalAdvance(line.plain[:end])
-                        rect = QRect(int(x0 + x_start), int(y), int(x_end - x_start), int(line_h))
-                        painter.fillRect(rect, color)
+                        if badge_idx is None:
+                            x_start = x0 + fm.horizontalAdvance(line.plain[:start])
+                            x_end = x0 + fm.horizontalAdvance(line.plain[:end])
+                            rect = QRect(int(x_start), int(y), int(x_end - x_start), int(line_h))
+                            painter.fillRect(rect, color)
+                        else:
+                            if start < tag_text_len:
+                                s = start
+                                e = min(end, tag_text_len)
+                                x_start = tag_start_x + fm.horizontalAdvance(line.plain[:s])
+                                x_end = tag_start_x + fm.horizontalAdvance(line.plain[:e])
+                                rect = QRect(int(x_start), int(y), int(x_end - x_start), int(line_h))
+                                painter.fillRect(rect, color)
+                            if end > tag_text_len:
+                                s = max(start, tag_text_len)
+                                e = end
+                                x_start = msg_start_x + fm.horizontalAdvance(line.plain[tag_text_len:s])
+                                x_end = msg_start_x + fm.horizontalAdvance(line.plain[tag_text_len:e])
+                                rect = QRect(int(x_start), int(y), int(x_end - x_start), int(line_h))
+                                painter.fillRect(rect, color)
 
             # Text
             if self._wrap:
-                layout = line.layout_cache.get((width, True))
-                if not layout:
-                    layout = self._build_layout(line, width)
-                    line.layout_cache[(width, True)] = (layout, int(layout.boundingRect().height()) + 4)
-                layout.draw(painter, QPoint(x0, int(y)))
+                layout, _h, _pad_len, _gap_len, _tag_len = self._get_wrap_layout(line, width)
+                layout.draw(painter, QPointF(x0, float(y)))
             else:
                 x = x0
-                for chunk_text, fg, bg, bold, italic in line.chunks:
+                # Draw tag area in fixed column (full tag, right aligned)
+                if badge_idx is not None:
+                    x = tag_start_x
+                    for chunk_text, fg, bg, bold, italic in line.chunks[:badge_idx]:
+                        token = chunk_text.strip()
+                        is_level = token in _LEVEL_SET
+                        fmt = QTextCharFormat()
+                        use_line_color = line.line_color is not None
+                        if is_level:
+                            level_key = line.level or token
+                            if level_key in _LEVEL_COLORS:
+                                badge_bg = _LEVEL_COLORS[level_key]
+                                fmt.setForeground(_contrast_color(badge_bg))
+                                fmt.setBackground(badge_bg)
+                            else:
+                                fmt.setForeground(fg)
+                                if bg != _DEFAULT_BG:
+                                    fmt.setBackground(bg)
+                        elif use_line_color and bg == _DEFAULT_BG:
+                            fmt.setForeground(line.line_color)
+                        else:
+                            fmt.setForeground(fg)
+                            if bg != _DEFAULT_BG:
+                                fmt.setBackground(bg)
+                        if bold:
+                            fmt.setFontWeight(QFont.Weight.Bold)
+                        if italic:
+                            fmt.setFontItalic(True)
+                        painter.setFont(self.font())
+                        painter.setPen(fmt.foreground().color())
+                        if fmt.background() != QBrush():
+                            bgc = fmt.background().color()
+                            if bgc.isValid() and bgc != _DEFAULT_BG:
+                                painter.fillRect(QRect(int(x), int(y), fm.horizontalAdvance(chunk_text), line_h), bgc)
+                        painter.drawText(QPoint(int(x), int(y) + fm.ascent() + 2), chunk_text)
+                        x += fm.horizontalAdvance(chunk_text)
+                    x = msg_start_x
+                    chunks_to_draw = line.chunks[badge_idx:]
+                else:
+                    chunks_to_draw = line.chunks
+                # Draw badge + message
+                for chunk_text, fg, bg, bold, italic in chunks_to_draw:
+                    token = chunk_text.strip()
+                    is_level = token in _LEVEL_SET
                     fmt = QTextCharFormat()
-                    use_line_color = line.line_color is not None and Settings().color_line_by_tag
-                    if use_line_color and bg != _DEFAULT_BG:
-                        fmt.setBackground(line.line_color)
-                        fmt.setForeground(_contrast_color(line.line_color))
-                    elif use_line_color and fg == _DEFAULT_FG and bg == _DEFAULT_BG:
+                    use_line_color = line.line_color is not None
+                    if is_level:
+                        level_key = line.level or token
+                        if level_key in _LEVEL_COLORS:
+                            badge_bg = _LEVEL_COLORS[level_key]
+                            fmt.setForeground(_contrast_color(badge_bg))
+                            fmt.setBackground(badge_bg)
+                        else:
+                            fmt.setForeground(fg)
+                            if bg != _DEFAULT_BG:
+                                fmt.setBackground(bg)
+                    elif use_line_color and bg == _DEFAULT_BG:
                         fmt.setForeground(line.line_color)
                     else:
                         fmt.setForeground(fg)
@@ -785,12 +1182,22 @@ _FG = {
     94: "#7CCBFF", 95: "#E09BFF", 96: "#7CFFE6", 97: "#FFFFFF",
 }
 _BG = {
-    40: "#1A1A1A", 41: "#4A1010", 42: "#0E3820", 43: "#3A2800",
-    44: "#0E2540", 45: "#2E1040", 46: "#0E2E2E", 47: "#3A3A3A",
+    40: "#2A2A2A", 41: "#8A1C1C", 42: "#0E6B3A", 43: "#8A6A1C",
+    44: "#1E4E8A", 45: "#5E2A8A", 46: "#1E5E5E", 47: "#4A4A4A",
 }
 
 _DEFAULT_FG = QColor("#E8E8E8")
 _DEFAULT_BG = QColor("#141414")
+_LEVEL_COLORS = {
+    "V": QColor("#8A8A8A"),
+    "D": QColor("#4CC2FF"),
+    "I": QColor("#50F0A0"),
+    "W": QColor("#FFD54A"),
+    "E": QColor("#FF5F5F"),
+    "F": QColor("#FF3B3B"),
+}
+
+_LEVEL_SET = {"V", "D", "I", "W", "E", "F"}
 
 
 def _parse_ansi(text: str) -> list[tuple[str, QColor, QColor, bool, bool]]:
@@ -825,9 +1232,23 @@ def _parse_ansi(text: str) -> list[tuple[str, QColor, QColor, bool, bool]]:
 
 
 def _line_color_from_chunks(chunks: list[tuple[str, QColor, QColor, bool, bool]]) -> QColor | None:
+    for chunk_text, _fg, bg, _bold, _italic in chunks:
+        if bg != _DEFAULT_BG:
+            t = chunk_text.strip()
+            if t in {"V", "D", "I", "W", "E", "F"}:
+                return bg
     for chunk_text, fg, bg, _bold, _italic in chunks:
         if chunk_text.strip() and fg != _DEFAULT_FG and bg == _DEFAULT_BG:
             return fg
+    return None
+
+
+def _level_from_chunks(chunks: list[tuple[str, QColor, QColor, bool, bool]]) -> str | None:
+    for chunk_text, _fg, bg, _bold, _italic in chunks:
+        if bg != _DEFAULT_BG:
+            t = chunk_text.strip()
+            if t in _LEVEL_SET:
+                return t
     return None
 
 
@@ -1575,15 +1996,26 @@ class LogcatTab(QWidget):
             chunks = _parse_ansi(text)
             tag = _extract_tag(text)
             level = _extract_level(text)
-            line_color = _line_color_from_chunks(chunks)
+            if level is None:
+                level = _level_from_chunks(chunks)
+            if level in _LEVEL_COLORS:
+                line_color = _LEVEL_COLORS[level]
+            else:
+                line_color = _line_color_from_chunks(chunks)
+                m = _LEVEL_RE.search(plain)
+                if m and m.group(1) in _LEVEL_COLORS:
+                    line_color = _LEVEL_COLORS[m.group(1)]
             if tag:
                 if line_color:
                     self._last_tag_color = line_color
             else:
-                if line_color and self._last_tag_color is None:
+                if level is None:
+                    if line_color and self._last_tag_color is None:
+                        self._last_tag_color = line_color
+                    if self._last_tag_color is not None:
+                        line_color = self._last_tag_color
+                elif line_color:
                     self._last_tag_color = line_color
-                if self._last_tag_color is not None:
-                    line_color = self._last_tag_color
             line = LogLine(text, plain, chunks, tag, level, line_color)
             self._lines.append(line)
 
