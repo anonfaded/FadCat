@@ -69,6 +69,19 @@ class CustomTabBar(QTabBar):
             super().mouseDoubleClickEvent(event)
 
 
+class ClickableLabel(QLabel):
+    """QLabel that handles clicks and opens URLs."""
+    
+    def __init__(self, text: str, url: str, parent=None):
+        super().__init__(text, parent)
+        self.url = url
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+    
+    def mousePressEvent(self, event):
+        """Open URL when clicked."""
+        QDesktopServices.openUrl(QUrl(self.url))
+
+
 class LogcatGUI(QMainWindow):
     """Main application window."""
 
@@ -222,12 +235,10 @@ class LogcatGUI(QMainWindow):
         sb.addPermanentWidget(dot_sep)
         
         # Clickable website link
-        website_label = QLabel("fadseclab.com")
+        website_label = ClickableLabel("fadseclab.com", "https://fadseclab.com")
         website_label.setStyleSheet(
             "color: #ff6b6b; padding: 0 2px; font-size: 10px;"
         )
-        website_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        website_label.mousePressEvent = lambda e: QDesktopServices.openUrl(QUrl("https://fadseclab.com"))
         sb.addPermanentWidget(website_label)
         
         # Vertical divider before lines
