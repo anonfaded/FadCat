@@ -9,13 +9,17 @@ from datetime import datetime
 from collections import deque
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect, QEvent
-from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon, QBrush, QKeySequence, QShortcut, QPixmap
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect, QEvent, QObject, QRectF
+from PyQt6.QtGui import (
+    QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon,
+    QBrush, QKeySequence, QShortcut, QPixmap, QTextLayout, QTextOption
+)
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QComboBox, QPushButton, QLineEdit,
     QTextEdit, QFileDialog, QApplication, QSizePolicy,
     QListWidget, QListWidgetItem, QMessageBox,
+    QAbstractScrollArea, QScrollBar,
 )
 from PyQt6.QtSvg import QSvgRenderer
 
@@ -146,6 +150,458 @@ class LogTextEdit(QTextEdit):
         # Paint text LAST (higher z-index, on top)
         super().paintEvent(event)
 
+
+# ── Virtual Log View (high-performance) ──────────────────────────────────────
+class LogLine:
+    __slots__ = ("text", "plain", "chunks", "tag", "level", "line_color", "layout_cache")
+
+    def __init__(self, text: str, plain: str, chunks: list, tag: str | None, level: str | None, line_color: QColor | None):
+        self.text = text
+        self.plain = plain
+        self.chunks = chunks
+        self.tag = tag
+        self.level = level
+        self.line_color = line_color
+        self.layout_cache: dict[tuple[int, bool], tuple[QTextLayout, int]] = {}
+
+
+class VirtualLogView(QAbstractScrollArea):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._lines: list[LogLine] = []
+        self._visible_indices: list[int] = []
+        self._show_line_numbers = True
+        self._wrap = False
+        self._watermark_pixmap = None
+        self._load_watermark()
+        self._highlight_map: dict[int, list[tuple[int, int, bool]]] = {}
+        self._current_match: tuple[int, int, int] | None = None
+        self._total_height = 0
+        self._prefix_heights: list[int] = []
+        self._last_width = 0
+        self._gutter_padding = 10
+        self._max_line_width = 0
+        self.setViewportMargins(0, 0, 0, 0)
+        self.verticalScrollBar().setSingleStep(24)
+        self.horizontalScrollBar().setSingleStep(24)
+
+    def _load_watermark(self):
+        try:
+            svg_path = Path(__file__).parent.parent / "icons" / "fadcat.svg"
+            if not svg_path.exists():
+                return
+            renderer = QSvgRenderer(str(svg_path))
+            pixmap = QPixmap(300, 300)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            self._watermark_pixmap = pixmap
+        except Exception:
+            pass
+
+    def set_lines(self, lines: list[LogLine], reset_visible: bool = True):
+        self._lines = lines
+        if reset_visible:
+            self._visible_indices = list(range(len(lines)))
+        else:
+            self._visible_indices = [i for i in self._visible_indices if 0 <= i < len(self._lines)]
+        self._recompute_layout_cache()
+        self.viewport().update()
+
+    def set_visible_indices(self, indices: list[int]):
+        self._visible_indices = [i for i in indices if 0 <= i < len(self._lines)]
+        self._recompute_layout_cache()
+        self.viewport().update()
+
+    def sync_visible_indices(self, indices: list[int], incremental: bool = False):
+        self._visible_indices = [i for i in indices if 0 <= i < len(self._lines)]
+        if incremental:
+            self._recompute_layout_cache(incremental=True)
+        else:
+            self._recompute_layout_cache()
+        self.viewport().update()
+
+    def append_visible(self):
+        self._recompute_layout_cache(incremental=True)
+        self.viewport().update()
+
+    def clear(self):
+        self._lines.clear()
+        self._visible_indices.clear()
+        self._highlight_map.clear()
+        self._current_match = None
+        self._prefix_heights = []
+        self._total_height = 0
+        self._update_scrollbars()
+        self.viewport().update()
+
+    def set_show_line_numbers(self, show: bool):
+        self._show_line_numbers = show
+        self.viewport().update()
+
+    def set_wrap_enabled(self, enabled: bool):
+        if self._wrap != enabled:
+            self._wrap = enabled
+            self._recompute_layout_cache()
+            self.viewport().update()
+
+    def clear_layout_cache(self):
+        for line in self._lines:
+            line.layout_cache.clear()
+        self._recompute_layout_cache()
+
+    def set_highlights(self, ranges: list[tuple[int, int, int]], current_idx: int | None):
+        self._highlight_map.clear()
+        for idx, start, end in ranges:
+            if start == end:
+                continue
+            self._highlight_map.setdefault(idx, []).append((start, end, False))
+        if current_idx is not None and 0 <= current_idx < len(ranges):
+            idx, start, end = ranges[current_idx]
+            if start != end:
+                self._highlight_map.setdefault(idx, []).append((start, end, True))
+                self._current_match = (idx, start, end)
+            else:
+                self._current_match = None
+        else:
+            self._current_match = None
+        self.viewport().update()
+
+    def scroll_to_line(self, line_idx: int):
+        if not self._visible_indices:
+            return
+        try:
+            vis_idx = self._visible_indices.index(line_idx)
+        except ValueError:
+            return
+        y = self._line_top(vis_idx)
+        self.verticalScrollBar().setValue(max(0, min(y, self._total_height)))
+        self.viewport().update()
+
+    def scroll_to_bottom(self):
+        self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+
+    def plain_text(self, visible_only: bool = True) -> str:
+        if visible_only:
+            lines = [self._lines[i].plain for i in self._visible_indices]
+        else:
+            lines = [l.plain for l in self._lines]
+        return "\n".join(lines)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.viewport().width() != self._last_width:
+            self._last_width = self.viewport().width()
+            self._recompute_layout_cache()
+
+    def _line_height(self) -> int:
+        fm = self.fontMetrics()
+        return fm.height() + 4
+
+    def _gutter_width(self) -> int:
+        if not self._show_line_numbers:
+            return 0
+        digits = max(1, len(str(len(self._visible_indices))))
+        return self.fontMetrics().horizontalAdvance("9" * digits) + self._gutter_padding
+
+    def _available_width(self) -> int:
+        return max(10, self.viewport().width() - self._gutter_width() - 8)
+
+    def _recompute_layout_cache(self, incremental: bool = False):
+        if not self._visible_indices:
+            self._prefix_heights = []
+            self._total_height = 0
+            self._max_line_width = 0
+            self._update_scrollbars()
+            return
+
+        width = self._available_width()
+        heights: list[int] = []
+        max_width = 0
+        if incremental and self._prefix_heights:
+            start = len(self._prefix_heights)
+            heights = self._prefix_heights[:]
+            total = heights[-1] if heights else 0
+            for idx in self._visible_indices[start:]:
+                if idx >= len(self._lines):
+                    continue
+                line = self._lines[idx]
+                h = self._layout_height(line, width)
+                total += h
+                heights.append(total)
+                if not self._wrap:
+                    max_width = max(max_width, self.fontMetrics().horizontalAdvance(line.plain))
+            self._prefix_heights = heights
+            self._total_height = total
+            if max_width:
+                self._max_line_width = max(self._max_line_width, max_width)
+            self._update_scrollbars()
+            return
+
+        total = 0
+        self._prefix_heights = []
+        for idx in self._visible_indices:
+            if idx >= len(self._lines):
+                continue
+            line = self._lines[idx]
+            h = self._layout_height(line, width)
+            total += h
+            self._prefix_heights.append(total)
+            if not self._wrap:
+                max_width = max(max_width, self.fontMetrics().horizontalAdvance(line.plain))
+        self._total_height = total
+        self._max_line_width = max_width
+        self._update_scrollbars()
+
+    def _layout_height(self, line: LogLine, width: int) -> int:
+        if not self._wrap:
+            return self._line_height()
+        key = (width, True)
+        cached = line.layout_cache.get(key)
+        if cached:
+            return cached[1]
+        layout = self._build_layout(line, width)
+        height = int(layout.boundingRect().height()) + 4
+        line.layout_cache[key] = (layout, height)
+        return height
+
+    def _build_layout(self, line: LogLine, width: int) -> QTextLayout:
+        layout = QTextLayout(line.plain, self.font())
+        ranges = []
+        pos = 0
+        use_line_color = line.line_color is not None and Settings().color_line_by_tag
+        for chunk_text, fg, bg, bold, italic in line.chunks:
+            length = len(chunk_text)
+            fmt = QTextCharFormat()
+            if use_line_color and bg != _DEFAULT_BG:
+                fmt.setBackground(line.line_color)
+                fmt.setForeground(_contrast_color(line.line_color))
+            elif use_line_color and fg == _DEFAULT_FG and bg == _DEFAULT_BG:
+                fmt.setForeground(line.line_color)
+            else:
+                fmt.setForeground(fg)
+                if bg != _DEFAULT_BG:
+                    fmt.setBackground(bg)
+            if bold:
+                fmt.setFontWeight(QFont.Weight.Bold)
+            if italic:
+                fmt.setFontItalic(True)
+            fr = QTextLayout.FormatRange()
+            fr.start = pos
+            fr.length = length
+            fr.format = fmt
+            ranges.append(fr)
+            pos += length
+        layout.setFormats(ranges)
+        option = QTextOption()
+        option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere if self._wrap else QTextOption.WrapMode.NoWrap)
+        layout.setTextOption(option)
+        layout.beginLayout()
+        while True:
+            line_obj = layout.createLine()
+            if not line_obj.isValid():
+                break
+            line_obj.setLineWidth(width)
+        layout.endLayout()
+        return layout
+
+    def _update_scrollbars(self):
+        page = self.viewport().height()
+        self.verticalScrollBar().setRange(0, max(0, self._total_height - page))
+        self.verticalScrollBar().setPageStep(page)
+        if self._wrap:
+            self.horizontalScrollBar().setRange(0, 0)
+        else:
+            hmax = max(0, self._max_line_width - self._available_width())
+            self.horizontalScrollBar().setRange(0, hmax)
+
+    def _line_top(self, visible_idx: int) -> int:
+        if visible_idx <= 0:
+            return 0
+        if visible_idx - 1 < len(self._prefix_heights):
+            return self._prefix_heights[visible_idx - 1]
+        return 0
+
+    def _find_visible_start(self, scroll_y: int) -> int:
+        if not self._prefix_heights:
+            return 0
+        lo, hi = 0, len(self._prefix_heights) - 1
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if self._prefix_heights[mid] < scroll_y:
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+
+    def paintEvent(self, event):
+        painter = QPainter(self.viewport())
+        painter.fillRect(event.rect(), QColor("#000000"))
+
+        if self._watermark_pixmap and Settings().show_watermark:
+            painter.setOpacity(Settings().watermark_opacity)
+            x = (self.viewport().width() - self._watermark_pixmap.width()) // 2
+            y = (self.viewport().height() - self._watermark_pixmap.height()) // 2
+            painter.drawPixmap(x, y, self._watermark_pixmap)
+            painter.setOpacity(1.0)
+
+        gutter_w = self._gutter_width()
+        if gutter_w > 0:
+            painter.fillRect(QRect(0, 0, gutter_w, self.viewport().height()), QColor("#1a1a1a"))
+            painter.setPen(QColor("#333333"))
+            painter.drawLine(gutter_w - 1, 0, gutter_w - 1, self.viewport().height())
+
+        scroll_y = self.verticalScrollBar().value()
+        scroll_x = self.horizontalScrollBar().value()
+        x0 = gutter_w + 6
+        x0 -= scroll_x
+        y0 = -scroll_y
+        width = self._available_width()
+        fm = self.fontMetrics()
+
+        if not self._visible_indices:
+            painter.end()
+            return
+
+        start_idx = self._find_visible_start(scroll_y)
+        y = self._line_top(start_idx) - scroll_y
+        i = start_idx
+
+        while i < len(self._visible_indices) and y < self.viewport().height():
+            line_idx = self._visible_indices[i]
+            line = self._lines[line_idx]
+            line_h = self._layout_height(line, width)
+
+            if self._show_line_numbers:
+                painter.setPen(QColor("#555555"))
+                line_rect = QRect(0, int(y), gutter_w - 4, int(line_h))
+                painter.drawText(
+                    line_rect,
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
+                    str(i + 1),
+                )
+
+            # Highlights (draw first)
+            if line_idx in self._highlight_map:
+                highlights = self._highlight_map[line_idx]
+                for start, end, is_current in highlights:
+                    if start == end:
+                        continue
+                    color = QColor("#1E3A8A") if is_current else QColor("#3D1510")
+                    if self._wrap:
+                        layout = line.layout_cache.get((width, True))
+                        if not layout:
+                            layout = self._build_layout(line, width)
+                            line.layout_cache[(width, True)] = (layout, int(layout.boundingRect().height()) + 4)
+                        for li in range(layout.lineCount()):
+                            l = layout.lineAt(li)
+                            line_start = l.textStart()
+                            line_end = line_start + l.textLength()
+                            sel_start = max(start, line_start)
+                            sel_end = min(end, line_end)
+                            if sel_start < sel_end:
+                                x_start = l.cursorToX(sel_start - line_start)
+                                x_end = l.cursorToX(sel_end - line_start)
+                                rect = QRectF(
+                                    x0 + x_start,
+                                    y + l.y(),
+                                    x_end - x_start,
+                                    l.height(),
+                                )
+                                painter.fillRect(rect, color)
+                    else:
+                        x_start = fm.horizontalAdvance(line.plain[:start])
+                        x_end = fm.horizontalAdvance(line.plain[:end])
+                        rect = QRect(int(x0 + x_start), int(y), int(x_end - x_start), int(line_h))
+                        painter.fillRect(rect, color)
+
+            # Text
+            if self._wrap:
+                layout = line.layout_cache.get((width, True))
+                if not layout:
+                    layout = self._build_layout(line, width)
+                    line.layout_cache[(width, True)] = (layout, int(layout.boundingRect().height()) + 4)
+                layout.draw(painter, QPoint(x0, int(y)))
+            else:
+                x = x0
+                for chunk_text, fg, bg, bold, italic in line.chunks:
+                    fmt = QTextCharFormat()
+                    use_line_color = line.line_color is not None and Settings().color_line_by_tag
+                    if use_line_color and bg != _DEFAULT_BG:
+                        fmt.setBackground(line.line_color)
+                        fmt.setForeground(_contrast_color(line.line_color))
+                    elif use_line_color and fg == _DEFAULT_FG and bg == _DEFAULT_BG:
+                        fmt.setForeground(line.line_color)
+                    else:
+                        fmt.setForeground(fg)
+                        if bg != _DEFAULT_BG:
+                            fmt.setBackground(bg)
+                    if bold:
+                        fmt.setFontWeight(QFont.Weight.Bold)
+                    if italic:
+                        fmt.setFontItalic(True)
+                    painter.setFont(self.font())
+                    painter.setPen(fmt.foreground().color())
+                    if fmt.background() != QBrush():
+                        bgc = fmt.background().color()
+                        if bgc.isValid() and bgc != _DEFAULT_BG:
+                            painter.fillRect(QRect(int(x), int(y), fm.horizontalAdvance(chunk_text), line_h), bgc)
+                    painter.drawText(QPoint(int(x), int(y) + fm.ascent() + 2), chunk_text)
+                    x += fm.horizontalAdvance(chunk_text)
+
+            y += line_h
+            i += 1
+
+        painter.end()
+
+# ── Search Worker (async) ────────────────────────────────────────────────────
+class _SearchWorker(QObject):
+    finished = pyqtSignal(int, list)
+
+    def __init__(self, seq: int, lines: list[str], query: str, regex: bool, case: bool):
+        super().__init__()
+        self._seq = seq
+        self._lines = lines
+        self._query = query
+        self._regex = regex
+        self._case = case
+
+    def run(self):
+        ranges: list[tuple[int, int]] = []
+        if not self._query:
+            self.finished.emit(self._seq, ranges)
+            return
+
+        if self._regex:
+            flags = 0 if self._case else re.IGNORECASE
+            try:
+                pattern = re.compile(self._query, flags)
+            except re.error:
+                self.finished.emit(self._seq, ranges)
+                return
+            for i, line in enumerate(self._lines):
+                for m in pattern.finditer(line):
+                    start, end = m.span()
+                    if start != end:
+                        ranges.append((i, start, end))
+        else:
+            needle = self._query if self._case else self._query.lower()
+            nlen = len(needle)
+            if nlen == 0:
+                self.finished.emit(self._seq, ranges)
+                return
+            for i, line in enumerate(self._lines):
+                hay = line if self._case else line.lower()
+                start = 0
+                while True:
+                    idx = hay.find(needle, start)
+                    if idx == -1:
+                        break
+                    ranges.append((i, idx, idx + nlen))
+                    start = idx + nlen
+
+        self.finished.emit(self._seq, ranges)
 
 # ── Custom ComboBox with proper dropdown arrow ────────────────────────────────
 class CustomComboBox(QComboBox):
@@ -434,8 +890,8 @@ class LogcatTab(QWidget):
         self._total_lines = 0
         self._settings = Settings()
         self._max_lines = max(0, int(self._settings.log_view_max_lines))
-        maxlen = self._max_lines if self._max_lines > 0 else None
-        self._raw_lines: deque[tuple[str, list, str | None, str | None, QColor | None]] = deque(maxlen=maxlen)
+        self._lines: list[LogLine] = []
+        self._visible_indices: list[int] = []
         self._pending_lines: deque[str] = deque()
         self._flush_timer = QTimer(self)
         self._flush_timer.setInterval(16)
@@ -453,24 +909,26 @@ class LogcatTab(QWidget):
         self._last_package = ""
         self._stopping = False
         self._level_filters: set[str] = set()
-        self._rebuild_timer = QTimer(self)
-        self._rebuild_timer.setInterval(16)
-        self._rebuild_timer.timeout.connect(self._rebuild_step)
         self._rebuild_id = 0
-        self._rebuild_iter = None
-        self._rebuild_query = ""
-        self._rebuild_grep = False
-        self._rebuild_highlight = False
         self._color_line_by_tag = self._settings.color_line_by_tag
         self._last_tag_color: QColor | None = None
-        self._match_ranges: list[tuple[int, int]] = []
-        self._base_selections: list[QTextEdit.ExtraSelection] = []
+        self._grep_active = False
+        self._match_ranges: list[tuple[int, int, int]] = []
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(140)
         self._search_timer.timeout.connect(self._apply_search_now)
+        self._search_seq = 0
+        self._search_thread: QThread | None = None
+        self._search_worker: _SearchWorker | None = None
+        self._selection_timer = QTimer(self)
+        self._selection_timer.setInterval(16)
+        self._selection_timer.timeout.connect(self._apply_selection_batch)
+        self._pending_ranges: list[tuple[int, int]] = []
+        self._applied_selections: list[tuple[int, int, int]] = []
 
         self._build_ui()
+        self.log_view.set_lines(self._lines, reset_visible=False)
         self._setup_shortcuts()
         self._last_package = self._selected_package()
 
@@ -755,40 +1213,20 @@ class LogcatTab(QWidget):
     # ── Log area ──────────────────────────────────────────────────────────────
 
     def _build_log_area(self) -> QWidget:
-        """Build log area with professional line numbers widget."""
         container = QWidget()
         container.setContentsMargins(0, 0, 0, 0)
         h_layout = QHBoxLayout(container)
         h_layout.setContentsMargins(0, 0, 0, 0)
         h_layout.setSpacing(0)
-        
-        # Log text area (create first so line numbers can reference it)
-        self.log_view = LogTextEdit()
-        self.log_view.setReadOnly(True)
-        self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.log_view.setUndoRedoEnabled(False)
-        self.log_view.document().setMaximumBlockCount(self._max_lines)
-        # Set matching font for synchronization
+
+        self.log_view = VirtualLogView()
         fixed = QFont("Menlo", 12)
         fixed.setStyleHint(QFont.StyleHint.Monospace)
         self.log_view.setFont(fixed)
-        # CRITICAL: Remove all padding/margins so line numbers align perfectly
-        self.log_view.setContentsMargins(0, 0, 0, 0)
-        self.log_view.viewport().setContentsMargins(6, 0, 0, 0)
-        self.log_view.document().setDocumentMargin(0)
-        
-        # Line number area widget (synchronized to text editor)
-        self.line_number_area = LineNumberArea(self.log_view)
-        self.line_number_area.setVisible(Settings().show_line_numbers)
-        # Connect text and scroll changes to update line numbers
-        self.log_view.text_changed.connect(self.line_number_area.update)
-        self.log_view.text_changed.connect(self.line_number_area.update_width)
-        self.log_view.verticalScrollBar().valueChanged.connect(self.line_number_area.update)
-        
-        # Add to layout
-        h_layout.addWidget(self.line_number_area, stretch=0)
+        self.log_view.set_show_line_numbers(Settings().show_line_numbers)
+        self.log_view.set_wrap_enabled(False)
+
         h_layout.addWidget(self.log_view, stretch=1)
-        
         return container
 
     def resizeEvent(self, event):
@@ -1127,50 +1565,46 @@ class LogcatTab(QWidget):
         batch = 0
         max_batch = 200
         file_buf = []
-        self.log_view.setUpdatesEnabled(False)
-        self.log_view.blockSignals(True)
-        try:
-            while self._pending_lines and batch < max_batch:
-                raw = self._pending_lines.popleft()
-                file_buf.append(raw)
-                self._total_lines += 1
-                text = raw.rstrip("\n")
-                chunks = _parse_ansi(text)
-                tag = _extract_tag(text)
-                level = _extract_level(text)
-                line_color = _line_color_from_chunks(chunks)
-                if tag:
-                    if line_color:
-                        self._last_tag_color = line_color
-                else:
-                    if line_color and self._last_tag_color is None:
-                        self._last_tag_color = line_color
-                    if self._last_tag_color is not None:
-                        line_color = self._last_tag_color
-                self._raw_lines.append((text, chunks, tag, level, line_color))
+        new_visible_lines: list[LogLine] = []
+        while self._pending_lines and batch < max_batch:
+            raw = self._pending_lines.popleft()
+            file_buf.append(raw)
+            self._total_lines += 1
+            text = raw.rstrip("\n")
+            plain = _ANSI_STRIP.sub("", text)
+            chunks = _parse_ansi(text)
+            tag = _extract_tag(text)
+            level = _extract_level(text)
+            line_color = _line_color_from_chunks(chunks)
+            if tag:
+                if line_color:
+                    self._last_tag_color = line_color
+            else:
+                if line_color and self._last_tag_color is None:
+                    self._last_tag_color = line_color
+                if self._last_tag_color is not None:
+                    line_color = self._last_tag_color
+            line = LogLine(text, plain, chunks, tag, level, line_color)
+            self._lines.append(line)
 
-                if self.btn_grep.isChecked() and self.search_edit.text():
-                    if not self._line_passes_level_filter(level):
-                        self._visible_line_count += 1
-                        batch += 1
-                        continue
-                    if not self._line_matches(text, self.search_edit.text()):
-                        self._visible_line_count += 1
-                        batch += 1
-                        continue
-                    self._render_line_to_view(text, chunks, line_color)
-                else:
-                    if not self._line_passes_level_filter(level):
-                        self._visible_line_count += 1
-                        batch += 1
-                        continue
-                    self._render_line_to_view(text, chunks, line_color)
-                batch += 1
-        finally:
-            self.log_view.blockSignals(False)
-            self.log_view.setUpdatesEnabled(True)
-            self.line_number_area.update()
-            self.line_number_area.update_width()
+            idx = len(self._lines) - 1
+            if self._passes_filters(line, self.search_edit.text(), self.btn_grep.isChecked()):
+                self._visible_indices.append(idx)
+                new_visible_lines.append(line)
+            batch += 1
+
+        # Trim if needed
+        if self._max_lines > 0 and len(self._lines) > self._max_lines:
+            trim = len(self._lines) - self._max_lines
+            self._lines = self._lines[trim:]
+            self._visible_indices = [i - trim for i in self._visible_indices if i - trim >= 0]
+            if trim > 0:
+                self._match_ranges = [(i - trim, s, e) for (i, s, e) in self._match_ranges if i - trim >= 0]
+            self.log_view.set_lines(self._lines, reset_visible=False)
+            self.log_view.sync_visible_indices(self._visible_indices, incremental=False)
+
+        if new_visible_lines:
+            self.log_view.sync_visible_indices(self._visible_indices, incremental=True)
 
         if file_buf and self._log_fp:
             try:
@@ -1179,49 +1613,28 @@ class LogcatTab(QWidget):
                 pass
 
         if self.btn_autoscroll.isChecked():
-            self.log_view.setTextCursor(self.log_view.textCursor())
-            self.log_view.ensureCursorVisible()
+            self.log_view.scroll_to_bottom()
     
-    def _render_line_to_view(self, text: str, chunks: list, line_color: QColor | None = None):
-        cursor = self.log_view.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-
-        use_line_color = self._color_line_by_tag and line_color is not None
-        for chunk_text, fg, bg, bold, italic in chunks:
-            fmt = QTextCharFormat()
-            if use_line_color and bg != _DEFAULT_BG:
-                fmt.setBackground(line_color)
-                fmt.setForeground(_contrast_color(line_color))
-            elif use_line_color and fg == _DEFAULT_FG and bg == _DEFAULT_BG:
-                fmt.setForeground(line_color)
-            else:
-                fmt.setForeground(fg)
-                if bg != _DEFAULT_BG:
-                    fmt.setBackground(bg)
-            if bold:
-                fmt.setFontWeight(QFont.Weight.Bold)
-            if italic:
-                fmt.setFontItalic(True)
-            cursor.insertText(chunk_text, fmt)
-
-        fmt_nl = QTextCharFormat()
-        cursor.insertText("\n", fmt_nl)
-        
-    
-    def _line_matches(self, text: str, query: str) -> bool:
+    def _line_matches(self, plain: str, query: str) -> bool:
         if not query:
             return True
-        clean = _ANSI_STRIP.sub("", text)
         try:
             if self.btn_regex.isChecked():
                 flags = 0 if self.btn_case.isChecked() else re.IGNORECASE
-                return bool(re.search(query, clean, flags))
+                return bool(re.search(query, plain, flags))
             else:
                 if self.btn_case.isChecked():
-                    return query in clean
-                return query.lower() in clean.lower()
+                    return query in plain
+                return query.lower() in plain.lower()
         except re.error:
             return False
+
+    def _passes_filters(self, line: LogLine, query: str, grep_mode: bool) -> bool:
+        if not self._line_passes_level_filter(line.level):
+            return False
+        if grep_mode and query:
+            return self._line_matches(line.plain, query)
+        return True
 
     def _line_passes_level_filter(self, level: str | None) -> bool:
         if not self._level_filters:
@@ -1237,133 +1650,76 @@ class LogcatTab(QWidget):
             self._level_filters.discard(level)
         self._apply_grep_filter()
 
-    def _start_rebuild_view(self, grep_mode: bool, query: str, highlight: bool):
-        self._rebuild_id += 1
-        self._rebuild_query = query
-        self._rebuild_grep = grep_mode
-        self._rebuild_highlight = highlight
-        self._rebuild_iter = iter(list(self._raw_lines))
-
-        self.log_view.blockSignals(True)
-        self.log_view.clear()
-        self._match_positions = []
-        self._match_ranges = []
-        self._match_idx = 0
-        self._visible_line_count = 0
-
-        if not self._rebuild_timer.isActive():
-            self._rebuild_timer.start()
-
-    def _rebuild_step(self):
-        if self._rebuild_iter is None:
-            self._rebuild_timer.stop()
-            return
-        batch = 0
-        max_batch = 300
-        while batch < max_batch:
-            try:
-                text, chunks, tag, level, line_color = next(self._rebuild_iter)
-            except StopIteration:
-                self._rebuild_iter = None
-                self._rebuild_timer.stop()
-                self.log_view.blockSignals(False)
-                if self._rebuild_highlight:
-                    self._apply_highlights(self._rebuild_query)
-                self._update_line_count_label()
-                if self.btn_autoscroll.isChecked():
-                    scrollbar = self.log_view.verticalScrollBar()
-                    scrollbar.setValue(scrollbar.maximum())
-                return
-
-            if not self._line_passes_level_filter(level):
-                self._visible_line_count += 1
-                batch += 1
-                continue
-            if self._rebuild_grep and self._rebuild_query and not self._line_matches(text, self._rebuild_query):
-                self._visible_line_count += 1
-                batch += 1
-                continue
-            self._render_line_to_view(text, chunks, line_color)
-            batch += 1
-    
     def _apply_grep_filter(self):
         query = self.search_edit.text()
         grep_mode = self.btn_grep.isChecked()
-        self._start_rebuild_view(grep_mode=grep_mode, query=query, highlight=not grep_mode)
+        self._grep_active = grep_mode
+        indices = []
+        for i, line in enumerate(self._lines):
+            if self._passes_filters(line, query, grep_mode):
+                indices.append(i)
+        self._visible_indices = indices
+        self.log_view.sync_visible_indices(indices, incremental=False)
+        if self._match_ranges:
+            self.log_view.set_highlights(self._match_ranges, self._match_idx)
 
     def _apply_highlights(self, query: str):
         if not query:
-            self.log_view.setExtraSelections([])
             self._match_positions = []
             self._match_ranges = []
-            self._base_selections = []
             self._match_idx = 0
+            self.log_view.set_highlights([], None)
             self._update_line_count_label()
             return
-        
-        extra = []
-        self._match_ranges = []
-        self._match_positions = []
-        fmt = QTextCharFormat()
-        fmt.setBackground(QColor("#3D1510"))
-        fmt.setForeground(QColor("#FFD050"))
+        self._start_async_search(query)
 
-        doc = self.log_view.document()
-        if self.btn_regex.isChecked():
-            flags = 0 if self.btn_case.isChecked() else re.IGNORECASE
-            try:
-                pattern = re.compile(query, flags)
-            except re.error:
-                self.log_view.setExtraSelections([])
-                self._match_positions = []
-                self._match_ranges = []
-                self._base_selections = []
-                self._match_idx = 0
-                self._update_line_count_label()
-                return
-            text = doc.toPlainText()
-            for m in pattern.finditer(text):
-                start, end = m.span()
-                if start == end:
-                    continue
-                cursor = QTextCursor(doc)
-                cursor.setPosition(start)
-                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-                self._match_positions.append(start)
-                self._match_ranges.append((start, end))
-                extra.append((cursor, fmt))
-        else:
-            from PyQt6.QtGui import QTextDocument
-            find_flags = QTextDocument.FindFlag(0)
-            if self.btn_case.isChecked():
-                find_flags |= QTextDocument.FindFlag.FindCaseSensitively
-            cursor = doc.find(query, 0, find_flags)
-            while not cursor.isNull():
-                self._match_positions.append(cursor.position())
-                self._match_ranges.append((cursor.selectionStart(), cursor.selectionEnd()))
-                extra.append((cursor, fmt))
-                cursor = doc.find(query, cursor, find_flags)
+    def _start_async_search(self, query: str):
+        self._search_seq += 1
+        seq = self._search_seq
+        lines = [l.plain for l in self._lines]
+        regex = self.btn_regex.isChecked()
+        case = self.btn_case.isChecked()
 
-        self._base_selections = [self._make_extra(c, f) for c, f in extra]
-        self._apply_current_match_highlight()
+        if self._search_thread:
+            self._search_thread.quit()
+            self._search_thread.wait(50)
+        self._search_thread = QThread(self)
+        self._search_worker = _SearchWorker(seq, lines, query, regex, case)
+        self._search_worker.moveToThread(self._search_thread)
+        self._search_thread.started.connect(self._search_worker.run)
+        self._search_worker.finished.connect(self._on_search_results)
+        self._search_worker.finished.connect(self._search_thread.quit)
+        self._search_thread.start()
+
+    def _on_search_results(self, seq: int, ranges: list[tuple[int, int, int]]):
+        if seq != self._search_seq:
+            return
+        self._match_ranges = ranges
+        self._match_positions = [s for s, _, _ in ranges]
+        self._match_idx = 0 if ranges else 0
+
+        self._pending_ranges = ranges[:]
+        self._applied_selections = []
+        if self._selection_timer.isActive():
+            self._selection_timer.stop()
+        self._selection_timer.start()
         self._update_line_count_label()
 
-    def _apply_current_match_highlight(self):
-        if not self._base_selections:
-            self.log_view.setExtraSelections([])
+    def _apply_selection_batch(self):
+        if not self._pending_ranges:
+            self._selection_timer.stop()
+            self.log_view.set_highlights(self._match_ranges, self._match_idx if self._match_ranges else None)
             return
-        selections = list(self._base_selections)
-        if 0 <= self._match_idx < len(self._match_ranges):
-            start, end = self._match_ranges[self._match_idx]
-            if start != end:
-                cursor = QTextCursor(self.log_view.document())
-                cursor.setPosition(start)
-                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-                fmt = QTextCharFormat()
-                fmt.setBackground(QColor("#1E3A8A"))
-                fmt.setForeground(QColor("#FFFFFF"))
-                selections.append(self._make_extra(cursor, fmt))
-        self.log_view.setExtraSelections(selections)
+
+        batch = 0
+        max_batch = 300
+        while self._pending_ranges and batch < max_batch:
+            idx, start, end = self._pending_ranges.pop(0)
+            if start == end:
+                continue
+            self._applied_selections.append((idx, start, end))
+            batch += 1
+        self.log_view.set_highlights(self._applied_selections, None)
 
     def _update_line_count_label(self):
         count = len(self._match_positions)
@@ -1374,8 +1730,12 @@ class LogcatTab(QWidget):
         self.status_changed.emit()
 
     def _restore_all_lines(self):
-        query = self.search_edit.text()
-        self._start_rebuild_view(grep_mode=False, query=query, highlight=True)
+        self._grep_active = False
+        indices = [i for i, line in enumerate(self._lines) if self._line_passes_level_filter(line.level)]
+        self._visible_indices = indices
+        self.log_view.sync_visible_indices(indices, incremental=False)
+        if self._match_ranges:
+            self.log_view.set_highlights(self._match_ranges, self._match_idx)
 
     # ── Search / highlight ────────────────────────────────────────────────────
 
@@ -1383,17 +1743,13 @@ class LogcatTab(QWidget):
         self._search_timer.start()
 
     def _apply_search_now(self):
+        query = self.search_edit.text()
         if self.btn_grep.isChecked():
             self._apply_grep_filter()
         else:
-            self._restore_all_lines()
-
-    @staticmethod
-    def _make_extra(cursor, fmt) -> "QTextEdit.ExtraSelection":
-        sel = QTextEdit.ExtraSelection()
-        sel.cursor = cursor
-        sel.format = fmt
-        return sel
+            if self._grep_active:
+                self._restore_all_lines()
+            self._apply_highlights(query)
 
     def _prev_match(self):
         if self._match_positions:
@@ -1406,18 +1762,16 @@ class LogcatTab(QWidget):
             self._jump_to_match()
 
     def _jump_to_match(self):
-        pos = self._match_positions[self._match_idx]
-        cursor = self.log_view.textCursor()
-        cursor.setPosition(pos)
-        self.log_view.setTextCursor(cursor)
-        self.log_view.ensureCursorVisible()
-        self._apply_current_match_highlight()
+        if not self._match_ranges:
+            return
+        line_idx, _start, _end = self._match_ranges[self._match_idx]
+        self.log_view.scroll_to_line(line_idx)
+        self.log_view.set_highlights(self._match_ranges, self._match_idx)
         count = len(self._match_positions)
         self.lbl_match.setText(f"{self._match_idx + 1} / {count}")
 
     def _toggle_wrap(self, checked: bool):
-        mode = QTextEdit.LineWrapMode.WidgetWidth if checked else QTextEdit.LineWrapMode.NoWrap
-        self.log_view.setLineWrapMode(mode)
+        self.log_view.set_wrap_enabled(checked)
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
@@ -1434,7 +1788,8 @@ class LogcatTab(QWidget):
                 return
         self.log_view.clear()
         self._total_lines = 0
-        self._raw_lines.clear()
+        self._lines.clear()
+        self._visible_indices.clear()
         self._pending_lines.clear()
         if self._flush_timer.isActive():
             self._flush_timer.stop()
@@ -1454,7 +1809,7 @@ class LogcatTab(QWidget):
         self.status_changed.emit()
 
     def copy_log(self):
-        QApplication.clipboard().setText(self.log_view.toPlainText())
+        QApplication.clipboard().setText(self.log_view.plain_text(visible_only=True))
 
     def save_log(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -1463,7 +1818,7 @@ class LogcatTab(QWidget):
         )
         if path:
             if Settings().save_screen_only:
-                Path(path).write_text(self.log_view.toPlainText(), encoding="utf-8")
+                Path(path).write_text(self.log_view.plain_text(visible_only=True), encoding="utf-8")
                 return
             if self._log_fp:
                 try:
@@ -1476,33 +1831,26 @@ class LogcatTab(QWidget):
                     return
                 except Exception:
                     pass
-            Path(path).write_text(self.log_view.toPlainText(), encoding="utf-8")
+            Path(path).write_text(self.log_view.plain_text(visible_only=True), encoding="utf-8")
 
     def refresh_display(self):
         """Refresh display for settings changes (watermark opacity, line numbers)."""
         # Update line numbers visibility
         show_lines = Settings().show_line_numbers
-        self.line_number_area.setVisible(show_lines)
+        self.log_view.set_show_line_numbers(show_lines)
         new_color_by_tag = Settings().color_line_by_tag
         if new_color_by_tag != self._color_line_by_tag:
             self._color_line_by_tag = new_color_by_tag
-            self._start_rebuild_view(
-                grep_mode=self.btn_grep.isChecked(),
-                query=self.search_edit.text(),
-                highlight=not self.btn_grep.isChecked()
-            )
+            self.log_view.clear_layout_cache()
         # Update max lines for log view
         new_max = max(0, int(Settings().log_view_max_lines))
         if new_max != self._max_lines:
             self._max_lines = new_max
-            maxlen = self._max_lines if self._max_lines > 0 else None
-            if maxlen is not None:
-                self._raw_lines = deque(list(self._raw_lines)[-maxlen:], maxlen=maxlen)
-            else:
-                self._raw_lines = deque(list(self._raw_lines))
-            self.log_view.document().setMaximumBlockCount(self._max_lines)
-        # Trigger repaint of line numbers and watermark
-        self.line_number_area.update()
+            if self._max_lines > 0 and len(self._lines) > self._max_lines:
+                trim = len(self._lines) - self._max_lines
+                self._lines = self._lines[trim:]
+                self._visible_indices = [i - trim for i in self._visible_indices if i - trim >= 0]
+        self.log_view.sync_visible_indices(self._visible_indices, incremental=False)
         self.log_view.viewport().update()
 
     # ── Public helpers ────────────────────────────────────────────────────────
@@ -1513,14 +1861,8 @@ class LogcatTab(QWidget):
 
     @property
     def line_count(self) -> int:
-        """Return actual line count from document text (ground truth)."""
-        text = self.log_view.toPlainText()
-        if text:
-            lines = text.split('\n')
-            # Remove empty final line if text ends with newline
-            if lines[-1] == '':
-                lines.pop()
-            return len(lines)
+        if self._visible_indices:
+            return len(self._visible_indices)
         return 0
 
     @property
