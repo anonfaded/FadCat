@@ -191,12 +191,23 @@ class PackageComboBox(CustomComboBox):
         if self.lineEdit():
             self.lineEdit().setReadOnly(True)
         self._popup = QFrame(None, Qt.WindowType.Popup)
+        self._popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._popup.setObjectName("pkgPopup")
-        self._popup.setStyleSheet(
-            "QFrame#pkgPopup { background: #1E1E1E; border: 1px solid #333333; border-radius: 10px; }"
+        self._popup.setStyleSheet("QFrame#pkgPopup { background: transparent; border: none; }")
+
+        outer = QVBoxLayout(self._popup)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._panel = QFrame(self._popup)
+        self._panel.setObjectName("pkgPanel")
+        self._panel.setStyleSheet(
+            "QFrame#pkgPanel { background: #1E1E1E; border: 1px solid #333333; border-radius: 10px; }"
         )
-        layout = QVBoxLayout(self._popup)
-        layout.setContentsMargins(8, 8, 8, 8)
+        outer.addWidget(self._panel)
+
+        layout = QVBoxLayout(self._panel)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
 
         self.search_edit = QLineEdit(self._popup)
@@ -695,6 +706,7 @@ class LogcatTab(QWidget):
                 current_pkg = self._selected_package()
                 from src.core.settings import Settings
                 s = Settings()
+                self._pkg_device = list(pkgs)
                 self._rebuild_package_model(
                     settings_pkgs=s.packages,
                     device_pkgs=pkgs,
@@ -711,7 +723,7 @@ class LogcatTab(QWidget):
         s = Settings()
         self._rebuild_package_model(
             settings_pkgs=s.packages,
-            device_pkgs=[],
+            device_pkgs=self._pkg_device,
             current_pkg=s.default_package,
             filter_text=self._pkg_filter_text,
         )
