@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QComboBox, QPushButton, QLineEdit,
     QTextEdit, QFileDialog, QApplication, QSizePolicy,
-    QListWidget, QListWidgetItem,
+    QListWidget, QListWidgetItem, QToolTip,
 )
 from PyQt6.QtSvg import QSvgRenderer
 
@@ -193,7 +193,7 @@ class PackageComboBox(CustomComboBox):
         self._popup = QFrame(None, Qt.WindowType.Popup)
         self._popup.setObjectName("pkgPopup")
         self._popup.setStyleSheet(
-            "QFrame#pkgPopup { background: #1E1E1E; border: 1px solid #333333; }"
+            "QFrame#pkgPopup { background: #1E1E1E; border: 1px solid #333333; border-radius: 10px; }"
         )
         layout = QVBoxLayout(self._popup)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -204,14 +204,14 @@ class PackageComboBox(CustomComboBox):
         self.search_edit.setFixedHeight(28)
         self.search_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.search_edit.setStyleSheet(
-            "QLineEdit { background: #2A2A2A; color: #E8E8E8; border: 1px solid #3A3A3A; padding: 4px 6px; }"
+            "QLineEdit { background: #2A2A2A; color: #E8E8E8; border: 1px solid #3A3A3A; padding: 4px 8px; border-radius: 6px; }"
         )
         layout.addWidget(self.search_edit, stretch=0)
 
         self._list_widget = QListWidget(self._popup)
         self._list_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._list_widget.setStyleSheet(
-            "QListWidget { background: #1E1E1E; color: #E8E8E8; border: none; }"
+            "QListWidget { background: #1E1E1E; color: #E8E8E8; border: 1px solid #2A2A2A; border-radius: 8px; }"
             "QListWidget::item:selected { background: #2A2A2A; }"
         )
         layout.addWidget(self._list_widget, stretch=1)
@@ -219,6 +219,13 @@ class PackageComboBox(CustomComboBox):
         self._list_widget.itemClicked.connect(self._on_item_clicked)
         self._all_top: list[str] = []
         self._all_lower: list[str] = []
+
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(
+                app.styleSheet()
+                + " QToolTip { background-color: #1A1A1A; color: #E8E8E8; border: 1px solid #333333; padding: 6px 8px; }"
+            )
 
     def showPopup(self):
         if self._popup.isVisible():
@@ -241,7 +248,8 @@ class PackageComboBox(CustomComboBox):
     def _on_item_clicked(self, item):
         if not item or item.data(Qt.ItemDataRole.UserRole) == "header":
             return
-        self.setCurrentText(item.text())
+        value = item.data(Qt.ItemDataRole.UserRole)
+        self.setCurrentText(value if value else item.text().strip())
         self.hidePopup()
 
     def set_sectioned_items(self, top_items: list[str], lower_items: list[str], filter_text: str):
@@ -253,7 +261,7 @@ class PackageComboBox(CustomComboBox):
         ftext = (filter_text or "").strip().lower()
         self._list_widget.clear()
 
-        def add_header(title: str):
+        def add_header(title: str, tooltip: str):
             header = QListWidgetItem(title)
             header.setData(Qt.ItemDataRole.UserRole, "header")
             header.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -261,11 +269,12 @@ class PackageComboBox(CustomComboBox):
             font.setBold(True)
             header.setFont(font)
             header.setForeground(QColor("#E8302A"))
-            header.setToolTip("Section header. Use search to filter packages.")
+            header.setToolTip(tooltip)
             self._list_widget.addItem(header)
 
         def add_item(text: str):
-            item = QListWidgetItem(text)
+            item = QListWidgetItem(f"  {text}")
+            item.setData(Qt.ItemDataRole.UserRole, text)
             item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             if text == "Global":
                 item.setToolTip("Global: show all logs (no package filtering).")
@@ -273,13 +282,19 @@ class PackageComboBox(CustomComboBox):
 
         top_matches = [p for p in self._all_top if not ftext or ftext in p.lower()]
         if top_matches:
-            add_header("FadCat Packages")
+            add_header(
+                "FadCat Packages",
+                "FadCat packages are saved in Settings for quick access."
+            )
             for p in top_matches:
                 add_item(p)
 
         lower_matches = [p for p in self._all_lower if not ftext or ftext in p.lower()]
         if lower_matches:
-            add_header("Device Packages")
+            add_header(
+                "Device Packages",
+                "Device packages are installed on the currently connected device."
+            )
             for p in lower_matches:
                 add_item(p)
 
