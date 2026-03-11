@@ -335,13 +335,13 @@ class PackageComboBox(CustomComboBox):
 _ANSI_RESET = re.compile(r"\x1b\[([0-9;]*)m")
 _ANSI_STRIP = re.compile(r"\x1b\[[0-9;]*m")
 _TAG_RE = re.compile(r"^[A-Z]\/([^:(]+)")
-_LEVEL_RE = re.compile(r"^([A-Z])\/")
+_LEVEL_RE = re.compile(r"\s([VDIWEF])\s")
 
 _FG = {
-    30: "#3D3D3D", 31: "#E8302A", 32: "#3CB371", 33: "#E8A020",
-    34: "#4A9FE8", 35: "#B05CBF", 36: "#3CB3B3", 37: "#E8E8E8",
-    90: "#606060", 91: "#FF5F5F", 92: "#5FD87A", 93: "#FFD050",
-    94: "#70B8FF", 95: "#D07AFF", 96: "#50D8D8", 97: "#FFFFFF",
+    30: "#9C9C9C", 31: "#FF5F5F", 32: "#5AF78E", 33: "#F3F99D",
+    34: "#57C7FF", 35: "#D070FF", 36: "#5FFFD7", 37: "#FFFFFF",
+    90: "#B0B0B0", 91: "#FF7A7A", 92: "#7CFFAA", 93: "#FFF0A6",
+    94: "#7CCBFF", 95: "#E09BFF", 96: "#7CFFE6", 97: "#FFFFFF",
 }
 _BG = {
     40: "#1A1A1A", 41: "#4A1010", 42: "#0E3820", 43: "#3A2800",
@@ -383,8 +383,15 @@ def _parse_ansi(text: str) -> list[tuple[str, QColor, QColor, bool, bool]]:
     return result
 
 
+def _line_color_from_chunks(chunks: list[tuple[str, QColor, QColor, bool, bool]]) -> QColor | None:
+    for chunk_text, fg, bg, _bold, _italic in chunks:
+        if chunk_text.strip() and fg != _DEFAULT_FG and bg == _DEFAULT_BG:
+            return fg
+    return None
+
+
 def _extract_tag(text: str) -> str | None:
-    clean = _ANSI_STRIP.sub("", text)
+    clean = _ANSI_STRIP.sub("", text).lstrip()
     m = _TAG_RE.match(clean)
     if not m:
         return None
@@ -392,8 +399,20 @@ def _extract_tag(text: str) -> str | None:
 
 
 def _extract_level(text: str) -> str | None:
-    clean = _ANSI_STRIP.sub("", text)
-    m = _LEVEL_RE.match(clean)
+    clean = _ANSI_STRIP.sub("", text).lstrip()
+    if not clean:
+        return None
+    tokens = clean.split()
+    for idx in range(min(2, len(tokens))):
+        tok = tokens[idx]
+        if tok in {"V", "D", "I", "W", "E", "F"}:
+            return tok
+    for tok in tokens:
+        if tok in {"V", "D", "I", "W", "E", "F"}:
+            return tok
+    if len(clean) >= 2 and clean[0] in "VDIWEF" and clean[1] == "/":
+        return clean[0]
+    m = _LEVEL_RE.search(clean)
     if not m:
         return None
     return m.group(1).strip()
@@ -418,10 +437,10 @@ class LogcatTab(QWidget):
         self._settings = Settings()
         self._max_lines = max(0, int(self._settings.log_view_max_lines))
         maxlen = self._max_lines if self._max_lines > 0 else None
-        self._raw_lines: deque[tuple[str, list, str | None, str | None]] = deque(maxlen=maxlen)
+        self._raw_lines: deque[tuple[str, list, str | None, str | None, QColor | None]] = deque(maxlen=maxlen)
         self._pending_lines: deque[str] = deque()
         self._flush_timer = QTimer(self)
-        self._flush_timer.setInterval(50)
+        self._flush_timer.setInterval(16)
         self._flush_timer.timeout.connect(self._flush_pending_lines)
         self._visible_line_count = 0
         self._log_path = Path(tempfile.gettempdir()) / f"fadcat_log_{id(self)}.txt"
@@ -436,6 +455,17 @@ class LogcatTab(QWidget):
         self._last_package = ""
         self._stopping = False
         self._level_filters: set[str] = set()
+        self._rebuild_timer = QTimer(self)
+        self._rebuild_timer.setInterval(16)
+        self._rebuild_timer.timeout.connect(self._rebuild_step)
+        self._rebuild_id = 0
+        self._rebuild_iter = None
+        self._rebuild_query = ""
+        self._rebuild_grep = False
+        self._rebuild_highlight = False
+        self._color_line_by_tag = self._settings.color_line_by_tag
+        self._match_ranges: list[tuple[int, int]] = []
+        self._base_selections: list[QTextEdit.ExtraSelection] = []
 
         self._build_ui()
         self._setup_shortcuts()
@@ -446,6 +476,10 @@ class LogcatTab(QWidget):
         
         # Connect package selection to save it in settings
         self.pkg_combo.currentTextChanged.connect(self._on_package_changed)
+
+    @staticmethod
+    def _hand(widget: QWidget):
+        widget.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -467,15 +501,16 @@ class LogcatTab(QWidget):
         h = QHBoxLayout(bar)
         h.setContentsMargins(12, 8, 12, 8)
         h.setSpacing(10)
+        self._control_layout = h
 
         # Device
-        lbl_device = QLabel("Device")
-        lbl_device.setStyleSheet("color: #AAAAAA; font-size: 12px; font-weight: 500; background: transparent;")
-        lbl_device.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        h.addWidget(lbl_device, stretch=0)
+        self.lbl_device = QLabel("Device")
+        self.lbl_device.setStyleSheet("color: #AAAAAA; font-size: 12px; font-weight: 500; background: transparent;")
+        self.lbl_device.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        h.addWidget(self.lbl_device, stretch=0)
 
         self.device_combo = CustomComboBox()
-        self.device_combo.setMinimumWidth(100)
+        self.device_combo.setMinimumWidth(120)
         self.device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.device_combo.setFixedHeight(34)
         self.device_combo.setToolTip("Select ADB device")
@@ -486,19 +521,20 @@ class LogcatTab(QWidget):
         btn_refresh.setProperty("role", "icon-btn")
         btn_refresh.setToolTip("Refresh devices")
         btn_refresh.setFixedSize(34, 34)
+        self._hand(btn_refresh)
         btn_refresh.clicked.connect(self.refresh_devices)
         h.addWidget(btn_refresh, stretch=0)
 
         h.addWidget(self._build_v_sep(), stretch=0)
 
         # Package
-        lbl_pkg = QLabel("Package")
-        lbl_pkg.setStyleSheet("color: #AAAAAA; font-size: 12px; font-weight: 500; background: transparent;")
-        lbl_pkg.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
-        h.addWidget(lbl_pkg, stretch=0)
+        self.lbl_pkg = QLabel("Package")
+        self.lbl_pkg.setStyleSheet("color: #AAAAAA; font-size: 12px; font-weight: 500; background: transparent;")
+        self.lbl_pkg.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        h.addWidget(self.lbl_pkg, stretch=0)
 
         self.pkg_combo = PackageComboBox()
-        self.pkg_combo.setMinimumWidth(100)
+        self.pkg_combo.setMinimumWidth(120)
         self.pkg_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.pkg_combo.setFixedHeight(34)
         self.pkg_combo.setToolTip("Package name (select 'Global' for all logs)")
@@ -518,6 +554,7 @@ class LogcatTab(QWidget):
         self.btn_toggle.setFixedHeight(34)
         self.btn_toggle.setMinimumWidth(90)
         self.btn_toggle.setToolTip("Toggle Capture")
+        self._hand(self.btn_toggle)
         self.btn_toggle.clicked.connect(self.toggle_capture)
         h.addWidget(self.btn_toggle, stretch=0)
 
@@ -542,6 +579,7 @@ class LogcatTab(QWidget):
         b.setProperty("role", "tool-text")
         b.setFixedHeight(34)
         b.setMinimumWidth(75)
+        self._hand(b)
         b.clicked.connect(slot)
         if tip:
             b.setToolTip(tip)
@@ -558,6 +596,7 @@ class LogcatTab(QWidget):
         h = QHBoxLayout(bar)
         h.setContentsMargins(12, 6, 12, 6)
         h.setSpacing(8)
+        self._search_layout = h
 
         # Search input
         self.search_edit = QLineEdit()
@@ -565,23 +604,30 @@ class LogcatTab(QWidget):
         self.search_edit.setFixedHeight(32)
         self.search_edit.setMinimumWidth(180)
         self.search_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.search_edit.setClearButtonEnabled(True)
         self.search_edit.textChanged.connect(self._on_search_changed)
+        self.search_edit.returnPressed.connect(self._next_match)
         h.addWidget(self.search_edit, stretch=3)
 
         # Filter toggles
         self.btn_case = QPushButton("Aa")
         self.btn_case.setProperty("role", "toggle")
         self.btn_case.setCheckable(True)
-        self.btn_case.setToolTip("Case sensitive")
+        self.btn_case.setToolTip("Case sensitive: match upper/lowercase exactly.")
         self.btn_case.setFixedSize(44, 34)
+        self._hand(self.btn_case)
         self.btn_case.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_case, stretch=0)
 
         self.btn_regex = QPushButton(".*")
         self.btn_regex.setProperty("role", "toggle")
         self.btn_regex.setCheckable(True)
-        self.btn_regex.setToolTip("Regular expression")
+        self.btn_regex.setToolTip(
+            "Regular expression: match patterns, not just plain text. "
+            "Examples: `error|fail`, `\\bActivity\\b`, `^E/`."
+        )
         self.btn_regex.setFixedSize(44, 34)
+        self._hand(self.btn_regex)
         self.btn_regex.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_regex, stretch=0)
 
@@ -592,6 +638,7 @@ class LogcatTab(QWidget):
         self.btn_grep.setToolTip("Grep mode - hide non-matching lines (⌥G)")
         self.btn_grep.setMinimumWidth(95)
         self.btn_grep.setFixedHeight(34)
+        self._hand(self.btn_grep)
         self.btn_grep.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_grep, stretch=0)
 
@@ -603,6 +650,7 @@ class LogcatTab(QWidget):
         chip_lay = QHBoxLayout(self._level_chip_bar)
         chip_lay.setContentsMargins(0, 0, 0, 0)
         chip_lay.setSpacing(4)
+        self._level_chip_buttons: list[QPushButton] = []
 
         def add_level_chip(label: str, color: str, icon_fn, tooltip: str):
             btn = QPushButton()
@@ -611,6 +659,7 @@ class LogcatTab(QWidget):
             btn.setFixedWidth(26)
             btn.setIcon(icon_fn())
             btn.setIconSize(QSize(12, 12))
+            self._hand(btn)
             btn.setStyleSheet(
                 "QPushButton { background: #2A2A2A; color: #CCCCCC; border: 1px solid #3A3A3A; border-radius: 8px; padding: 0px; }"
                 f"QPushButton:checked {{ background: {color}; color: #111111; border: 1px solid {color}; }}"
@@ -618,6 +667,7 @@ class LogcatTab(QWidget):
             btn.setToolTip(tooltip)
             btn.toggled.connect(lambda checked, lvl=label: self._toggle_level_filter(lvl, checked))
             chip_lay.addWidget(btn)
+            self._level_chip_buttons.append(btn)
 
         add_level_chip("V", "#8A8A8A", icons.icon_level_v,
                        "Verbose: extremely detailed messages. Turn this on only when you need very noisy, low-level logs.")
@@ -635,21 +685,23 @@ class LogcatTab(QWidget):
         h.addWidget(self._level_chip_bar, stretch=0)
 
         # Navigation
-        btn_prev = QPushButton()
-        btn_prev.setIcon(icons.icon_up())
-        btn_prev.setProperty("role", "nav-btn")
-        btn_prev.setToolTip("Previous match (⇧F3)")
-        btn_prev.setFixedSize(34, 34)
-        btn_prev.clicked.connect(self._prev_match)
-        h.addWidget(btn_prev, stretch=0)
+        self.btn_prev = QPushButton()
+        self.btn_prev.setIcon(icons.icon_up())
+        self.btn_prev.setProperty("role", "nav-btn")
+        self.btn_prev.setToolTip("Previous match (⇧F3)")
+        self.btn_prev.setFixedSize(34, 34)
+        self._hand(self.btn_prev)
+        self.btn_prev.clicked.connect(self._prev_match)
+        h.addWidget(self.btn_prev, stretch=0)
 
-        btn_next = QPushButton()
-        btn_next.setIcon(icons.icon_down())
-        btn_next.setProperty("role", "nav-btn")
-        btn_next.setToolTip("Next match (F3)")
-        btn_next.setFixedSize(34, 34)
-        btn_next.clicked.connect(self._next_match)
-        h.addWidget(btn_next, stretch=0)
+        self.btn_next = QPushButton()
+        self.btn_next.setIcon(icons.icon_down())
+        self.btn_next.setProperty("role", "nav-btn")
+        self.btn_next.setToolTip("Next match (F3)")
+        self.btn_next.setFixedSize(34, 34)
+        self._hand(self.btn_next)
+        self.btn_next.clicked.connect(self._next_match)
+        h.addWidget(self.btn_next, stretch=0)
 
         self.lbl_match = QLabel("0 / 0")
         self.lbl_match.setStyleSheet("color: #888888; font-size: 11px; min-width: 50px;")
@@ -659,22 +711,26 @@ class LogcatTab(QWidget):
         h.addStretch(1)
 
         # Options
-        self.btn_autoscroll = QPushButton("Auto-scroll")
+        self.btn_autoscroll = QPushButton()
         self.btn_autoscroll.setIcon(icons.icon_autoscroll())
         self.btn_autoscroll.setProperty("role", "toggle")
         self.btn_autoscroll.setCheckable(True)
         self.btn_autoscroll.setChecked(True)
         self.btn_autoscroll.setFixedHeight(34)
-        self.btn_autoscroll.setMinimumWidth(110)
+        self.btn_autoscroll.setFixedWidth(44)
+        self.btn_autoscroll.setToolTip("Auto-scroll: keep the view pinned to the newest logs.")
+        self._hand(self.btn_autoscroll)
         h.addWidget(self.btn_autoscroll, stretch=0)
 
-        self.btn_wrap = QPushButton("Wrap")
+        self.btn_wrap = QPushButton()
         self.btn_wrap.setIcon(icons.icon_wrap())
         self.btn_wrap.setProperty("role", "toggle")
         self.btn_wrap.setCheckable(True)
         self.btn_wrap.setChecked(False)
         self.btn_wrap.setFixedHeight(34)
-        self.btn_wrap.setMinimumWidth(85)
+        self.btn_wrap.setFixedWidth(44)
+        self.btn_wrap.setToolTip("Wrap: wrap long lines instead of scrolling horizontally.")
+        self._hand(self.btn_wrap)
         self.btn_wrap.toggled.connect(self._toggle_wrap)
         h.addWidget(self.btn_wrap, stretch=0)
 
@@ -731,6 +787,77 @@ class LogcatTab(QWidget):
         h_layout.addWidget(self.log_view, stretch=1)
         
         return container
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_responsive_layout(event.size().width())
+
+    def _update_responsive_layout(self, width: int):
+        compact = width < 900
+        tight = width < 780
+        tiny = width < 700
+        micro = width < 620
+
+        self.lbl_device.setVisible(not compact)
+        self.lbl_pkg.setVisible(not compact)
+
+        if compact:
+            self.device_combo.setMinimumWidth(90)
+            self.pkg_combo.setMinimumWidth(90)
+        else:
+            self.device_combo.setMinimumWidth(120)
+            self.pkg_combo.setMinimumWidth(120)
+
+        self._btn_clear.setText("" if compact else " Clear")
+        self._btn_copy.setText("" if compact else " Copy")
+        self._btn_save.setText("" if compact else " Save")
+
+        if tight:
+            self.btn_toggle.setText("")
+        else:
+            self.btn_toggle.setText("Stop" if self._running else "Start")
+
+        if compact:
+            self.search_edit.setMinimumWidth(120)
+        else:
+            self.search_edit.setMinimumWidth(180)
+
+        # Search row controls in very tight layouts
+        self._level_chip_bar.setVisible(not tiny)
+        self.btn_case.setVisible(not tiny)
+        self.btn_regex.setVisible(not tiny)
+        self.btn_grep.setVisible(not tiny)
+        self.btn_prev.setVisible(not tiny)
+        self.btn_next.setVisible(not tiny)
+        self.lbl_match.setVisible(not tiny)
+
+        if micro:
+            self.search_edit.setMinimumWidth(80)
+            if hasattr(self, "_search_layout"):
+                self._search_layout.setSpacing(4)
+                self._search_layout.setContentsMargins(8, 4, 8, 4)
+            if hasattr(self, "_control_layout"):
+                self._control_layout.setSpacing(6)
+                self._control_layout.setContentsMargins(8, 6, 8, 6)
+        else:
+            if hasattr(self, "_search_layout"):
+                self._search_layout.setSpacing(8)
+                self._search_layout.setContentsMargins(12, 6, 12, 6)
+            if hasattr(self, "_control_layout"):
+                self._control_layout.setSpacing(10)
+                self._control_layout.setContentsMargins(12, 8, 12, 8)
+
+        # Compact chip sizing
+        if tiny:
+            for btn in self._level_chip_buttons:
+                btn.setFixedWidth(22)
+                btn.setFixedHeight(22)
+                btn.setIconSize(QSize(10, 10))
+        else:
+            for btn in self._level_chip_buttons:
+                btn.setFixedWidth(26)
+                btn.setFixedHeight(24)
+                btn.setIconSize(QSize(12, 12))
 
 
     # ── Separators ────────────────────────────────────────────────────────────
@@ -800,7 +927,7 @@ class LogcatTab(QWidget):
                 self.pkg_combo.blockSignals(False)
                 return
 
-            self.clear_log()
+            self.clear_log(confirm=False)
             self._pending_restart = True
             self.stop_capture()
 
@@ -988,35 +1115,44 @@ class LogcatTab(QWidget):
             return
 
         batch = 0
-        max_batch = 400
+        max_batch = 200
         file_buf = []
-        while self._pending_lines and batch < max_batch:
-            raw = self._pending_lines.popleft()
-            file_buf.append(raw)
-            self._total_lines += 1
-            text = raw.rstrip("\n")
-            chunks = _parse_ansi(text)
-            tag = _extract_tag(text)
-            level = _extract_level(text)
-            self._raw_lines.append((text, chunks, tag, level))
+        self.log_view.setUpdatesEnabled(False)
+        self.log_view.blockSignals(True)
+        try:
+            while self._pending_lines and batch < max_batch:
+                raw = self._pending_lines.popleft()
+                file_buf.append(raw)
+                self._total_lines += 1
+                text = raw.rstrip("\n")
+                chunks = _parse_ansi(text)
+                tag = _extract_tag(text)
+                level = _extract_level(text)
+                line_color = _line_color_from_chunks(chunks)
+                self._raw_lines.append((text, chunks, tag, level, line_color))
 
-            if self.btn_grep.isChecked() and self.search_edit.text():
-                if not self._line_passes_level_filter(level):
-                    self._visible_line_count += 1
-                    batch += 1
-                    continue
-                if not self._line_matches(text, self.search_edit.text()):
-                    self._visible_line_count += 1
-                    batch += 1
-                    continue
-                self._render_line_to_view(text, chunks)
-            else:
-                if not self._line_passes_level_filter(level):
-                    self._visible_line_count += 1
-                    batch += 1
-                    continue
-                self._render_line_to_view(text, chunks)
-            batch += 1
+                if self.btn_grep.isChecked() and self.search_edit.text():
+                    if not self._line_passes_level_filter(level):
+                        self._visible_line_count += 1
+                        batch += 1
+                        continue
+                    if not self._line_matches(text, self.search_edit.text()):
+                        self._visible_line_count += 1
+                        batch += 1
+                        continue
+                    self._render_line_to_view(text, chunks, line_color)
+                else:
+                    if not self._line_passes_level_filter(level):
+                        self._visible_line_count += 1
+                        batch += 1
+                        continue
+                    self._render_line_to_view(text, chunks, line_color)
+                batch += 1
+        finally:
+            self.log_view.blockSignals(False)
+            self.log_view.setUpdatesEnabled(True)
+            self.line_number_area.update()
+            self.line_number_area.update_width()
 
         if file_buf and self._log_fp:
             try:
@@ -1028,13 +1164,17 @@ class LogcatTab(QWidget):
             self.log_view.setTextCursor(self.log_view.textCursor())
             self.log_view.ensureCursorVisible()
     
-    def _render_line_to_view(self, text: str, chunks: list):
+    def _render_line_to_view(self, text: str, chunks: list, line_color: QColor | None = None):
         cursor = self.log_view.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
 
+        use_line_color = self._color_line_by_tag and line_color is not None
         for chunk_text, fg, bg, bold, italic in chunks:
             fmt = QTextCharFormat()
-            fmt.setForeground(fg)
+            if use_line_color and fg == _DEFAULT_FG and bg == _DEFAULT_BG:
+                fmt.setForeground(line_color)
+            else:
+                fmt.setForeground(fg)
             if bg != _DEFAULT_BG:
                 fmt.setBackground(bg)
             if bold:
@@ -1050,14 +1190,15 @@ class LogcatTab(QWidget):
     def _line_matches(self, text: str, query: str) -> bool:
         if not query:
             return True
+        clean = _ANSI_STRIP.sub("", text)
         try:
             if self.btn_regex.isChecked():
                 flags = 0 if self.btn_case.isChecked() else re.IGNORECASE
-                return bool(re.search(query, text, flags))
+                return bool(re.search(query, clean, flags))
             else:
                 if self.btn_case.isChecked():
-                    return query in text
-                return query.lower() in text.lower()
+                    return query in clean
+                return query.lower() in clean.lower()
         except re.error:
             return False
 
@@ -1074,62 +1215,134 @@ class LogcatTab(QWidget):
         else:
             self._level_filters.discard(level)
         self._apply_grep_filter()
+
+    def _start_rebuild_view(self, grep_mode: bool, query: str, highlight: bool):
+        self._rebuild_id += 1
+        self._rebuild_query = query
+        self._rebuild_grep = grep_mode
+        self._rebuild_highlight = highlight
+        self._rebuild_iter = iter(list(self._raw_lines))
+
+        self.log_view.blockSignals(True)
+        self.log_view.clear()
+        self._match_positions = []
+        self._match_ranges = []
+        self._match_idx = 0
+        self._visible_line_count = 0
+
+        if not self._rebuild_timer.isActive():
+            self._rebuild_timer.start()
+
+    def _rebuild_step(self):
+        if self._rebuild_iter is None:
+            self._rebuild_timer.stop()
+            return
+        batch = 0
+        max_batch = 300
+        while batch < max_batch:
+            try:
+                text, chunks, tag, level, line_color = next(self._rebuild_iter)
+            except StopIteration:
+                self._rebuild_iter = None
+                self._rebuild_timer.stop()
+                self.log_view.blockSignals(False)
+                if self._rebuild_highlight:
+                    self._apply_highlights(self._rebuild_query)
+                self._update_line_count_label()
+                if self.btn_autoscroll.isChecked():
+                    scrollbar = self.log_view.verticalScrollBar()
+                    scrollbar.setValue(scrollbar.maximum())
+                return
+
+            if not self._line_passes_level_filter(level):
+                self._visible_line_count += 1
+                batch += 1
+                continue
+            if self._rebuild_grep and self._rebuild_query and not self._line_matches(text, self._rebuild_query):
+                self._visible_line_count += 1
+                batch += 1
+                continue
+            self._render_line_to_view(text, chunks, line_color)
+            batch += 1
     
     def _apply_grep_filter(self):
         query = self.search_edit.text()
         grep_mode = self.btn_grep.isChecked()
-        
-        self.log_view.blockSignals(True)
-        self.log_view.clear()
-        self._match_positions = []
-        self._match_idx = 0
-        self._visible_line_count = 0
-        
-        for text, chunks, tag, level in list(self._raw_lines):
-            if not self._line_passes_level_filter(level):
-                self._visible_line_count += 1
-                continue
-            if grep_mode and query and not self._line_matches(text, query):
-                self._visible_line_count += 1
-                continue
-            self._render_line_to_view(text, chunks)
-        
-        self.log_view.blockSignals(False)
-        self._apply_highlights(query)
-        self._update_line_count_label()
-        
-        if self.btn_autoscroll.isChecked():
-            scrollbar = self.log_view.verticalScrollBar()
-            scrollbar.setValue(scrollbar.maximum())
+        self._start_rebuild_view(grep_mode=grep_mode, query=query, highlight=not grep_mode)
 
     def _apply_highlights(self, query: str):
         if not query:
             self.log_view.setExtraSelections([])
             self._match_positions = []
+            self._match_ranges = []
+            self._base_selections = []
             self._match_idx = 0
             self._update_line_count_label()
             return
         
-        from PyQt6.QtGui import QTextDocument
-        find_flags = QTextDocument.FindFlag(0)
-        if self.btn_case.isChecked():
-            find_flags |= QTextDocument.FindFlag.FindCaseSensitively
+        extra = []
+        self._match_ranges = []
+        self._match_positions = []
+        fmt = QTextCharFormat()
+        fmt.setBackground(QColor("#3D1510"))
+        fmt.setForeground(QColor("#FFD050"))
 
         doc = self.log_view.document()
-        cursor = doc.find(query, 0, find_flags)
-        extra = []
-        while not cursor.isNull():
-            fmt = QTextCharFormat()
-            fmt.setBackground(QColor("#3D1510"))
-            fmt.setForeground(QColor("#FFD050"))
-            self._match_positions.append(cursor.position())
-            extra.append((cursor, fmt))
-            cursor = doc.find(query, cursor, find_flags)
+        if self.btn_regex.isChecked():
+            flags = 0 if self.btn_case.isChecked() else re.IGNORECASE
+            try:
+                pattern = re.compile(query, flags)
+            except re.error:
+                self.log_view.setExtraSelections([])
+                self._match_positions = []
+                self._match_ranges = []
+                self._base_selections = []
+                self._match_idx = 0
+                self._update_line_count_label()
+                return
+            text = doc.toPlainText()
+            for m in pattern.finditer(text):
+                start, end = m.span()
+                if start == end:
+                    continue
+                cursor = QTextCursor(doc)
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                self._match_positions.append(start)
+                self._match_ranges.append((start, end))
+                extra.append((cursor, fmt))
+        else:
+            from PyQt6.QtGui import QTextDocument
+            find_flags = QTextDocument.FindFlag(0)
+            if self.btn_case.isChecked():
+                find_flags |= QTextDocument.FindFlag.FindCaseSensitively
+            cursor = doc.find(query, 0, find_flags)
+            while not cursor.isNull():
+                self._match_positions.append(cursor.position())
+                self._match_ranges.append((cursor.selectionStart(), cursor.selectionEnd()))
+                extra.append((cursor, fmt))
+                cursor = doc.find(query, cursor, find_flags)
 
-        self.log_view.setExtraSelections(
-            [self._make_extra(c, f) for c, f in extra]
-        )
+        self._base_selections = [self._make_extra(c, f) for c, f in extra]
+        self._apply_current_match_highlight()
         self._update_line_count_label()
+
+    def _apply_current_match_highlight(self):
+        if not self._base_selections:
+            self.log_view.setExtraSelections([])
+            return
+        selections = list(self._base_selections)
+        if 0 <= self._match_idx < len(self._match_ranges):
+            start, end = self._match_ranges[self._match_idx]
+            if start != end:
+                cursor = QTextCursor(self.log_view.document())
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                fmt = QTextCharFormat()
+                fmt.setBackground(QColor("#1E3A8A"))
+                fmt.setForeground(QColor("#FFFFFF"))
+                selections.append(self._make_extra(cursor, fmt))
+        self.log_view.setExtraSelections(selections)
 
     def _update_line_count_label(self):
         count = len(self._match_positions)
@@ -1140,22 +1353,8 @@ class LogcatTab(QWidget):
         self.status_changed.emit()
 
     def _restore_all_lines(self):
-        self.log_view.blockSignals(True)
-        self.log_view.clear()
-        self._match_positions = []
-        self._match_idx = 0
-        self._visible_line_count = 0
-        
-        for text, chunks, tag, level in list(self._raw_lines):
-            if not self._line_passes_level_filter(level):
-                continue
-            self._render_line_to_view(text, chunks)
-        
-        self.log_view.blockSignals(False)
-        self.status_changed.emit()
-        
-        scrollbar = self.log_view.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        query = self.search_edit.text()
+        self._start_rebuild_view(grep_mode=False, query=query, highlight=True)
 
     # ── Search / highlight ────────────────────────────────────────────────────
 
@@ -1164,8 +1363,6 @@ class LogcatTab(QWidget):
             self._apply_grep_filter()
         else:
             self._restore_all_lines()
-            query = self.search_edit.text()
-            self._apply_highlights(query)
 
     @staticmethod
     def _make_extra(cursor, fmt) -> "QTextEdit.ExtraSelection":
@@ -1190,6 +1387,7 @@ class LogcatTab(QWidget):
         cursor.setPosition(pos)
         self.log_view.setTextCursor(cursor)
         self.log_view.ensureCursorVisible()
+        self._apply_current_match_highlight()
         count = len(self._match_positions)
         self.lbl_match.setText(f"{self._match_idx + 1} / {count}")
 
@@ -1199,7 +1397,17 @@ class LogcatTab(QWidget):
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
-    def clear_log(self):
+    def clear_log(self, confirm: bool = True):
+        if confirm:
+            repl = QMessageBox.question(
+                self,
+                "Clear Log?",
+                "This will clear the visible log view. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if repl != QMessageBox.StandardButton.Yes:
+                return
         self.log_view.clear()
         self._total_lines = 0
         self._raw_lines.clear()
@@ -1251,6 +1459,14 @@ class LogcatTab(QWidget):
         # Update line numbers visibility
         show_lines = Settings().show_line_numbers
         self.line_number_area.setVisible(show_lines)
+        new_color_by_tag = Settings().color_line_by_tag
+        if new_color_by_tag != self._color_line_by_tag:
+            self._color_line_by_tag = new_color_by_tag
+            self._start_rebuild_view(
+                grep_mode=self.btn_grep.isChecked(),
+                query=self.search_edit.text(),
+                highlight=not self.btn_grep.isChecked()
+            )
         # Update max lines for log view
         new_max = max(0, int(Settings().log_view_max_lines))
         if new_max != self._max_lines:

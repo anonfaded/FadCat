@@ -186,6 +186,14 @@ class SettingsDialog(QDialog):
         self.save_screen_only_check.stateChanged.connect(self._apply_display_changes)
         grp_lines_lay.addWidget(self.save_screen_only_check)
 
+        self.color_line_by_tag_check = QCheckBox("Color entire line by tag color")
+        self.color_line_by_tag_check.setToolTip(
+            "When enabled, the tag color is applied to the whole line (where possible). "
+            "This can improve readability but may reduce contrast for some themes."
+        )
+        self.color_line_by_tag_check.stateChanged.connect(self._apply_display_changes)
+        grp_lines_lay.addWidget(self.color_line_by_tag_check)
+
         disp_lay.addWidget(grp_lines)
         disp_lay.addStretch()
 
@@ -212,6 +220,7 @@ class SettingsDialog(QDialog):
         self.line_numbers_check.blockSignals(True)
         self.max_lines_spin.blockSignals(True)
         self.save_screen_only_check.blockSignals(True)
+        self.color_line_by_tag_check.blockSignals(True)
         
         # Packages
         self.pkg_list.clear()
@@ -231,6 +240,7 @@ class SettingsDialog(QDialog):
         self.line_numbers_check.setChecked(self._settings.show_line_numbers)
         self.max_lines_spin.setValue(self._settings.log_view_max_lines)
         self.save_screen_only_check.setChecked(self._settings.save_screen_only)
+        self.color_line_by_tag_check.setChecked(self._settings.color_line_by_tag)
         
         # UNBLOCK SIGNALS now that populate is done
         self.watermark_check.blockSignals(False)
@@ -238,6 +248,7 @@ class SettingsDialog(QDialog):
         self.line_numbers_check.blockSignals(False)
         self.max_lines_spin.blockSignals(False)
         self.save_screen_only_check.blockSignals(False)
+        self.color_line_by_tag_check.blockSignals(False)
             
         self._refresh_default_combo()
 
@@ -305,6 +316,7 @@ class SettingsDialog(QDialog):
         self._settings.show_line_numbers = self.line_numbers_check.isChecked()
         self._settings.log_view_max_lines = self.max_lines_spin.value()
         self._settings.save_screen_only = self.save_screen_only_check.isChecked()
+        self._settings.color_line_by_tag = self.color_line_by_tag_check.isChecked()
         # SAVE IMMEDIATELY so real-time changes persist
         self._settings.save()
         self.settings_changed.emit()

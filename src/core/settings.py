@@ -55,7 +55,8 @@ DEFAULT_SETTINGS = {
     "show_watermark": True,     # Enable/disable watermark
     "show_line_numbers": True,  # Show line numbers in log view
     "log_view_max_lines": 5000, # 0 = unlimited (may cause lag)
-    "save_screen_only": True    # Save only visible logs from the UI
+    "save_screen_only": True,   # Save only visible logs from the UI
+    "color_line_by_tag": False  # Color full line using tag color (when available)
 }
 
 class SettingsManager:
@@ -170,6 +171,14 @@ class Settings:
     @save_screen_only.setter
     def save_screen_only(self, value: bool):
         self._data["save_screen_only"] = bool(value)
+
+    @property
+    def color_line_by_tag(self) -> bool:
+        return bool(self._data.get("color_line_by_tag", False))
+
+    @color_line_by_tag.setter
+    def color_line_by_tag(self, value: bool):
+        self._data["color_line_by_tag"] = bool(value)
     
     def save(self):
         SettingsManager.save(self._data)

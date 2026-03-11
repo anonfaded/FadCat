@@ -6,7 +6,7 @@ import sys
 import resource
 
 from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, pyqtSignal, QUrl
-from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence, QCursor
+from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence, QCursor, QIcon
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QStatusBar,
     QLabel, QWidget, QSizePolicy, QTabBar, QPushButton, QInputDialog, QFrame, QHBoxLayout,
@@ -226,18 +226,20 @@ class LogcatGUI(QMainWindow):
         self.setStatusBar(sb)
         sb.setStyleSheet("QStatusBar { background: #242424; border-top: 1px solid #444444; }")
 
-        self.lbl_status_device = QLabel("No device")
-        self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
-        self.lbl_status_lines = QLabel("0 lines")
-        self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
         self.lbl_status_state = QLabel("Idle")
-        self.lbl_status_state.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
+        self.lbl_status_state.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
+        self.lbl_status_device = QLabel("No device")
+        self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
+        self.lbl_status_lines = QLabel("0 lines")
+        self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
         self.lbl_status_mem = QLabel("— MB")
-        self.lbl_status_mem.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
+        self.lbl_status_mem.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
 
-        sb.addWidget(self.lbl_status_state)
+        self._sb_state_icon, state_item = self._sb_item(icons.icon_status(), self.lbl_status_state)
+        sb.addWidget(state_item)
         sb.addWidget(self._sb_sep())
-        sb.addWidget(self.lbl_status_device)
+        self._sb_device_icon, device_item = self._sb_item(icons.icon_device(), self.lbl_status_device)
+        sb.addWidget(device_item)
         
         # Copyright and website link (on the right, before line count)
         copyright_label = QLabel("© 2024–2026")
@@ -263,15 +265,30 @@ class LogcatGUI(QMainWindow):
         divider.setStyleSheet("color: #333333;")
         sb.addPermanentWidget(divider)
         
-        sb.addPermanentWidget(self.lbl_status_lines)
+        self._sb_lines_icon, lines_item = self._sb_item(icons.icon_lines(), self.lbl_status_lines)
+        sb.addPermanentWidget(lines_item)
         sb.addPermanentWidget(self._sb_sep())
-        sb.addPermanentWidget(self.lbl_status_mem)
+        self._sb_mem_icon, mem_item = self._sb_item(icons.icon_memory(), self.lbl_status_mem)
+        sb.addPermanentWidget(mem_item)
 
     @staticmethod
     def _sb_sep() -> QLabel:
         sep = QLabel("|")
         sep.setStyleSheet("color: #333333; padding: 0 4px;")
         return sep
+
+    @staticmethod
+    def _sb_item(icon: QIcon, label: QLabel) -> tuple[QLabel, QWidget]:
+        w = QWidget()
+        w.setStyleSheet("background: transparent;")
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(6, 0, 6, 0)
+        lay.setSpacing(4)
+        ic = QLabel()
+        ic.setPixmap(icon.pixmap(14, 14))
+        lay.addWidget(ic)
+        lay.addWidget(label)
+        return ic, w
 
     def _refresh_statusbar(self):
         tab = self._current_tab()
@@ -283,11 +300,12 @@ class LogcatGUI(QMainWindow):
             return
         self.lbl_status_device.setText(tab.current_device or "—")
         self.lbl_status_lines.setText(f"{tab.line_count:,} lines")
-        self.lbl_status_state.setText(
-            '<span style="color:#3CB371">● Running</span>' if tab.is_running
-            else "Idle"
-        )
-        self.lbl_status_state.setTextFormat(Qt.TextFormat.RichText)
+        self.lbl_status_state.setText("Running" if tab.is_running else "Idle")
+        self.lbl_status_state.setTextFormat(Qt.TextFormat.PlainText)
+        # Update running icon color
+        status_icon = icons.icon_status_running() if tab.is_running else icons.icon_status()
+        if hasattr(self, "_sb_state_icon"):
+            self._sb_state_icon.setPixmap(status_icon.pixmap(14, 14))
         self.lbl_status_mem.setText(f"{self._mem_mb():.1f} MB")
 
     @staticmethod
