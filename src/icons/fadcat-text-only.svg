@@ -1,0 +1,14 @@
+<svg width="240" height="40" viewBox="0 0 48 8" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @font-face {
+        font-family: 'Press Start 2P';
+        src: url('PressStart2P.ttf') format('truetype');
+      }
+      .pixel-text { font-family: 'Press Start 2P', monospace; font-size: 7px; font-weight: bold; }
+    </style>
+  </defs>
+
+  <!-- Text: "fadCat" in red/white -->
+  <text x="0" y="7" class="pixel-text"><tspan fill="#ff2222">fad</tspan><tspan fill="#ffffff">Cat</tspan></text>
+</svg>

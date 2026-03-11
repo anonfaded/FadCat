@@ -1,20 +1,27 @@
 """FadCat main window."""
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint
-from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence
+import os
+
+from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, pyqtSignal, QUrl
+from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence, QCursor
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QStatusBar,
-    QLabel, QWidget, QSizePolicy, QTabBar, QPushButton,
+    QLabel, QWidget, QSizePolicy, QTabBar, QPushButton, QInputDialog, QFrame, QHBoxLayout,
 )
+from PyQt6.QtSvgWidgets import QSvgWidget
+from PyQt6.QtGui import QDesktopServices
 
 from src.ui import theme, icons
 from src.ui.logcat_tab import LogcatTab
+from src.core.settings import Settings
 
 
 # ── Custom Tab Bar with proper close buttons ──────────────────────────────────
 class CustomTabBar(QTabBar):
-    """QTabBar with properly drawn close buttons."""
+    """QTabBar with properly drawn close buttons and double-click to rename."""
+    tabRenameRequested = pyqtSignal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._close_button_rects: dict[int, QRect] = {}
@@ -53,6 +60,14 @@ class CustomTabBar(QTabBar):
                 return
         super().mouseReleaseEvent(event)
 
+    def mouseDoubleClickEvent(self, event):
+        """Detect double-clicks to rename tab."""
+        idx = self.tabAt(event.pos())
+        if idx >= 0:
+            self.tabRenameRequested.emit(idx)
+        else:
+            super().mouseDoubleClickEvent(event)
+
 
 class LogcatGUI(QMainWindow):
     """Main application window."""
@@ -69,18 +84,21 @@ class LogcatGUI(QMainWindow):
         self._build_central()
         self._build_statusbar()
 
+        # Status refresh timer
         self._status_timer = QTimer(self)
         self._status_timer.setInterval(2000)
         self._status_timer.timeout.connect(self._refresh_statusbar)
         self._status_timer.start()
 
-        self.add_new_tab()
+        # Restore previous sessions or start fresh
+        self._load_sessions()
 
     # ── Menubar ───────────────────────────────────────────────────────────────
 
     def _build_menubar(self):
         mb = self.menuBar()
 
+        # File Menu
         file_menu = mb.addMenu("File")
         act_new = file_menu.addAction(icons.icon_new_tab(), "New Tab\t⌘T")
         act_new.setShortcut(QKeySequence("Ctrl+T"))
@@ -93,6 +111,7 @@ class LogcatGUI(QMainWindow):
         act_quit.setShortcut(QKeySequence("Ctrl+Q"))
         act_quit.triggered.connect(self.close)
 
+        # View Menu
         view_menu = mb.addMenu("View")
         act_settings = view_menu.addAction(icons.icon_settings(), "Settings…\t⌘,")
         act_settings.setShortcut(QKeySequence("Ctrl+,"))
@@ -114,26 +133,28 @@ class LogcatGUI(QMainWindow):
         btn_new.setCursor(Qt.CursorShape.PointingHandCursor)
         tb.addWidget(btn_new)
 
-        # Spacer
-        tb.addWidget(self._create_toolbar_spacer())
+        # Left divider line (expandable)
+        left_divider = QFrame()
+        left_divider.setFrameShape(QFrame.Shape.HLine)
+        left_divider.setFrameShadow(QFrame.Shadow.Plain)
+        left_divider.setStyleSheet("color: #444444;")
+        left_divider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        tb.addWidget(left_divider)
 
-        # Branding
-        lbl_brand = QLabel("F  A  D  C  A  T")
-        lbl_brand.setStyleSheet("""
-            QLabel {
-                color: #555555;
-                font-size: 16px;
-                font-weight: 800;
-                letter-spacing: 4px;
-                padding: 0 20px;
-                background: transparent;
-            }
-        """)
-        lbl_brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tb.addWidget(lbl_brand)
+        # Branding / Logo area - centered
+        logo_path = os.path.join(os.path.dirname(__file__), '..', 'icons', 'fadcat-logo.svg')
+        svg_logo = QSvgWidget(logo_path)
+        svg_logo.setFixedSize(100, 33)
+        svg_logo.setStyleSheet("background: transparent;")
+        tb.addWidget(svg_logo)
 
-        # Spacer
-        tb.addWidget(self._create_toolbar_spacer())
+        # Right divider line (expandable)
+        right_divider = QFrame()
+        right_divider.setFrameShape(QFrame.Shape.HLine)
+        right_divider.setFrameShadow(QFrame.Shadow.Plain)
+        right_divider.setStyleSheet("color: #444444;")
+        right_divider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        tb.addWidget(right_divider)
 
         # Settings Button
         btn_settings = QPushButton("Settings")
@@ -153,21 +174,23 @@ class LogcatGUI(QMainWindow):
     def _build_central(self):
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
-        self.tabs.setTabsClosable(False)
+        self.tabs.setTabsClosable(False)  # Close handled by CustomTabBar
         self.tabs.setMovable(True)
         self.tabs.setUsesScrollButtons(True)
         self.tabs.setDocumentMode(False)
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.setTabBarAutoHide(False)
         
-        # Use custom tab bar with proper close buttons
+        # Custom tab bar for better aesthetics and functionality
         custom_tabbar = CustomTabBar()
         custom_tabbar.tabCloseRequested.connect(self._on_tab_close_requested)
+        custom_tabbar.tabRenameRequested.connect(self._on_tab_rename_requested)
         custom_tabbar.setUsesScrollButtons(True)
         custom_tabbar.setExpanding(False)
         self.tabs.setTabBar(custom_tabbar)
         
         self.tabs.currentChanged.connect(self._refresh_statusbar)
+        self.tabs.currentChanged.connect(self._save_sessions)
         self.setCentralWidget(self.tabs)
 
     # ── Status bar ─────────────────────────────────────────────────────────────
@@ -175,7 +198,7 @@ class LogcatGUI(QMainWindow):
     def _build_statusbar(self):
         sb = QStatusBar(self)
         self.setStatusBar(sb)
-        sb.setStyleSheet("QStatusBar { background: #242424; border-top: 1px solid #333333; }")
+        sb.setStyleSheet("QStatusBar { background: #242424; border-top: 1px solid #444444; }")
 
         self.lbl_status_device = QLabel("No device")
         self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
@@ -187,7 +210,33 @@ class LogcatGUI(QMainWindow):
         sb.addWidget(self.lbl_status_state)
         sb.addWidget(self._sb_sep())
         sb.addWidget(self.lbl_status_device)
-        sb.addWidget(self._sb_sep())
+        
+        # Copyright and website link (on the right, before line count)
+        copyright_label = QLabel("© 2024–2026")
+        copyright_label.setStyleSheet("color: #666666; padding: 0 2px; font-size: 10px;")
+        sb.addPermanentWidget(copyright_label)
+        
+        # Dot separator
+        dot_sep = QLabel("•")
+        dot_sep.setStyleSheet("color: #444444; padding: 0 2px;")
+        sb.addPermanentWidget(dot_sep)
+        
+        # Clickable website link
+        website_label = QLabel("fadseclab.com")
+        website_label.setStyleSheet(
+            "color: #ff6b6b; padding: 0 2px; font-size: 10px;"
+        )
+        website_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        website_label.mousePressEvent = lambda e: QDesktopServices.openUrl(QUrl("https://fadseclab.com"))
+        sb.addPermanentWidget(website_label)
+        
+        # Vertical divider before lines
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.VLine)
+        divider.setFrameShadow(QFrame.Shadow.Plain)
+        divider.setStyleSheet("color: #333333;")
+        sb.addPermanentWidget(divider)
+        
         sb.addPermanentWidget(self.lbl_status_lines)
 
     @staticmethod
@@ -213,13 +262,30 @@ class LogcatGUI(QMainWindow):
 
     # ── Tab helpers ────────────────────────────────────────────────────────────
 
-    def add_new_tab(self):
+    def add_new_tab(self, _: bool | None = None, title: str | None = None):
+        """Creates a new logcat capture session in a new tab."""
         tab = LogcatTab()
         tab.status_changed.connect(self._refresh_statusbar)
+        tab.device_selected.connect(lambda d: self._on_tab_device_selected(tab, d))
+        
         idx = self.tabs.count()
-        self.tabs.addTab(tab, f"Session {idx + 1}")
+        if title is None:
+            title = f"Session {idx + 1}"
+        
+        self.tabs.addTab(tab, title)
         self.tabs.setCurrentWidget(tab)
         self._refresh_statusbar()
+        self._save_sessions()
+
+    def _on_tab_device_selected(self, tab: LogcatTab, device: str):
+        """When a device is selected, update tab title if a custom name exists."""
+        idx = self.tabs.indexOf(tab)
+        if idx < 0: return
+        
+        s = Settings()
+        dev_names = s.device_names
+        if device in dev_names:
+            self.tabs.setTabText(idx, dev_names[device])
 
     def _close_current_tab(self):
         idx = self.tabs.currentIndex()
@@ -233,6 +299,50 @@ class LogcatGUI(QMainWindow):
         self.tabs.removeTab(idx)
         if self.tabs.count() == 0:
             self.add_new_tab()
+        self._save_sessions()
+
+    def _on_tab_rename_requested(self, idx: int):
+        """User double-clicked tab to rename it."""
+        old_title = self.tabs.tabText(idx)
+        new_title, ok = QInputDialog.getText(
+            self, "Rename Session", "Enter new session name:",
+            text=old_title
+        )
+        if ok and new_title.strip():
+            title = new_title.strip()
+            self.tabs.setTabText(idx, title)
+            
+            # Associate this title with current device if possible
+            tab = self.tabs.widget(idx)
+            if isinstance(tab, LogcatTab):
+                dev = tab.current_device
+                if dev and dev != "(no devices)":
+                    s = Settings()
+                    names = s.device_names
+                    names[dev] = title
+                    s.device_names = names
+                    s.save()
+            
+            self._save_sessions()
+
+    def _save_sessions(self):
+        """Persist current session titles to settings."""
+        titles = [self.tabs.tabText(i) for i in range(self.tabs.count())]
+        s = Settings()
+        s.session_titles = titles
+        s.save()
+
+    def _load_sessions(self):
+        """Restore sessions from settings."""
+        s = Settings()
+        titles = s.session_titles
+        if not titles:
+            self.add_new_tab()
+        else:
+            for t in titles:
+                self.add_new_tab(title=t)
+            # Switch back to first tab
+            self.tabs.setCurrentIndex(0)
 
     def _current_tab(self) -> LogcatTab | None:
         w = self.tabs.currentWidget()
@@ -241,9 +351,11 @@ class LogcatGUI(QMainWindow):
     # ── Settings ───────────────────────────────────────────────────────────────
 
     def open_settings(self):
+        """Open the application settings dialog."""
         from src.ui.settings_dialog import SettingsDialog
         dlg = SettingsDialog(self)
         if dlg.exec():
+            # Refresh all tabs with new settings
             for i in range(self.tabs.count()):
                 w = self.tabs.widget(i)
                 if isinstance(w, LogcatTab):

@@ -91,6 +91,7 @@ class LogcatTab(QWidget):
     """A single logcat capture session."""
 
     status_changed = pyqtSignal()
+    device_selected = pyqtSignal(str) # Emitted when a device is picked
 
     # ── Construction ──────────────────────────────────────────────────────────
 
@@ -107,6 +108,9 @@ class LogcatTab(QWidget):
 
         self._build_ui()
         self._setup_shortcuts()
+
+        # Connect device change to fetching packages
+        self.device_combo.currentTextChanged.connect(self._on_device_changed)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -163,7 +167,8 @@ class LogcatTab(QWidget):
         self.pkg_combo.setMinimumWidth(100)
         self.pkg_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.pkg_combo.setFixedHeight(34)
-        self.pkg_combo.setToolTip("Package name (empty = all)")
+        self.pkg_combo.setToolTip("Package name (empty = Global)")
+        self.pkg_combo.lineEdit().setPlaceholderText("Global")
         self._load_packages()
         h.addWidget(self.pkg_combo, stretch=2)
 
@@ -339,6 +344,7 @@ class LogcatTab(QWidget):
 
     def refresh_devices(self):
         current = self.device_combo.currentText()
+        self.device_combo.blockSignals(True)
         self.device_combo.clear()
         devices = get_adb_devices()
         if devices:
@@ -346,9 +352,59 @@ class LogcatTab(QWidget):
             idx = self.device_combo.findText(current)
             if idx >= 0:
                 self.device_combo.setCurrentIndex(idx)
+            else:
+                self.device_combo.setCurrentIndex(0)
         else:
             self.device_combo.addItem("(no devices)")
+        self.device_combo.blockSignals(False)
+        self._on_device_changed(self.device_combo.currentText())
         self.status_changed.emit()
+
+    def _on_device_changed(self, device: str):
+        if not device or device == "(no devices)":
+            return
+        self.device_selected.emit(device)
+        # Fetch packages from device
+        QTimer.singleShot(100, self._fetch_device_packages)
+
+    def _fetch_device_packages(self):
+        device = self.device_combo.currentText()
+        if not device or device == "(no devices)":
+            return
+        
+        try:
+            import subprocess
+            cmd = ["adb", "-s", device, "shell", "pm", "list", "packages"]
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=3)
+            if res.returncode == 0:
+                pkgs = [line.split(":")[1].strip() for line in res.stdout.splitlines() if ":" in line]
+                pkgs.sort()
+                
+                current_pkg = self.pkg_combo.currentText()
+                self.pkg_combo.blockSignals(True)
+                self.pkg_combo.clear()
+                self.pkg_combo.addItem("") # Global
+                
+                # Add settings packages first
+                from src.core.settings import Settings
+                s = Settings()
+                for p in s.packages:
+                    if p not in pkgs:
+                        self.pkg_combo.addItem(p)
+                
+                # Add device packages
+                for p in pkgs:
+                    self.pkg_combo.addItem(p)
+                
+                idx = self.pkg_combo.findText(current_pkg)
+                if idx >= 0:
+                    self.pkg_combo.setCurrentIndex(idx)
+                else:
+                    self.pkg_combo.setEditText(current_pkg)
+                
+                self.pkg_combo.blockSignals(False)
+        except Exception:
+            pass
 
     # ── Package management ────────────────────────────────────────────────────
 
@@ -356,7 +412,7 @@ class LogcatTab(QWidget):
         from src.core.settings import Settings
         s = Settings()
         self.pkg_combo.clear()
-        self.pkg_combo.addItem("")
+        self.pkg_combo.addItem("") # Label as Global via placeholder
         for p in s.packages:
             self.pkg_combo.addItem(p)
         if s.default_package:
@@ -370,6 +426,8 @@ class LogcatTab(QWidget):
         idx = self.pkg_combo.findText(current)
         if idx >= 0:
             self.pkg_combo.setCurrentIndex(idx)
+        else:
+            self.pkg_combo.setEditText(current)
 
     # ── Capture ───────────────────────────────────────────────────────────────
 
@@ -402,7 +460,11 @@ class LogcatTab(QWidget):
         import sys as _sys
 
         pidcat_path = get_pidcat_path()
-        cmd = [_sys.executable, pidcat_path, package or "com.fadcam.beta"]
+        
+        # If package is empty, pidcat shows everything (Global)
+        cmd = [_sys.executable, pidcat_path]
+        if package:
+            cmd.append(package)
 
         if device:
             cmd.extend(['-s', device])

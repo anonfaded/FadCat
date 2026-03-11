@@ -1,31 +1,60 @@
 import json
+import sys
+import os
 from pathlib import Path
 
-SETTINGS_FILE = Path.home() / ".fadcat_settings.json"
+def get_settings_path() -> Path:
+    """
+    Returns the path to the settings file.
+    In development (not frozen), it uses the project root.
+    In production (frozen), it uses platform-specific app data directories.
+    """
+    if getattr(sys, 'frozen', False):
+        # Packaged/Production mode: OS-standard locations
+        if sys.platform == 'win32':
+            base = Path(os.environ.get('APPDATA', Path.home()))
+        elif sys.platform == 'darwin':
+            base = Path.home() / 'Library' / 'Application Support'
+        else:
+            base = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
+        
+        app_dir = base / "FadCat"
+        app_dir.mkdir(parents=True, exist_ok=True)
+        return app_dir / "settings.json"
+    else:
+        # Development mode: project root for easy access
+        root = Path(__file__).parent.parent.parent
+        return root / "fadcat_settings.json"
 
+SETTINGS_FILE = get_settings_path()
+
+# Default configuration - safe defaults for a clean start
 DEFAULT_SETTINGS = {
-    "packages": ["com.fadcam.beta", "com.android.systemui"],
+    "packages": ["com.fadcam", "com.fadcam.beta"],
     "default_package": "com.fadcam.beta",
     "theme": "dark",
     "ignored_tags": [
-        "gralloc4",          # GPU memory allocation spam (register/unregister)
-        "BufferPoolAccessor*",  # Buffer pool management spam
-        "hwbinder",          # Hardware binder spam
-        "binder",            # General binder spam (very verbose)
-        "libc",              # C library messages
-        "perfetto",          # System tracing (verbose)
-        "PowerManagerService",  # Power management spam
-        "WifiManager",       # Wifi spam
-        "ConnectivityManager",  # Connectivity spam
-        "BluetoothAdapter",  # Bluetooth spam
-        "libEGL",            # OpenGL ES spam
-        "libGLESv2",         # OpenGL ES 2.0 spam
-        "PermissionController",  # Permission spam
-        "system_server",     # System server noise
-    ]
+        "gralloc4",
+        "BufferPoolAccessor*",
+        "hwbinder",
+        "binder",
+        "libc",
+        "perfetto",
+        "PowerManagerService",
+        "WifiManager",
+        "ConnectivityManager",
+        "BluetoothAdapter",
+        "libEGL",
+        "libGLESv2",
+        "PermissionController",
+        "system_server",
+    ],
+    "session_titles": [], # List of last open session titles
+    "device_names": {}    # Mapping of {serial: custom_name}
 }
 
 class SettingsManager:
+    """Handles low-level JSON I/O for application settings."""
     @staticmethod
     def load():
         if not SETTINGS_FILE.exists():
@@ -49,7 +78,7 @@ class SettingsManager:
 
 
 class Settings:
-    """Convenience wrapper for settings."""
+    """Convenience wrapper for application-wide settings with getter/setter properties."""
     
     def __init__(self):
         self._data = SettingsManager.load()
@@ -77,6 +106,22 @@ class Settings:
     @ignored_tags.setter
     def ignored_tags(self, value: list[str]):
         self._data["ignored_tags"] = value
+
+    @property
+    def session_titles(self) -> list[str]:
+        return self._data.get("session_titles", [])
+
+    @session_titles.setter
+    def session_titles(self, value: list[str]):
+        self._data["session_titles"] = value
+
+    @property
+    def device_names(self) -> dict[str, str]:
+        return self._data.get("device_names", {})
+
+    @device_names.setter
+    def device_names(self, value: dict[str, str]):
+        self._data["device_names"] = value
     
     def save(self):
         SettingsManager.save(self._data)
