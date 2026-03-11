@@ -1,21 +1,64 @@
 """LogcatTab — single device/package logcat session view."""
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint
-from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon, QBrush, QKeySequence, QShortcut
+from PyQt6.QtGui import QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon, QBrush, QKeySequence, QShortcut, QPixmap
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QComboBox, QPushButton, QLineEdit,
     QTextEdit, QFileDialog, QApplication, QSizePolicy,
 )
+from PyQt6.QtSvg import QSvgRenderer
 
 from src.core.process_reader import ProcessReader
 from src.utils.adb_utils import get_adb_devices
 from src.ui import icons
+
+
+# ── Custom QTextEdit with watermark background ─────────────────────────────────
+class LogTextEdit(QTextEdit):
+    """QTextEdit with SVG watermark background."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._watermark_pixmap = None
+        self._load_watermark()
+    
+    def _load_watermark(self):
+        """Load SVG as watermark pixmap."""
+        try:
+            svg_path = Path(__file__).parent.parent / "icons" / "fadcat.svg"
+            if not svg_path.exists():
+                return
+            
+            # Render SVG
+            renderer = QSvgRenderer(str(svg_path))
+            pixmap = QPixmap(300, 300)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            self._watermark_pixmap = pixmap
+        except Exception:
+            pass
+    
+    def paintEvent(self, event):
+        """Paint watermark background before text."""
+        super().paintEvent(event)
+        
+        if self._watermark_pixmap:
+            painter = QPainter(self.viewport())
+            painter.setOpacity(0.20)  # 20% opacity
+            # Center the watermark
+            x = (self.viewport().width() - self._watermark_pixmap.width()) // 2
+            y = (self.viewport().height() - self._watermark_pixmap.height()) // 2
+            painter.drawPixmap(x, y, self._watermark_pixmap)
+            painter.end()
 
 
 # ── Custom ComboBox with proper dropdown arrow ────────────────────────────────
@@ -322,13 +365,14 @@ class LogcatTab(QWidget):
     # ── Log area ──────────────────────────────────────────────────────────────
 
     def _build_log_area(self) -> QTextEdit:
-        self.log_view = QTextEdit()
+        self.log_view = LogTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.log_view.setUndoRedoEnabled(False)
         fixed = QFont("Menlo", 12)
         fixed.setStyleHint(QFont.StyleHint.Monospace)
         self.log_view.setFont(fixed)
+        
         return self.log_view
 
     # ── Separators ────────────────────────────────────────────────────────────
