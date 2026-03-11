@@ -303,19 +303,21 @@ class PackageComboBox(CustomComboBox):
                 item.setToolTip("Global: show all logs (no package filtering).")
             self._list_widget.addItem(item)
 
+        top_total = len([p for p in self._all_top if p != "Global"])
         top_matches = [p for p in self._all_top if not ftext or ftext in p.lower()]
         if top_matches:
             add_header(
-                "FadCat Packages",
+                f"FadCat Packages ({top_total})",
                 "FadCat packages are saved in Settings for quick access."
             )
             for p in top_matches:
                 add_item(p)
 
+        lower_total = len(self._all_lower)
         lower_matches = [p for p in self._all_lower if not ftext or ftext in p.lower()]
         if lower_matches:
             add_header(
-                "Device Packages",
+                f"Device Packages ({lower_total})",
                 "Device packages are installed on the currently connected device."
             )
             for p in lower_matches:
@@ -323,6 +325,9 @@ class PackageComboBox(CustomComboBox):
 
 # ── ANSI colour table ─────────────────────────────────────────────────────────
 _ANSI_RESET = re.compile(r"\x1b\[([0-9;]*)m")
+_ANSI_STRIP = re.compile(r"\x1b\[[0-9;]*m")
+_TAG_RE = re.compile(r"^[A-Z]\/([^:(]+)")
+_LEVEL_RE = re.compile(r"^([A-Z])\/")
 
 _FG = {
     30: "#3D3D3D", 31: "#E8302A", 32: "#3CB371", 33: "#E8A020",
@@ -370,6 +375,22 @@ def _parse_ansi(text: str) -> list[tuple[str, QColor, QColor, bool, bool]]:
     return result
 
 
+def _extract_tag(text: str) -> str | None:
+    clean = _ANSI_STRIP.sub("", text)
+    m = _TAG_RE.match(clean)
+    if not m:
+        return None
+    return m.group(1).strip()
+
+
+def _extract_level(text: str) -> str | None:
+    clean = _ANSI_STRIP.sub("", text)
+    m = _LEVEL_RE.match(clean)
+    if not m:
+        return None
+    return m.group(1).strip()
+
+
 class LogcatTab(QWidget):
     """A single logcat capture session."""
 
@@ -389,7 +410,7 @@ class LogcatTab(QWidget):
         self._settings = Settings()
         self._max_lines = max(0, int(self._settings.log_view_max_lines))
         maxlen = self._max_lines if self._max_lines > 0 else None
-        self._raw_lines: deque[tuple[str, list]] = deque(maxlen=maxlen)
+        self._raw_lines: deque[tuple[str, list, str | None, str | None]] = deque(maxlen=maxlen)
         self._pending_lines: deque[str] = deque()
         self._flush_timer = QTimer(self)
         self._flush_timer.setInterval(50)
@@ -406,6 +427,7 @@ class LogcatTab(QWidget):
         self._pending_restart = False
         self._last_package = ""
         self._stopping = False
+        self._level_filters: set[str] = set()
 
         self._build_ui()
         self._setup_shortcuts()
@@ -521,7 +543,7 @@ class LogcatTab(QWidget):
 
     def _build_search_bar(self) -> QFrame:
         bar = QFrame()
-        bar.setFixedHeight(48)
+        bar.setFixedHeight(54)
         bar.setObjectName("searchBar")
         bar.setStyleSheet("QFrame#searchBar { background: #1E1E1E; border-bottom: 1px solid #333333; }")
 
@@ -532,11 +554,11 @@ class LogcatTab(QWidget):
         # Search input
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search logs... (⌘F)")
-        self.search_edit.setFixedHeight(34)
-        self.search_edit.setMinimumWidth(100)
+        self.search_edit.setFixedHeight(32)
+        self.search_edit.setMinimumWidth(180)
         self.search_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.search_edit.textChanged.connect(self._on_search_changed)
-        h.addWidget(self.search_edit, stretch=4)
+        h.addWidget(self.search_edit, stretch=3)
 
         # Filter toggles
         self.btn_case = QPushButton("Aa")
@@ -566,6 +588,41 @@ class LogcatTab(QWidget):
         h.addWidget(self.btn_grep, stretch=0)
 
         h.addWidget(self._build_v_sep(), stretch=0)
+
+        # Level chips (compact)
+        self._level_chip_bar = QFrame()
+        self._level_chip_bar.setStyleSheet("QFrame { background: transparent; }")
+        chip_lay = QHBoxLayout(self._level_chip_bar)
+        chip_lay.setContentsMargins(0, 0, 0, 0)
+        chip_lay.setSpacing(4)
+
+        def add_level_chip(label: str, color: str, text: str, tooltip: str):
+            btn = QPushButton(text)
+            btn.setCheckable(True)
+            btn.setFixedHeight(24)
+            btn.setFixedWidth(30)
+            btn.setStyleSheet(
+                "QPushButton { background: #2A2A2A; color: #CCCCCC; border: 1px solid #3A3A3A; border-radius: 8px; font-size: 12px; }"
+                f"QPushButton:checked {{ background: {color}; color: #111111; border: 1px solid {color}; }}"
+            )
+            btn.setToolTip(tooltip)
+            btn.toggled.connect(lambda checked, lvl=label: self._toggle_level_filter(lvl, checked))
+            chip_lay.addWidget(btn)
+
+        add_level_chip("V", "#8A8A8A", "○",
+                       "Verbose: extremely detailed messages. Turn this on only when you need very noisy, low‑level logs.")
+        add_level_chip("D", "#4A9FE8", "🔧",
+                       "Debug: developer diagnostics and troubleshooting details. Useful while investigating issues.")
+        add_level_chip("I", "#3CB371", "ℹ",
+                       "Info: normal app status and milestones. Good for general understanding of what the app is doing.")
+        add_level_chip("W", "#E8A020", "⚠",
+                       "Warning: something unexpected happened, but the app can keep running.")
+        add_level_chip("E", "#E8302A", "✖",
+                       "Error: something failed. These are important when a feature is broken.")
+        add_level_chip("F", "#FF2D2D", "‼",
+                       "Fatal: serious crash or abort. These usually mean the app stopped.")
+
+        h.addWidget(self._level_chip_bar, stretch=0)
 
         # Navigation
         btn_prev = QPushButton()
@@ -698,8 +755,15 @@ class LogcatTab(QWidget):
         if not device or device == "(no devices)":
             return
         self.device_selected.emit(device)
-        # Fetch packages from device
-        QTimer.singleShot(100, self._fetch_device_packages)
+        # Clear device packages immediately and fetch for the selected device
+        self._pkg_device = []
+        self._rebuild_package_model(
+            settings_pkgs=self._pkg_settings,
+            device_pkgs=[],
+            current_pkg=self._selected_package(),
+            filter_text=self._pkg_filter_text,
+        )
+        QTimer.singleShot(100, lambda d=device: self._fetch_device_packages(d))
 
     def _on_package_changed(self, package: str):
         """Save package selection to settings."""
@@ -741,9 +805,11 @@ class LogcatTab(QWidget):
             return ""
         return pkg
 
-    def _fetch_device_packages(self):
-        device = self.device_combo.currentText()
+    def _fetch_device_packages(self, device: str | None = None):
+        device = device or self.device_combo.currentText()
         if not device or device == "(no devices)":
+            return
+        if device != self.device_combo.currentText():
             return
         
         try:
@@ -919,15 +985,25 @@ class LogcatTab(QWidget):
             self._total_lines += 1
             text = raw.rstrip("\n")
             chunks = _parse_ansi(text)
-            self._raw_lines.append((text, chunks))
+            tag = _extract_tag(text)
+            level = _extract_level(text)
+            self._raw_lines.append((text, chunks, tag, level))
 
             if self.btn_grep.isChecked() and self.search_edit.text():
+                if not self._line_passes_level_filter(level):
+                    self._visible_line_count += 1
+                    batch += 1
+                    continue
                 if not self._line_matches(text, self.search_edit.text()):
                     self._visible_line_count += 1
                     batch += 1
                     continue
                 self._render_line_to_view(text, chunks)
             else:
+                if not self._line_passes_level_filter(level):
+                    self._visible_line_count += 1
+                    batch += 1
+                    continue
                 self._render_line_to_view(text, chunks)
             batch += 1
 
@@ -973,6 +1049,20 @@ class LogcatTab(QWidget):
                 return query.lower() in text.lower()
         except re.error:
             return False
+
+    def _line_passes_level_filter(self, level: str | None) -> bool:
+        if not self._level_filters:
+            return True
+        if not level:
+            return False
+        return level in self._level_filters
+
+    def _toggle_level_filter(self, level: str, enabled: bool):
+        if enabled:
+            self._level_filters.add(level)
+        else:
+            self._level_filters.discard(level)
+        self._apply_grep_filter()
     
     def _apply_grep_filter(self):
         query = self.search_edit.text()
@@ -984,7 +1074,10 @@ class LogcatTab(QWidget):
         self._match_idx = 0
         self._visible_line_count = 0
         
-        for text, chunks in list(self._raw_lines):
+        for text, chunks, tag, level in list(self._raw_lines):
+            if not self._line_passes_level_filter(level):
+                self._visible_line_count += 1
+                continue
             if grep_mode and query and not self._line_matches(text, query):
                 self._visible_line_count += 1
                 continue
@@ -1042,7 +1135,9 @@ class LogcatTab(QWidget):
         self._match_idx = 0
         self._visible_line_count = 0
         
-        for text, chunks in list(self._raw_lines):
+        for text, chunks, tag, level in list(self._raw_lines):
+            if not self._line_passes_level_filter(level):
+                continue
             self._render_line_to_view(text, chunks)
         
         self.log_view.blockSignals(False)

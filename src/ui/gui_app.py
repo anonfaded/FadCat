@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import resource
 
 from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, pyqtSignal, QUrl
 from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence, QCursor
@@ -88,9 +90,10 @@ class LogcatGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("FadCat")
-        self.resize(1200, 780)
+        self.resize(980, 640)
         self.setMinimumSize(800, 550)
         self.setStyleSheet(theme.get_stylesheet())
+        self._center_on_screen()
 
         self._build_menubar()
         self._build_toolbar()
@@ -105,6 +108,16 @@ class LogcatGUI(QMainWindow):
 
         # Restore previous sessions or start fresh
         self._load_sessions()
+
+    def _center_on_screen(self):
+        screen = self.screen()
+        if screen is None:
+            return
+        geom = screen.availableGeometry()
+        size = self.size()
+        x = geom.x() + (geom.width() - size.width()) // 2
+        y = geom.y() + (geom.height() - size.height()) // 2
+        self.move(x, y)
 
     # ── Menubar ───────────────────────────────────────────────────────────────
 
@@ -219,6 +232,8 @@ class LogcatGUI(QMainWindow):
         self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
         self.lbl_status_state = QLabel("Idle")
         self.lbl_status_state.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
+        self.lbl_status_mem = QLabel("— MB")
+        self.lbl_status_mem.setStyleSheet("color: #888888; padding: 0 10px; font-size: 12px;")
 
         sb.addWidget(self.lbl_status_state)
         sb.addWidget(self._sb_sep())
@@ -249,6 +264,8 @@ class LogcatGUI(QMainWindow):
         sb.addPermanentWidget(divider)
         
         sb.addPermanentWidget(self.lbl_status_lines)
+        sb.addPermanentWidget(self._sb_sep())
+        sb.addPermanentWidget(self.lbl_status_mem)
 
     @staticmethod
     def _sb_sep() -> QLabel:
@@ -262,6 +279,7 @@ class LogcatGUI(QMainWindow):
             self.lbl_status_device.setText("No device")
             self.lbl_status_lines.setText("0 lines")
             self.lbl_status_state.setText("Idle")
+            self.lbl_status_mem.setText("— MB")
             return
         self.lbl_status_device.setText(tab.current_device or "—")
         self.lbl_status_lines.setText(f"{tab.line_count:,} lines")
@@ -270,6 +288,14 @@ class LogcatGUI(QMainWindow):
             else "Idle"
         )
         self.lbl_status_state.setTextFormat(Qt.TextFormat.RichText)
+        self.lbl_status_mem.setText(f"{self._mem_mb():.1f} MB")
+
+    @staticmethod
+    def _mem_mb() -> float:
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if sys.platform == "darwin":
+            return usage / (1024 * 1024)
+        return usage / 1024.0
 
     # ── Tab helpers ────────────────────────────────────────────────────────────
 
@@ -384,4 +410,3 @@ class LogcatGUI(QMainWindow):
                 w = self.tabs.widget(i)
                 if isinstance(w, LogcatTab):
                     w.reload_packages()
-
