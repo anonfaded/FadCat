@@ -1146,8 +1146,8 @@ class CustomComboBox(QComboBox):
                 QPoint(arrow_x + 8, arrow_y),
                 QPoint(arrow_x + 4, arrow_y + 6),
             ]
-            painter.setBrush(QBrush(QColor("#E8302A")))
-            painter.setPen(QColor("#E8302A"))
+            painter.setBrush(QBrush(QColor("#E05555")))
+            painter.setPen(QColor("#E05555"))
             painter.drawConvexPolygon(QPolygon(points))
     
     def mousePressEvent(self, event):
@@ -1268,7 +1268,7 @@ class PackageComboBox(CustomComboBox):
             font = header.font()
             font.setBold(True)
             header.setFont(font)
-            header.setForeground(QColor("#E8302A"))
+            header.setForeground(QColor("#E05555"))
             header.setToolTip(tooltip)
             self._list_widget.addItem(header)
 
@@ -1697,7 +1697,7 @@ class LogcatTab(QWidget):
                        "Info: normal app status and milestones. Good for understanding what the app is doing.")
         add_level_chip("W", "#E8A020", icons.icon_level_w,
                        "Warning: something unexpected happened, but the app can keep running.")
-        add_level_chip("E", "#E8302A", icons.icon_level_e,
+        add_level_chip("E", "#E05555", icons.icon_level_e,
                        "Error: something failed. These are important when a feature is broken.")
         add_level_chip("F", "#FF2D2D", icons.icon_level_f,
                        "Fatal: serious crash or abort. These usually mean the app stopped.")

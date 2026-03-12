@@ -5,9 +5,9 @@ BG_ELEVATED = "#242424"
 BG_INPUT    = "#2A2A2A"
 BG_WELL     = "#141414"
 SEPARATOR   = "#333333"
-ACCENT      = "#E8302A"
-ACCENT_DARK = "#B02020"
-ACCENT_SOFT = "#3D1510"
+ACCENT      = "#E05555"
+ACCENT_DARK = "#C24747"
+ACCENT_SOFT = "#3B1616"
 SUCCESS     = "#3CB371"
 WARNING     = "#E8A020"
 TEXT        = "#E8E8E8"
@@ -46,7 +46,7 @@ QMenuBar::item {
 }
 QMenuBar::item:selected, QMenuBar::item:pressed {
     background-color: #3D1510;
-    color: #E8302A;
+    color: #E05555;
 }
 QMenu {
     background-color: #242424;
@@ -56,7 +56,7 @@ QMenu {
     padding: 4px 0;
 }
 QMenu::item { padding: 6px 20px 6px 14px; }
-QMenu::item:selected { background-color: #E8302A; color: #fff; border-radius: 3px; }
+QMenu::item:selected { background-color: #E05555; color: #fff; border-radius: 3px; }
 QMenu::separator { height: 1px; background: #333333; margin: 3px 8px; }
 
 /* ToolBar */
@@ -105,51 +105,64 @@ QTabWidget::tab-bar {
     alignment: left;
 }
 QTabBar {
-    background: #242424;
-    border-bottom: 1px solid #333333;
-    padding: 2px 12px;
+    background: transparent;
+    border-bottom: none;
+    padding: 8px 18px;
+    margin: 0;
 }
 QTabBar::tab {
-    background: transparent;
-    color: #888888;
-    padding: 6px 20px;
-    margin: 2px 2px 2px 0;
-    border: none;
-    border-radius: 6px 6px 0 0;
+    background: #2C2C2C;
+    color: #B0B0B0;
+    padding: 6px 32px 6px 16px;
+    margin: 2px 8px 2px 0;
+    border: 1px solid #3A3A3A;
+    border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
     min-width: 100px;
+    outline: none;
     qproperty-cursor: LinkingHandCursor;
 }
+QTabBar::tab:first {
+    margin-left: 2px;
+}
+QTabBar::tab:last {
+    margin-right: 2px;
+}
 QTabBar::tab:selected {
-    color: #E8E8E8;
+    color: #EDEDED;
     font-weight: 600;
-    background-color: #333333;
-    border: 1px solid #3A3A3A;
+    background-color: #343434;
+    border: 1px solid #424242;
 }
 QTabBar::tab:hover:!selected {
-    color: #C8C8C8;
-    background: rgba(255, 255, 255, 0.03);
+    color: #D0D0D0;
+    background: #2F2F2F;
 }
 QTabBar::close-button {
     image: none;
     subcontrol-position: right;
 }
 QTabBar::scroller {
-    width: 40px;
+    width: 0px;
     border: none;
-    background: #242424;
+    background: transparent;
 }
 QTabBar QToolButton {
-    background: #333333;
-    border: 1px solid #444444;
+    background: transparent;
+    border: none;
     border-radius: 3px;
     margin: 2px;
     color: #E8E8E8;
     qproperty-cursor: LinkingHandCursor;
 }
 QTabBar QToolButton:hover {
-    background: #444444;
+    background: #333333;
+}
+QTabBar::left-arrow, QTabBar::right-arrow {
+    width: 0px;
+    height: 0px;
+    image: none;
 }
 
 /* Buttons */
@@ -177,16 +190,16 @@ QPushButton:disabled {
 }
 
 QPushButton[role="primary"] {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F04040, stop:1 #D02020);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F06A6A, stop:1 #E05555);
     color: #FFFFFF;
-    border: 1px solid #B02020;
+    border: 1px solid #C24747;
     font-weight: 600;
 }
 QPushButton[role="primary"]:hover {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF5050, stop:1 #E03030);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F97A7A, stop:1 #E96565);
 }
 QPushButton[role="primary"]:pressed {
-    background-color: #B02020;
+    background-color: #C24747;
 }
 QPushButton[role="primary"]:disabled {
     background-color: #3D1510;
@@ -213,16 +226,16 @@ QPushButton[role="start"]:disabled {
 }
 
 QPushButton[role="stop"] {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E8302A, stop:1 #C02020);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E05555, stop:1 #C24747);
     color: #FFFFFF;
-    border: 1px solid #901010;
+    border: 1px solid #B23A3A;
     font-weight: 600;
 }
 QPushButton[role="stop"]:hover {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F04040, stop:1 #D03030);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F07A7A, stop:1 #E05555);
 }
 QPushButton[role="stop"]:pressed {
-    background-color: #901010;
+    background-color: #B23A3A;
 }
 QPushButton[role="stop"]:disabled {
     background-color: #3D1510;
@@ -290,8 +303,8 @@ QPushButton[role="toggle"]:hover {
     color: #E8E8E8;
 }
 QPushButton[role="toggle"]:checked {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #D03030, stop:1 #B02020);
-    border-color: #901010;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E05555, stop:1 #C24747);
+    border-color: #B23A3A;
     color: #FFFFFF;
     font-weight: 600;
 }
@@ -304,7 +317,7 @@ QLineEdit {
     border-radius: 5px;
     padding: 6px 12px;
     font-size: 13px;
-    selection-background-color: #E8302A;
+    selection-background-color: #E05555;
     selection-color: #FFFFFF;
 }
 QLineEdit:focus { border-color: #555555; }
@@ -323,7 +336,7 @@ QComboBox:hover {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #444444, stop:1 #333333);
     border-color: #555555;
 }
-QComboBox:focus { border-color: #E8302A; }
+QComboBox:focus { border-color: #E05555; }
 QComboBox::drop-down {
     border: none;
     background: transparent;
@@ -339,7 +352,7 @@ QComboBox QAbstractItemView {
     color: #E8E8E8;
     border: 1px solid #333333;
     border-radius: 6px;
-    selection-background-color: #E8302A;
+    selection-background-color: #E05555;
     selection-color: #FFFFFF;
     padding: 4px;
     outline: none;
@@ -370,7 +383,7 @@ QTextEdit, QTextEdit > QWidget {
     margin: 0px;
 }
 QTextEdit {
-    selection-background-color: #E8302A;
+    selection-background-color: #E05555;
     selection-color: #FFFFFF;
 }
 
@@ -385,7 +398,7 @@ QListWidget {
     outline: none;
 }
 QListWidget::item { padding: 5px 8px; border-radius: 4px; }
-QListWidget::item:selected { background-color: #E8302A; color: #FFFFFF; }
+QListWidget::item:selected { background-color: #E05555; color: #FFFFFF; }
 QListWidget::item:hover:!selected { background-color: rgba(232, 48, 42, 0.12); }
 
 /* GroupBox */

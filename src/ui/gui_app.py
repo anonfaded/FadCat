@@ -27,6 +27,8 @@ class CustomTabBar(QTabBar):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._close_button_rects: dict[int, QRect] = {}
+        self._hover_close_idx: int | None = None
+        self.setMouseTracking(True)
     
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -41,17 +43,49 @@ class CustomTabBar(QTabBar):
                 continue
             
             # Draw X button (top-right of tab)
-            x_pos = rect.right() - 20
+            x_pos = rect.right() - 30
             y_pos = rect.top() + (rect.height() - 14) // 2
             
             # Close button rect - larger for clickability
-            close_rect = QRect(x_pos - 2, y_pos - 2, 18, 18)
+            close_rect = QRect(x_pos - 2, y_pos - 2, 14, 14)
             self._close_button_rects[i] = close_rect
-            
+
+            # Hover background for close
+            painter.setClipRect(rect)
+            if self._hover_close_idx == i:
+                painter.setBrush(QColor(255, 90, 90, 40))
+                painter.setPen(QColor(255, 90, 90, 80))
+                painter.drawRoundedRect(close_rect.adjusted(1, 1, -1, -1), 4, 4)
+
             # Draw X icon (bigger)
-            painter.setPen(QColor("#E8302A"))
+            pen_color = QColor("#F07A7A") if self._hover_close_idx == i else QColor("#E05555")
+            painter.setPen(pen_color)
             painter.setFont(QFont("Arial", 14, QFont.Weight.Bold))
             painter.drawText(close_rect, Qt.AlignmentFlag.AlignCenter, "×")
+
+    def mouseMoveEvent(self, event):
+        pos = event.pos()
+        hover_idx = None
+        for tab_idx, close_rect in self._close_button_rects.items():
+            if close_rect.contains(pos):
+                hover_idx = tab_idx
+                break
+        if hover_idx != self._hover_close_idx:
+            self._hover_close_idx = hover_idx
+            self.setCursor(
+                QCursor(Qt.CursorShape.PointingHandCursor)
+                if hover_idx is not None
+                else QCursor(Qt.CursorShape.ArrowCursor)
+            )
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        if self._hover_close_idx is not None:
+            self._hover_close_idx = None
+            self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+            self.update()
+        super().leaveEvent(event)
     
     def mouseReleaseEvent(self, event):
         """Detect clicks on close buttons."""
@@ -203,7 +237,7 @@ class LogcatGUI(QMainWindow):
         self.tabs.setTabsClosable(False)  # Close handled by CustomTabBar
         self.tabs.setMovable(True)
         self.tabs.setUsesScrollButtons(True)
-        self.tabs.setDocumentMode(False)
+        self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.setTabBarAutoHide(False)
         
