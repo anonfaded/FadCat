@@ -231,9 +231,9 @@ class LogcatGUI(QMainWindow):
         self.lbl_status_device = QLabel("No device")
         self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
         self.lbl_status_lines = QLabel("0 lines")
-        self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
+        self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
         self.lbl_status_mem = QLabel("— MB")
-        self.lbl_status_mem.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
+        self.lbl_status_mem.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
 
         self._sb_state_icon, state_item = self._sb_item(icons.icon_status(), self.lbl_status_state)
         sb.addWidget(state_item)
@@ -243,6 +243,7 @@ class LogcatGUI(QMainWindow):
         self._sb_pause_badge = QPushButton("Paused")
         self._sb_pause_badge.setObjectName("pauseBadge")
         self._sb_pause_badge.setFixedHeight(22)
+        self._sb_pause_badge.setFixedWidth(130)
         self._sb_pause_badge.setVisible(False)
         self._sb_pause_badge.setToolTip("Auto-scroll is off. New logs are buffering. Click to resume.")
         self._sb_pause_badge.setStyleSheet(
@@ -250,6 +251,7 @@ class LogcatGUI(QMainWindow):
             "border-radius: 9px; padding: 1px 6px; font-size: 10px; }"
             "QPushButton#pauseBadge:hover { background: #331C1C; }"
         )
+        self._sb_pause_badge.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sb_pause_badge.clicked.connect(self._resume_from_pause)
         sb.addWidget(self._sb_pause_badge)
         
@@ -286,7 +288,7 @@ class LogcatGUI(QMainWindow):
     @staticmethod
     def _sb_sep() -> QLabel:
         sep = QLabel("|")
-        sep.setStyleSheet("color: #333333; padding: 0 4px;")
+        sep.setStyleSheet("color: #333333; padding: 0 2px;")
         return sep
 
     @staticmethod
@@ -294,8 +296,8 @@ class LogcatGUI(QMainWindow):
         w = QWidget()
         w.setStyleSheet("background: transparent;")
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(6, 0, 6, 0)
-        lay.setSpacing(4)
+        lay.setContentsMargins(4, 0, 4, 0)
+        lay.setSpacing(3)
         ic = QLabel()
         ic.setPixmap(icon.pixmap(14, 14))
         lay.addWidget(ic)
@@ -333,10 +335,18 @@ class LogcatGUI(QMainWindow):
         status_icon = icons.icon_status_running() if tab.is_running else icons.icon_status()
         if hasattr(self, "_sb_state_icon"):
             self._sb_state_icon.setPixmap(status_icon.pixmap(14, 14))
-        self.lbl_status_mem.setText(f"{self._mem_mb():.1f} MB")
+        mem_mb = self._mem_mb()
+        self.lbl_status_mem.setText(f"{mem_mb:.1f} MB")
+        self.lbl_status_mem.setToolTip(f"Memory used by FadCat: {mem_mb:.1f} MB")
         if hasattr(self, "_sb_pause_badge"):
             if tab.is_paused:
-                text = f"Paused • {tab.paused_count} new" if tab.paused_count else "Paused"
+                def _fmt(n: int) -> str:
+                    if n >= 1_000_000:
+                        return f"{n/1_000_000:.1f}M".rstrip("0").rstrip(".")
+                    if n >= 1000:
+                        return f"{n/1000:.1f}k".rstrip("0").rstrip(".")
+                    return str(n)
+                text = f"Paused • {_fmt(tab.paused_count)} new" if tab.paused_count else "Paused"
                 self._sb_pause_badge.setText(text)
                 self._sb_pause_badge.setVisible(True)
             else:
