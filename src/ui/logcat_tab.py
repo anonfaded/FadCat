@@ -189,9 +189,8 @@ class VirtualLogView(QAbstractScrollArea):
         self._tag_col_width_cache = 0
         self._selection_anchor: tuple[int, int] | None = None
         self._selection_active: tuple[int, int] | None = None
-        self._last_click_time = 0.0
-        self._last_click_line: int | None = None
-        self._click_count = 0
+        self._last_double_time = 0.0
+        self._last_double_line: int | None = None
         self._suppress_release_select = False
         self._dragging = False
         self.setViewportMargins(0, 0, 0, 0)
@@ -429,32 +428,10 @@ class VirtualLogView(QAbstractScrollArea):
             self.setFocus(Qt.FocusReason.MouseFocusReason)
             pos = self._pos_to_line_col(event.position().toPoint())
             if pos is not None:
-                line_idx, col = pos
-                now = time.time()
-                interval = QGuiApplication.styleHints().mouseDoubleClickInterval() / 1000.0
-                if self._last_click_line == line_idx and now - self._last_click_time <= interval:
-                    self._click_count += 1
-                else:
-                    self._click_count = 1
-                self._last_click_time = now
-                self._last_click_line = line_idx
                 self._dragging = False
-                if self._click_count == 2:
-                    text = self._lines[line_idx].plain
-                    start, end = self._word_bounds(text, col)
-                    self._selection_anchor = (line_idx, start)
-                    self._selection_active = (line_idx, end)
-                    self._suppress_release_select = True
-                elif self._click_count >= 3:
-                    text = self._lines[line_idx].plain
-                    self._selection_anchor = (line_idx, 0)
-                    self._selection_active = (line_idx, len(text))
-                    self._click_count = 0
-                    self._suppress_release_select = True
-                else:
-                    self._selection_anchor = pos
-                    self._selection_active = pos
-                    self._suppress_release_select = False
+                self._selection_anchor = pos
+                self._selection_active = pos
+                self._suppress_release_select = False
                 self.viewport().update()
                 return
         super().mousePressEvent(event)
@@ -486,7 +463,30 @@ class VirtualLogView(QAbstractScrollArea):
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        return
+        if event.button() == Qt.MouseButton.LeftButton:
+            pos = self._pos_to_line_col(event.position().toPoint())
+            if pos is None:
+                return
+            line_idx, col = pos
+            now = time.time()
+            interval = QGuiApplication.styleHints().mouseDoubleClickInterval() / 1000.0
+            if self._last_double_line == line_idx and now - self._last_double_time <= interval:
+                text = self._lines[line_idx].plain
+                self._selection_anchor = (line_idx, 0)
+                self._selection_active = (line_idx, len(text))
+                self._last_double_time = 0.0
+                self._last_double_line = None
+            else:
+                text = self._lines[line_idx].plain
+                start, end = self._word_bounds(text, col)
+                self._selection_anchor = (line_idx, start)
+                self._selection_active = (line_idx, end)
+                self._last_double_time = now
+                self._last_double_line = line_idx
+            self._suppress_release_select = True
+            self.viewport().update()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -1445,6 +1445,8 @@ class LogcatTab(QWidget):
         self._lines: list[LogLine] = []
         self._visible_indices: list[int] = []
         self._pending_lines: deque[str] = deque()
+        self._paused_buffer: deque[str] = deque()
+        self._paused_count = 0
         self._flush_timer = QTimer(self)
         self._flush_timer.setInterval(16)
         self._flush_timer.timeout.connect(self._flush_pending_lines)
@@ -2110,63 +2112,43 @@ class LogcatTab(QWidget):
         if not self._flush_timer.isActive():
             self._flush_timer.start()
 
-    def _flush_pending_lines(self):
-        if not self._pending_lines:
-            self._flush_timer.stop()
-            return
-
-        batch = 0
-        max_batch = 200
-        file_buf = []
-        new_visible_lines: list[LogLine] = []
-        anchor = None
-        frozen_scroll = None
-        freeze_view = not self.btn_autoscroll.isChecked()
-        if not self.btn_autoscroll.isChecked():
-            frozen_scroll = self.log_view.verticalScrollBar().value()
-            anchor = self.log_view.capture_anchor()
-        while self._pending_lines and batch < max_batch:
-            raw = self._pending_lines.popleft()
-            file_buf.append(raw)
-            self._total_lines += 1
-            text = raw.rstrip("\n")
-            plain = _ANSI_STRIP.sub("", text)
-            chunks = _parse_ansi(text)
-            tag = _extract_tag(text)
-            level = _extract_level(text)
-            if level is None:
-                level = _level_from_chunks(chunks)
-            if level in _LEVEL_COLORS:
-                line_color = _LEVEL_COLORS[level]
+    def _append_parsed_line(self, text: str) -> bool:
+        plain = _ANSI_STRIP.sub("", text)
+        chunks = _parse_ansi(text)
+        tag = _extract_tag(text)
+        level = _extract_level(text)
+        if level is None:
+            level = _level_from_chunks(chunks)
+        if level in _LEVEL_COLORS:
+            line_color = _LEVEL_COLORS[level]
+        else:
+            line_color = _line_color_from_chunks(chunks)
+            m = _LEVEL_RE.search(plain)
+            if m and m.group(1) in _LEVEL_COLORS:
+                line_color = _LEVEL_COLORS[m.group(1)]
+        if not self._color_line_by_tag:
+            line_color = None
+        else:
+            if tag:
+                if line_color:
+                    self._last_tag_color = line_color
             else:
-                line_color = _line_color_from_chunks(chunks)
-                m = _LEVEL_RE.search(plain)
-                if m and m.group(1) in _LEVEL_COLORS:
-                    line_color = _LEVEL_COLORS[m.group(1)]
-            if not self._color_line_by_tag:
-                line_color = None
-            else:
-                if tag:
-                    if line_color:
+                if level is None:
+                    if line_color and self._last_tag_color is None:
                         self._last_tag_color = line_color
-                else:
-                    if level is None:
-                        if line_color and self._last_tag_color is None:
-                            self._last_tag_color = line_color
-                        if self._last_tag_color is not None:
-                            line_color = self._last_tag_color
-                    elif line_color:
-                        self._last_tag_color = line_color
-            line = LogLine(text, plain, chunks, tag, level, line_color)
-            self._lines.append(line)
+                    if self._last_tag_color is not None:
+                        line_color = self._last_tag_color
+                elif line_color:
+                    self._last_tag_color = line_color
+        line = LogLine(text, plain, chunks, tag, level, line_color)
+        self._lines.append(line)
+        idx = len(self._lines) - 1
+        if self._passes_filters(line, self.search_edit.text(), self.btn_grep.isChecked()):
+            self._visible_indices.append(idx)
+            return True
+        return False
 
-            idx = len(self._lines) - 1
-            if self._passes_filters(line, self.search_edit.text(), self.btn_grep.isChecked()):
-                self._visible_indices.append(idx)
-                new_visible_lines.append(line)
-            batch += 1
-
-        # Trim if needed
+    def _trim_if_needed(self):
         if self._max_lines > 0 and len(self._lines) > self._max_lines:
             trim = len(self._lines) - self._max_lines
             self._lines = self._lines[trim:]
@@ -2187,7 +2169,49 @@ class LogcatTab(QWidget):
             self.log_view.set_lines(self._lines, reset_visible=False)
             self.log_view.sync_visible_indices(self._visible_indices, incremental=False)
 
-        if new_visible_lines and not freeze_view:
+    def _flush_paused_buffer(self):
+        new_visible_lines = False
+        while self._paused_buffer:
+            raw = self._paused_buffer.popleft()
+            text = raw.rstrip("\n")
+            if self._append_parsed_line(text):
+                new_visible_lines = True
+        self._trim_if_needed()
+        if new_visible_lines:
+            self.log_view.sync_visible_indices(self._visible_indices, incremental=False)
+
+    def _flush_pending_lines(self):
+        if not self._pending_lines:
+            self._flush_timer.stop()
+            return
+
+        batch = 0
+        max_batch = 200
+        file_buf = []
+        new_visible = False
+        anchor = None
+        frozen_scroll = None
+        freeze_view = not self.btn_autoscroll.isChecked()
+        if freeze_view:
+            frozen_scroll = self.log_view.verticalScrollBar().value()
+            anchor = self.log_view.capture_anchor()
+        while self._pending_lines and batch < max_batch:
+            raw = self._pending_lines.popleft()
+            file_buf.append(raw)
+            self._total_lines += 1
+            if freeze_view:
+                self._paused_buffer.append(raw)
+                self._paused_count += 1
+            else:
+                text = raw.rstrip("\n")
+                if self._append_parsed_line(text):
+                    new_visible = True
+            batch += 1
+
+        if not freeze_view:
+            self._trim_if_needed()
+
+        if new_visible and not freeze_view:
             self.log_view.sync_visible_indices(self._visible_indices, incremental=True)
 
         if file_buf and self._log_fp:
@@ -2205,6 +2229,8 @@ class LogcatTab(QWidget):
                 self.log_view.verticalScrollBar().setValue(
                     max(0, min(frozen_scroll, self.log_view.verticalScrollBar().maximum()))
                 )
+        else:
+            self._update_pause_state()
     
     def _line_matches(self, plain: str, query: str) -> bool:
         if not query:
@@ -2366,8 +2392,19 @@ class LogcatTab(QWidget):
 
     def _on_autoscroll_toggled(self, checked: bool):
         if checked:
+            self._resume_from_pause()
             self.log_view.sync_visible_indices(self._visible_indices, incremental=False)
             self.log_view.scroll_to_bottom()
+        self.status_changed.emit()
+
+    def _update_pause_state(self):
+        self.status_changed.emit()
+
+    def _resume_from_pause(self):
+        if self._paused_buffer:
+            self._flush_paused_buffer()
+        self._paused_count = 0
+        self.status_changed.emit()
     # ── Actions ───────────────────────────────────────────────────────────────
 
     def clear_log(self, confirm: bool = True):
@@ -2492,7 +2529,18 @@ class LogcatTab(QWidget):
 
     @property
     def total_line_count(self) -> int:
-        return len(self._lines)
+        return self._total_lines
+
+    @property
+    def paused_count(self) -> int:
+        return self._paused_count
+
+    @property
+    def is_paused(self) -> bool:
+        return not self.btn_autoscroll.isChecked()
+
+    def resume_from_pause(self):
+        self.btn_autoscroll.setChecked(True)
 
     @property
     def current_device(self) -> str:

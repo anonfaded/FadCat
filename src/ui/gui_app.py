@@ -240,6 +240,18 @@ class LogcatGUI(QMainWindow):
         sb.addWidget(self._sb_sep())
         self._sb_device_icon, device_item = self._sb_item(icons.icon_device(), self.lbl_status_device)
         sb.addWidget(device_item)
+        self._sb_pause_badge = QPushButton("Paused")
+        self._sb_pause_badge.setObjectName("pauseBadge")
+        self._sb_pause_badge.setFixedHeight(22)
+        self._sb_pause_badge.setVisible(False)
+        self._sb_pause_badge.setToolTip("Auto-scroll is off. New logs are buffering. Click to resume.")
+        self._sb_pause_badge.setStyleSheet(
+            "QPushButton#pauseBadge { background: #2B1A1A; color: #FF6B6B; border: 1px solid #7A2A2A; "
+            "border-radius: 9px; padding: 1px 6px; font-size: 10px; }"
+            "QPushButton#pauseBadge:hover { background: #331C1C; }"
+        )
+        self._sb_pause_badge.clicked.connect(self._resume_from_pause)
+        sb.addWidget(self._sb_pause_badge)
         
         # Copyright and website link (on the right, before line count)
         copyright_label = QLabel("© 2024–2026")
@@ -297,14 +309,24 @@ class LogcatGUI(QMainWindow):
             self.lbl_status_lines.setText("0 lines")
             self.lbl_status_state.setText("Idle")
             self.lbl_status_mem.setText("— MB")
+            if hasattr(self, "_sb_pause_badge"):
+                self._sb_pause_badge.setVisible(False)
             return
         self.lbl_status_device.setText(tab.current_device or "—")
         total = tab.total_line_count
         visible = tab.line_count
+        def _fmt(n: int) -> str:
+            if n >= 1_000_000:
+                return f"{n/1_000_000:.1f}M".rstrip("0").rstrip(".")
+            if n >= 1000:
+                return f"{n/1000:.1f}k".rstrip("0").rstrip(".")
+            return str(n)
         if total >= visible:
-            self.lbl_status_lines.setText(f"{visible:,} / {total:,} lines")
+            self.lbl_status_lines.setText(f"{_fmt(visible)} / {_fmt(total)} lines")
+            self.lbl_status_lines.setToolTip(f"Visible lines: {visible:,}\nTotal captured lines: {total:,}")
         else:
-            self.lbl_status_lines.setText(f"{visible:,} lines")
+            self.lbl_status_lines.setText(f"{_fmt(visible)} lines")
+            self.lbl_status_lines.setToolTip(f"Visible lines: {visible:,}")
         self.lbl_status_state.setText("Running" if tab.is_running else "Idle")
         self.lbl_status_state.setTextFormat(Qt.TextFormat.PlainText)
         # Update running icon color
@@ -312,6 +334,18 @@ class LogcatGUI(QMainWindow):
         if hasattr(self, "_sb_state_icon"):
             self._sb_state_icon.setPixmap(status_icon.pixmap(14, 14))
         self.lbl_status_mem.setText(f"{self._mem_mb():.1f} MB")
+        if hasattr(self, "_sb_pause_badge"):
+            if tab.is_paused:
+                text = f"Paused • {tab.paused_count} new" if tab.paused_count else "Paused"
+                self._sb_pause_badge.setText(text)
+                self._sb_pause_badge.setVisible(True)
+            else:
+                self._sb_pause_badge.setVisible(False)
+
+    def _resume_from_pause(self):
+        tab = self._current_tab()
+        if tab is not None:
+            tab.resume_from_pause()
 
     @staticmethod
     def _mem_mb() -> float:
