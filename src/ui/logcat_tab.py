@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 import tempfile
 import shutil
 import re
@@ -12,14 +13,15 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect, QEvent, QObject, QRectF, QPointF
 from PyQt6.QtGui import (
     QTextCharFormat, QColor, QFont, QTextCursor, QFontDatabase, QPainter, QPolygon,
-    QBrush, QKeySequence, QShortcut, QPixmap, QTextLayout, QTextOption, QFontMetrics
+    QBrush, QKeySequence, QShortcut, QPixmap, QTextLayout, QTextOption, QFontMetrics, QTextLine,
+    QGuiApplication
 )
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QComboBox, QPushButton, QLineEdit,
     QTextEdit, QFileDialog, QApplication, QSizePolicy,
     QListWidget, QListWidgetItem, QMessageBox,
-    QAbstractScrollArea, QScrollBar,
+    QAbstractScrollArea, QScrollBar, QMenu,
 )
 from PyQt6.QtSvg import QSvgRenderer
 
@@ -187,6 +189,11 @@ class VirtualLogView(QAbstractScrollArea):
         self._tag_col_width_cache = 0
         self._selection_anchor: tuple[int, int] | None = None
         self._selection_active: tuple[int, int] | None = None
+        self._last_click_time = 0.0
+        self._last_click_line: int | None = None
+        self._click_count = 0
+        self._suppress_release_select = False
+        self._dragging = False
         self.setViewportMargins(0, 0, 0, 0)
         self.verticalScrollBar().setSingleStep(24)
         self.horizontalScrollBar().setSingleStep(24)
@@ -214,22 +221,19 @@ class VirtualLogView(QAbstractScrollArea):
             self._visible_indices = list(range(len(lines)))
         else:
             self._visible_indices = [i for i in self._visible_indices if 0 <= i < len(self._lines)]
-        self._selection_anchor = None
-        self._selection_active = None
+        if reset_visible:
+            self._selection_anchor = None
+            self._selection_active = None
         self._recompute_layout_cache()
         self.viewport().update()
 
     def set_visible_indices(self, indices: list[int]):
         self._visible_indices = [i for i in indices if 0 <= i < len(self._lines)]
-        self._selection_anchor = None
-        self._selection_active = None
         self._recompute_layout_cache()
         self.viewport().update()
 
     def sync_visible_indices(self, indices: list[int], incremental: bool = False):
         self._visible_indices = [i for i in indices if 0 <= i < len(self._lines)]
-        self._selection_anchor = None
-        self._selection_active = None
         if incremental:
             self._recompute_layout_cache(incremental=True)
         else:
@@ -297,6 +301,26 @@ class VirtualLogView(QAbstractScrollArea):
 
     def scroll_to_bottom(self):
         self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+
+    def capture_anchor(self) -> tuple[int, int] | None:
+        if not self._visible_indices:
+            return None
+        scroll_y = self.verticalScrollBar().value()
+        vis_idx = self._find_visible_start(scroll_y)
+        if vis_idx < 0 or vis_idx >= len(self._visible_indices):
+            return None
+        line_idx = self._visible_indices[vis_idx]
+        offset = scroll_y - self._line_top(vis_idx)
+        return (line_idx, offset)
+
+    def restore_anchor(self, anchor: tuple[int, int]):
+        line_idx, offset = anchor
+        try:
+            vis_idx = self._visible_indices.index(line_idx)
+        except ValueError:
+            return
+        y = self._line_top(vis_idx) + offset
+        self.verticalScrollBar().setValue(max(0, min(y, self.verticalScrollBar().maximum())))
 
     def plain_text(self, visible_only: bool = True) -> str:
         if visible_only:
@@ -370,7 +394,7 @@ class VirtualLogView(QAbstractScrollArea):
                 l = layout.lineAt(li)
                 y0 = line_top - scroll_y + l.y()
                 if y0 <= pos.y() < y0 + l.height():
-                    x_rel = pos.x() - x0
+                    x_rel = pos.x() - (x0 + l.x())
                     if x_rel <= 0:
                         return (line_idx, 0)
                     col = l.xToCursor(x_rel)
@@ -405,8 +429,32 @@ class VirtualLogView(QAbstractScrollArea):
             self.setFocus(Qt.FocusReason.MouseFocusReason)
             pos = self._pos_to_line_col(event.position().toPoint())
             if pos is not None:
-                self._selection_anchor = pos
-                self._selection_active = pos
+                line_idx, col = pos
+                now = time.time()
+                interval = QGuiApplication.styleHints().mouseDoubleClickInterval() / 1000.0
+                if self._last_click_line == line_idx and now - self._last_click_time <= interval:
+                    self._click_count += 1
+                else:
+                    self._click_count = 1
+                self._last_click_time = now
+                self._last_click_line = line_idx
+                self._dragging = False
+                if self._click_count == 2:
+                    text = self._lines[line_idx].plain
+                    start, end = self._word_bounds(text, col)
+                    self._selection_anchor = (line_idx, start)
+                    self._selection_active = (line_idx, end)
+                    self._suppress_release_select = True
+                elif self._click_count >= 3:
+                    text = self._lines[line_idx].plain
+                    self._selection_anchor = (line_idx, 0)
+                    self._selection_active = (line_idx, len(text))
+                    self._click_count = 0
+                    self._suppress_release_select = True
+                else:
+                    self._selection_anchor = pos
+                    self._selection_active = pos
+                    self._suppress_release_select = False
                 self.viewport().update()
                 return
         super().mousePressEvent(event)
@@ -416,18 +464,85 @@ class VirtualLogView(QAbstractScrollArea):
             pos = self._pos_to_line_col(event.position().toPoint())
             if pos is not None:
                 self._selection_active = pos
+                self._dragging = True
                 self.viewport().update()
                 return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._suppress_release_select:
+                self._suppress_release_select = False
+                self._dragging = False
+                return
             pos = self._pos_to_line_col(event.position().toPoint())
             if pos is not None:
-                self._selection_active = pos
+                if self._dragging:
+                    self._dragging = False
+                else:
+                    self._selection_active = pos
                 self.viewport().update()
                 return
         super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        self.mousePressEvent(event)
+
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        sel_text = self.selected_text()
+        act_copy = menu.addAction("Copy")
+        act_copy.setEnabled(bool(sel_text))
+        act_copy_all = menu.addAction("Copy All")
+        act_select_all = menu.addAction("Select All")
+        act_clear = menu.addAction("Clear Selection")
+        act_clear.setEnabled(self._selection_anchor is not None and self._selection_active is not None)
+        action = menu.exec(event.globalPos())
+        if action == act_copy and sel_text:
+            QApplication.clipboard().setText(sel_text)
+        elif action == act_copy_all:
+            QApplication.clipboard().setText(self.plain_text(visible_only=True))
+        elif action == act_select_all:
+            if self._visible_indices:
+                first = self._visible_indices[0]
+                last = self._visible_indices[-1]
+                self._selection_anchor = (first, 0)
+                self._selection_active = (last, len(self._lines[last].plain))
+                self.viewport().update()
+        elif action == act_clear:
+            self._selection_anchor = None
+            self._selection_active = None
+            self.viewport().update()
+
+    def _word_bounds(self, text: str, idx: int) -> tuple[int, int]:
+        if not text:
+            return (0, 0)
+        if idx >= len(text):
+            idx = len(text) - 1
+        if idx < 0:
+            return (0, 0)
+        def is_word(c: str) -> bool:
+            return c.isalnum() or c in "._:/-$@#"
+        if not is_word(text[idx]):
+            right = idx + 1
+            while right < len(text) and not is_word(text[right]):
+                right += 1
+            if right < len(text):
+                idx = right
+            else:
+                left = idx - 1
+                while left >= 0 and not is_word(text[left]):
+                    left -= 1
+                if left < 0:
+                    return (idx, min(len(text), idx + 1))
+                idx = left
+        start = idx
+        end = idx + 1
+        while start > 0 and is_word(text[start - 1]):
+            start -= 1
+        while end < len(text) and is_word(text[end]):
+            end += 1
+        return (start, end)
 
     def keyPressEvent(self, event):
         if event.matches(QKeySequence.StandardKey.Copy):
@@ -712,11 +827,6 @@ class VirtualLogView(QAbstractScrollArea):
             painter.setOpacity(1.0)
 
         gutter_w = self._gutter_width()
-        if gutter_w > 0:
-            painter.fillRect(QRect(0, 0, gutter_w, self.viewport().height()), QColor("#1a1a1a"))
-            painter.setPen(QColor("#333333"))
-            painter.drawLine(gutter_w - 1, 0, gutter_w - 1, self.viewport().height())
-
         scroll_y = self.verticalScrollBar().value()
         scroll_x = self.horizontalScrollBar().value()
         tag_col_w = self._tag_column_width()
@@ -733,6 +843,7 @@ class VirtualLogView(QAbstractScrollArea):
         start_idx = self._find_visible_start(scroll_y)
         y = self._line_top(start_idx) - scroll_y
         i = start_idx
+        draw_numbers_in_loop = gutter_w == 0
 
         while i < len(self._visible_indices) and y < self.viewport().height():
             line_idx = self._visible_indices[i]
@@ -757,7 +868,7 @@ class VirtualLogView(QAbstractScrollArea):
                     tag_start_x = x0 + max(0, tag_col_w - tag_text_width)
                     msg_start_x = x0 + tag_col_w + 6
 
-            if self._show_line_numbers:
+            if self._show_line_numbers and draw_numbers_in_loop:
                 painter.setPen(QColor("#555555"))
                 line_rect = QRect(0, int(y), gutter_w - 4, int(line_h))
                 painter.drawText(
@@ -774,7 +885,7 @@ class VirtualLogView(QAbstractScrollArea):
                     sel_start = s_col if line_idx == s_line else 0
                     sel_end = e_col if line_idx == e_line else len(line.plain)
                     if sel_start != sel_end:
-                        sel_color = QColor("#243B55")
+                        sel_color = QColor("#8A1C1C")
                         if self._wrap:
                             layout, _h, pad_len, gap_len, tag_len = self._get_wrap_layout(line, width)
                             sel_start = self._wrap_to_display_index(sel_start, pad_len, gap_len, tag_len)
@@ -789,7 +900,7 @@ class VirtualLogView(QAbstractScrollArea):
                                     x_start = self._cursor_x(l, s - line_start)
                                     x_end = self._cursor_x(l, e - line_start)
                                     rect = QRectF(
-                                        x0 + x_start,
+                                        x0 + l.x() + x_start,
                                         y + l.y(),
                                         x_end - x_start,
                                         l.height(),
@@ -838,7 +949,7 @@ class VirtualLogView(QAbstractScrollArea):
                                 x_start = self._cursor_x(l, sel_start - line_start)
                                 x_end = self._cursor_x(l, sel_end - line_start)
                                 rect = QRectF(
-                                    x0 + x_start,
+                                    x0 + l.x() + x_start,
                                     y + l.y(),
                                     x_end - x_start,
                                     l.height(),
@@ -949,6 +1060,26 @@ class VirtualLogView(QAbstractScrollArea):
 
             y += line_h
             i += 1
+
+        if gutter_w > 0:
+            painter.fillRect(QRect(0, 0, gutter_w, self.viewport().height()), QColor("#1a1a1a"))
+            painter.setPen(QColor("#333333"))
+            painter.drawLine(gutter_w - 1, 0, gutter_w - 1, self.viewport().height())
+            if self._show_line_numbers:
+                y = self._line_top(start_idx) - scroll_y
+                i = start_idx
+                painter.setPen(QColor("#555555"))
+                while i < len(self._visible_indices) and y < self.viewport().height():
+                    line_idx = self._visible_indices[i]
+                    line_h = self._layout_height(self._lines[line_idx], width)
+                    line_rect = QRect(0, int(y), gutter_w - 4, int(line_h))
+                    painter.drawText(
+                        line_rect,
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
+                        str(i + 1),
+                    )
+                    y += line_h
+                    i += 1
 
         painter.end()
 
@@ -1602,6 +1733,7 @@ class LogcatTab(QWidget):
         self.btn_autoscroll.setFixedWidth(44)
         self.btn_autoscroll.setToolTip("Auto-scroll: keep the view pinned to the newest logs.")
         self._hand(self.btn_autoscroll)
+        self.btn_autoscroll.toggled.connect(self._on_autoscroll_toggled)
         h.addWidget(self.btn_autoscroll, stretch=0)
 
         self.btn_wrap = QPushButton()
@@ -1987,6 +2119,13 @@ class LogcatTab(QWidget):
         max_batch = 200
         file_buf = []
         new_visible_lines: list[LogLine] = []
+        anchor = None
+        frozen_scroll = None
+        at_bottom = self.log_view.verticalScrollBar().value() >= self.log_view.verticalScrollBar().maximum() - 1
+        freeze_view = (not self.btn_autoscroll.isChecked()) and (not at_bottom)
+        if not self.btn_autoscroll.isChecked():
+            frozen_scroll = self.log_view.verticalScrollBar().value()
+            anchor = self.log_view.capture_anchor()
         while self._pending_lines and batch < max_batch:
             raw = self._pending_lines.popleft()
             file_buf.append(raw)
@@ -2005,17 +2144,20 @@ class LogcatTab(QWidget):
                 m = _LEVEL_RE.search(plain)
                 if m and m.group(1) in _LEVEL_COLORS:
                     line_color = _LEVEL_COLORS[m.group(1)]
-            if tag:
-                if line_color:
-                    self._last_tag_color = line_color
+            if not self._color_line_by_tag:
+                line_color = None
             else:
-                if level is None:
-                    if line_color and self._last_tag_color is None:
+                if tag:
+                    if line_color:
                         self._last_tag_color = line_color
-                    if self._last_tag_color is not None:
-                        line_color = self._last_tag_color
-                elif line_color:
-                    self._last_tag_color = line_color
+                else:
+                    if level is None:
+                        if line_color and self._last_tag_color is None:
+                            self._last_tag_color = line_color
+                        if self._last_tag_color is not None:
+                            line_color = self._last_tag_color
+                    elif line_color:
+                        self._last_tag_color = line_color
             line = LogLine(text, plain, chunks, tag, level, line_color)
             self._lines.append(line)
 
@@ -2032,10 +2174,21 @@ class LogcatTab(QWidget):
             self._visible_indices = [i - trim for i in self._visible_indices if i - trim >= 0]
             if trim > 0:
                 self._match_ranges = [(i - trim, s, e) for (i, s, e) in self._match_ranges if i - trim >= 0]
+                if self.log_view._selection_anchor and self.log_view._selection_active:
+                    a_line, a_col = self.log_view._selection_anchor
+                    b_line, b_col = self.log_view._selection_active
+                    a_line -= trim
+                    b_line -= trim
+                    if a_line < 0 or b_line < 0:
+                        self.log_view._selection_anchor = None
+                        self.log_view._selection_active = None
+                    else:
+                        self.log_view._selection_anchor = (a_line, a_col)
+                        self.log_view._selection_active = (b_line, b_col)
             self.log_view.set_lines(self._lines, reset_visible=False)
             self.log_view.sync_visible_indices(self._visible_indices, incremental=False)
 
-        if new_visible_lines:
+        if new_visible_lines and not freeze_view:
             self.log_view.sync_visible_indices(self._visible_indices, incremental=True)
 
         if file_buf and self._log_fp:
@@ -2046,6 +2199,13 @@ class LogcatTab(QWidget):
 
         if self.btn_autoscroll.isChecked():
             self.log_view.scroll_to_bottom()
+        elif not freeze_view:
+            if anchor is not None:
+                self.log_view.restore_anchor(anchor)
+            if frozen_scroll is not None:
+                self.log_view.verticalScrollBar().setValue(
+                    max(0, min(frozen_scroll, self.log_view.verticalScrollBar().maximum()))
+                )
     
     def _line_matches(self, plain: str, query: str) -> bool:
         if not query:
@@ -2205,6 +2365,10 @@ class LogcatTab(QWidget):
     def _toggle_wrap(self, checked: bool):
         self.log_view.set_wrap_enabled(checked)
 
+    def _on_autoscroll_toggled(self, checked: bool):
+        if checked:
+            self.log_view.sync_visible_indices(self._visible_indices, incremental=False)
+            self.log_view.scroll_to_bottom()
     # ── Actions ───────────────────────────────────────────────────────────────
 
     def clear_log(self, confirm: bool = True):
@@ -2273,6 +2437,7 @@ class LogcatTab(QWidget):
         new_color_by_tag = Settings().color_line_by_tag
         if new_color_by_tag != self._color_line_by_tag:
             self._color_line_by_tag = new_color_by_tag
+            self._recompute_line_colors()
             self.log_view.clear_layout_cache()
         # Update max lines for log view
         new_max = max(0, int(Settings().log_view_max_lines))
@@ -2284,6 +2449,35 @@ class LogcatTab(QWidget):
                 self._visible_indices = [i - trim for i in self._visible_indices if i - trim >= 0]
         self.log_view.sync_visible_indices(self._visible_indices, incremental=False)
         self.log_view.viewport().update()
+
+    def _recompute_line_colors(self):
+        self._last_tag_color = None
+        for line in self._lines:
+            if not self._color_line_by_tag:
+                line.line_color = None
+                continue
+            level = line.level
+            if level is None:
+                level = _level_from_chunks(line.chunks)
+            if level in _LEVEL_COLORS:
+                line_color = _LEVEL_COLORS[level]
+            else:
+                line_color = _line_color_from_chunks(line.chunks)
+                m = _LEVEL_RE.search(line.plain)
+                if m and m.group(1) in _LEVEL_COLORS:
+                    line_color = _LEVEL_COLORS[m.group(1)]
+            if line.tag:
+                if line_color:
+                    self._last_tag_color = line_color
+            else:
+                if level is None:
+                    if line_color and self._last_tag_color is None:
+                        self._last_tag_color = line_color
+                    if self._last_tag_color is not None:
+                        line_color = self._last_tag_color
+                elif line_color:
+                    self._last_tag_color = line_color
+            line.line_color = line_color
 
     # ── Public helpers ────────────────────────────────────────────────────────
 
