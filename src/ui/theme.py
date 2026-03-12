@@ -107,15 +107,15 @@ QTabWidget::tab-bar {
 QTabBar {
     background: #242424;
     border-bottom: 1px solid #333333;
-    padding: 0 8px;
+    padding: 2px 12px;
 }
 QTabBar::tab {
     background: transparent;
     color: #888888;
     padding: 6px 20px;
-    margin: 4px 2px 0 0;
+    margin: 2px 2px 2px 0;
     border: none;
-    border-radius: 4px 4px 0 0;
+    border-radius: 6px 6px 0 0;
     font-size: 12px;
     font-weight: 500;
     min-width: 100px;
@@ -125,6 +125,7 @@ QTabBar::tab:selected {
     color: #E8E8E8;
     font-weight: 600;
     background-color: #333333;
+    border: 1px solid #3A3A3A;
 }
 QTabBar::tab:hover:!selected {
     color: #C8C8C8;

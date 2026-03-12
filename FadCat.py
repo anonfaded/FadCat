@@ -12,11 +12,10 @@ print("DEBUG: pidcat_runner imported")
 try:
     from PyQt6.QtWidgets import QApplication, QSplashScreen
     from PyQt6.QtGui import QPixmap
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import Qt, QTimer
     from pathlib import Path
-    from src.ui.gui_app import LogcatGUI
     QT_AVAILABLE = True
-    print("DEBUG: PyQt6 and GUI imported successfully")
+    print("DEBUG: PyQt6 imported successfully")
 except ImportError as e:
     print(f"DEBUG: Import error: {e}")
     QT_AVAILABLE = False
@@ -30,6 +29,7 @@ def launch_gui():
     app.setApplicationName("FadCat")
     app.setOrganizationName("FadCat")
     splash = None
+    splash_delay_ms = 900
     try:
         logo_path = Path(__file__).parent / "src" / "icons" / "fadcat-logo.png"
         if logo_path.exists():
@@ -37,14 +37,25 @@ def launch_gui():
             if not pix.isNull():
                 pix = pix.scaled(280, 280, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                 splash = QSplashScreen(pix)
+                splash.showMessage(
+                    "Loading FadCat…",
+                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                    Qt.GlobalColor.white,
+                )
                 splash.show()
                 app.processEvents()
     except Exception:
         splash = None
-    win = LogcatGUI()
-    win.show()
+    def _show_main():
+        from src.ui.gui_app import LogcatGUI
+        win = LogcatGUI()
+        win.show()
+        if splash:
+            splash.finish(win)
     if splash:
-        splash.finish(win)
+        QTimer.singleShot(splash_delay_ms, _show_main)
+    else:
+        _show_main()
     try:
         sys.exit(app.exec())
     except KeyboardInterrupt:

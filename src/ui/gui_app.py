@@ -227,25 +227,28 @@ class LogcatGUI(QMainWindow):
         sb.setStyleSheet("QStatusBar { background: #242424; border-top: 1px solid #444444; }")
 
         self.lbl_status_state = QLabel("Idle")
-        self.lbl_status_state.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
+        self.lbl_status_state.setStyleSheet("color: #888888; padding: 0 2px; font-size: 12px; background: transparent;")
         self.lbl_status_device = QLabel("No device")
-        self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
+        self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 2px; font-size: 12px; background: transparent;")
         self.lbl_status_lines = QLabel("0 lines")
-        self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
-        self.lbl_status_lines.setMinimumWidth(90)
+        self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 1px; font-size: 12px; background: transparent;")
+        self.lbl_status_lines.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.lbl_status_lines.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.lbl_status_mem = QLabel("— MB")
-        self.lbl_status_mem.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
+        self.lbl_status_mem.setStyleSheet("color: #888888; padding: 0 2px; font-size: 12px; background: transparent;")
+        fm = self.lbl_status_lines.fontMetrics()
+        self.lbl_status_lines.setMinimumWidth(fm.horizontalAdvance("88.8k / 88.8k lines") + 4)
+        self.lbl_status_mem.setFixedWidth(fm.horizontalAdvance("888.8 MB") + 4)
 
         self._sb_state_icon, state_item = self._sb_item(icons.icon_status(), self.lbl_status_state)
         sb.addWidget(state_item)
-        sb.addWidget(self._sb_sep())
         self._sb_device_icon, device_item = self._sb_item(icons.icon_device(), self.lbl_status_device)
         sb.addWidget(device_item)
+        sb.addWidget(self._sb_sep())
         self._sb_pause_badge = QPushButton("Paused")
         self._sb_pause_badge.setObjectName("pauseBadge")
         self._sb_pause_badge.setFixedHeight(22)
-        self._sb_pause_badge.setFixedWidth(120)
+        self._sb_pause_badge.setFixedWidth(100)
         self._sb_pause_badge.setVisible(False)
         self._sb_pause_badge.setToolTip("Auto-scroll is off. New logs are buffering. Click to resume.")
         self._sb_pause_badge.setStyleSheet(
@@ -256,22 +259,19 @@ class LogcatGUI(QMainWindow):
         self._sb_pause_badge.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sb_pause_badge.clicked.connect(self._resume_from_pause)
         
-        # Copyright and website link (on the right, before line count)
+        # Copyright and website link (left side)
         copyright_label = QLabel("© 2024–2026")
         copyright_label.setStyleSheet("color: #666666; padding: 0 2px; font-size: 10px;")
-        sb.addPermanentWidget(copyright_label)
-        
-        # Dot separator
+        self._sb_copyright = copyright_label
+        sb.addWidget(copyright_label)
         dot_sep = QLabel("•")
         dot_sep.setStyleSheet("color: #444444; padding: 0 2px;")
-        sb.addPermanentWidget(dot_sep)
-        
-        # Clickable website link
+        self._sb_copyright_dot = dot_sep
+        sb.addWidget(dot_sep)
         website_label = ClickableLabel("fadseclab.com", "https://fadseclab.com")
-        website_label.setStyleSheet(
-            "color: #ff6b6b; padding: 0 2px; font-size: 10px;"
-        )
-        sb.addPermanentWidget(website_label)
+        website_label.setStyleSheet("color: #ff6b6b; padding: 0 2px; font-size: 10px;")
+        self._sb_website = website_label
+        sb.addWidget(website_label)
         
         # Vertical divider before lines
         divider = QFrame()
@@ -282,7 +282,6 @@ class LogcatGUI(QMainWindow):
         
         self._sb_lines_icon, lines_item = self._sb_item(icons.icon_lines(), self.lbl_status_lines)
         sb.addPermanentWidget(self._sb_pause_badge)
-        sb.addPermanentWidget(self._sb_sep())
         sb.addPermanentWidget(lines_item)
         sb.addPermanentWidget(self._sb_sep())
         self._sb_mem_icon, mem_item = self._sb_item(icons.icon_memory(), self.lbl_status_mem)
@@ -292,7 +291,7 @@ class LogcatGUI(QMainWindow):
     @staticmethod
     def _sb_sep() -> QLabel:
         sep = QLabel("|")
-        sep.setStyleSheet("color: #333333; padding: 0 2px;")
+        sep.setStyleSheet("color: #333333; padding: 0 1px;")
         return sep
 
     @staticmethod
@@ -300,8 +299,8 @@ class LogcatGUI(QMainWindow):
         w = QWidget()
         w.setStyleSheet("background: transparent;")
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(2, 0, 2, 0)
-        lay.setSpacing(3)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
         ic = QLabel()
         ic.setPixmap(icon.pixmap(14, 14))
         lay.addWidget(ic)
@@ -348,13 +347,15 @@ class LogcatGUI(QMainWindow):
             self._sb_device_icon.setToolTip(f"Device: {tab.current_device or '—'}")
         if hasattr(self, "_sb_pause_badge"):
             if tab.is_paused:
-                def _fmt(n: int) -> str:
+                def _fmt_small(n: int) -> str:
                     if n >= 1_000_000:
                         return f"{n/1_000_000:.1f}M".rstrip("0").rstrip(".")
+                    if n >= 100_000:
+                        return f"{n/1000:.0f}k"
                     if n >= 1000:
                         return f"{n/1000:.1f}k".rstrip("0").rstrip(".")
                     return str(n)
-                text = f"Paused • {_fmt(tab.paused_count)} new" if tab.paused_count else "Paused"
+                text = f"Paused • {_fmt_small(tab.paused_count)} new" if tab.paused_count else "Paused"
                 self._sb_pause_badge.setText(text)
                 self._sb_pause_badge.setVisible(True)
             else:
@@ -378,7 +379,12 @@ class LogcatGUI(QMainWindow):
                 self.lbl_status_device.setText(self._current_tab().current_device if self._current_tab() else "—")
         self.lbl_status_state.setVisible(not tight)
         self.lbl_status_device.setVisible(not tight)
-        self.lbl_status_lines.setFixedWidth(90 if tight else 110)
+        if hasattr(self, "_sb_copyright"):
+            self._sb_copyright.setVisible(not tight)
+        if hasattr(self, "_sb_copyright_dot"):
+            self._sb_copyright_dot.setVisible(not tight)
+        if hasattr(self, "_sb_website"):
+            self._sb_website.setVisible(not tight)
 
     def _resume_from_pause(self):
         tab = self._current_tab()

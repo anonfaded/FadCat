@@ -934,7 +934,7 @@ class VirtualLogView(QAbstractScrollArea):
                 for start, end, is_current in highlights:
                     if start == end:
                         continue
-                    color = QColor(255, 213, 74, 180) if is_current else QColor(120, 30, 20, 150)
+                    color = QColor(255, 230, 110, 220) if is_current else QColor(120, 30, 20, 170)
                     if self._wrap:
                         layout, _h, pad_len, gap_len, tag_len = self._get_wrap_layout(line, width)
                         start = self._wrap_to_display_index(start, pad_len, gap_len, tag_len)
@@ -1509,25 +1509,25 @@ class LogcatTab(QWidget):
 
     def _build_control_bar(self) -> QFrame:
         bar = QFrame()
-        bar.setFixedHeight(44)
+        bar.setFixedHeight(40)
         bar.setObjectName("controlBar")
         bar.setStyleSheet("QFrame#controlBar { background: #242424; border-bottom: 1px solid #333333; }")
 
         h = QHBoxLayout(bar)
-        h.setContentsMargins(12, 8, 12, 8)
-        h.setSpacing(10)
+        h.setContentsMargins(8, 4, 8, 4)
+        h.setSpacing(8)
         self._control_layout = h
 
         # Device
         self.lbl_device = QLabel("Device")
-        self.lbl_device.setStyleSheet("color: #AAAAAA; font-size: 12px; font-weight: 500; background: transparent;")
+        self.lbl_device.setStyleSheet("color: #AAAAAA; font-size: 11px; font-weight: 500; background: transparent;")
         self.lbl_device.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         h.addWidget(self.lbl_device, stretch=0)
 
         self.device_combo = CustomComboBox()
         self.device_combo.setMinimumWidth(120)
         self.device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.device_combo.setFixedHeight(30)
+        self.device_combo.setFixedHeight(24)
         self.device_combo.setToolTip("Select ADB device")
         h.addWidget(self.device_combo, stretch=2)
 
@@ -1535,7 +1535,7 @@ class LogcatTab(QWidget):
         btn_refresh.setIcon(icons.icon_refresh())
         btn_refresh.setProperty("role", "icon-btn")
         btn_refresh.setToolTip("Refresh devices")
-        btn_refresh.setFixedSize(34, 34)
+        btn_refresh.setFixedSize(24, 24)
         self._hand(btn_refresh)
         btn_refresh.clicked.connect(self.refresh_devices)
         h.addWidget(btn_refresh, stretch=0)
@@ -1544,14 +1544,14 @@ class LogcatTab(QWidget):
 
         # Package
         self.lbl_pkg = QLabel("Package")
-        self.lbl_pkg.setStyleSheet("color: #AAAAAA; font-size: 12px; font-weight: 500; background: transparent;")
+        self.lbl_pkg.setStyleSheet("color: #AAAAAA; font-size: 11px; font-weight: 500; background: transparent;")
         self.lbl_pkg.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         h.addWidget(self.lbl_pkg, stretch=0)
 
         self.pkg_combo = PackageComboBox()
         self.pkg_combo.setMinimumWidth(120)
         self.pkg_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.pkg_combo.setFixedHeight(30)
+        self.pkg_combo.setFixedHeight(24)
         self.pkg_combo.setToolTip("Package name (select 'Global' for all logs)")
         if self.pkg_combo.lineEdit():
             self.pkg_combo.lineEdit().setPlaceholderText("Select a package or Global")
@@ -1566,8 +1566,8 @@ class LogcatTab(QWidget):
         self.btn_toggle = QPushButton("Start")
         self.btn_toggle.setIcon(icons.icon_play())
         self.btn_toggle.setProperty("role", "start")
-        self.btn_toggle.setFixedHeight(30)
-        self.btn_toggle.setMinimumWidth(90)
+        self.btn_toggle.setFixedHeight(24)
+        self.btn_toggle.setMinimumWidth(86)
         self.btn_toggle.setToolTip("Toggle Capture")
         self._hand(self.btn_toggle)
         self.btn_toggle.clicked.connect(self.toggle_capture)
@@ -1592,8 +1592,8 @@ class LogcatTab(QWidget):
         b = QPushButton(f" {text}")
         b.setIcon(icon)
         b.setProperty("role", "tool-text")
-        b.setFixedHeight(30)
-        b.setMinimumWidth(75)
+        b.setFixedHeight(24)
+        b.setMinimumWidth(68)
         self._hand(b)
         b.clicked.connect(slot)
         if tip:
@@ -1604,23 +1604,23 @@ class LogcatTab(QWidget):
 
     def _build_search_bar(self) -> QFrame:
         bar = QFrame()
-        bar.setFixedHeight(48)
+        bar.setFixedHeight(36)
         bar.setObjectName("searchBar")
         bar.setStyleSheet("QFrame#searchBar { background: #1E1E1E; border-bottom: 1px solid #333333; }")
 
         h = QHBoxLayout(bar)
-        h.setContentsMargins(10, 6, 10, 6)
+        h.setContentsMargins(8, 4, 8, 4)
         h.setSpacing(8)
         self._search_layout = h
 
         # Search input
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search logs... (⌘F)")
-        self.search_edit.setFixedHeight(28)
-        self.search_edit.setMinimumWidth(200)
-        self.search_edit.setMinimumWidth(180)
+        self.search_edit.setFixedHeight(24)
+        self.search_edit.setMinimumWidth(220)
         self.search_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.setStyleSheet("QLineEdit { padding: 0 8px; font-size: 11px; }")
         self.search_edit.textChanged.connect(self._on_search_changed)
         self.search_edit.returnPressed.connect(self._next_match)
         h.addWidget(self.search_edit, stretch=3)
@@ -1630,8 +1630,8 @@ class LogcatTab(QWidget):
         self.btn_case.setProperty("role", "toggle")
         self.btn_case.setCheckable(True)
         self.btn_case.setToolTip("Case sensitive: match upper/lowercase exactly.")
-        self.btn_case.setMinimumWidth(48)
-        self.btn_case.setFixedHeight(28)
+        self.btn_case.setMinimumWidth(28)
+        self.btn_case.setFixedHeight(24)
         self.btn_case.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self._hand(self.btn_case)
         self.btn_case.toggled.connect(self._on_search_changed)
@@ -1644,8 +1644,8 @@ class LogcatTab(QWidget):
             "Regular expression: match patterns, not just plain text. "
             "Examples: `error|fail`, `\\bActivity\\b`, `^E/`."
         )
-        self.btn_regex.setMinimumWidth(48)
-        self.btn_regex.setFixedHeight(28)
+        self.btn_regex.setMinimumWidth(28)
+        self.btn_regex.setFixedHeight(24)
         self.btn_regex.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self._hand(self.btn_regex)
         self.btn_regex.toggled.connect(self._on_search_changed)
@@ -1656,8 +1656,8 @@ class LogcatTab(QWidget):
         self.btn_grep.setProperty("role", "toggle")
         self.btn_grep.setCheckable(True)
         self.btn_grep.setToolTip("Grep mode - hide non-matching lines (⌥G)")
-        self.btn_grep.setMinimumWidth(90)
-        self.btn_grep.setFixedHeight(28)
+        self.btn_grep.setMinimumWidth(80)
+        self.btn_grep.setFixedHeight(24)
         self._hand(self.btn_grep)
         self.btn_grep.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_grep, stretch=0)
@@ -1675,8 +1675,8 @@ class LogcatTab(QWidget):
         def add_level_chip(label: str, color: str, icon_fn, tooltip: str):
             btn = QPushButton()
             btn.setCheckable(True)
-            btn.setFixedHeight(28)
-            btn.setFixedWidth(28)
+            btn.setFixedHeight(24)
+            btn.setFixedWidth(24)
             btn.setIcon(icon_fn())
             btn.setIconSize(QSize(12, 12))
             self._hand(btn)
@@ -1709,7 +1709,7 @@ class LogcatTab(QWidget):
         self.btn_prev.setIcon(icons.icon_up())
         self.btn_prev.setProperty("role", "nav-btn")
         self.btn_prev.setToolTip("Previous match (⇧F3)")
-        self.btn_prev.setFixedSize(28, 28)
+        self.btn_prev.setFixedSize(24, 24)
         self._hand(self.btn_prev)
         self.btn_prev.clicked.connect(self._prev_match)
         h.addWidget(self.btn_prev, stretch=0)
@@ -1718,7 +1718,7 @@ class LogcatTab(QWidget):
         self.btn_next.setIcon(icons.icon_down())
         self.btn_next.setProperty("role", "nav-btn")
         self.btn_next.setToolTip("Next match (F3)")
-        self.btn_next.setFixedSize(28, 28)
+        self.btn_next.setFixedSize(24, 24)
         self._hand(self.btn_next)
         self.btn_next.clicked.connect(self._next_match)
         h.addWidget(self.btn_next, stretch=0)
@@ -1736,8 +1736,8 @@ class LogcatTab(QWidget):
         self.btn_autoscroll.setProperty("role", "toggle")
         self.btn_autoscroll.setCheckable(True)
         self.btn_autoscroll.setChecked(True)
-        self.btn_autoscroll.setFixedHeight(28)
-        self.btn_autoscroll.setFixedWidth(34)
+        self.btn_autoscroll.setFixedHeight(24)
+        self.btn_autoscroll.setFixedWidth(28)
         self.btn_autoscroll.setToolTip("Auto-scroll: keep the view pinned to the newest logs.")
         self._hand(self.btn_autoscroll)
         self.btn_autoscroll.toggled.connect(self._on_autoscroll_toggled)
@@ -1748,8 +1748,8 @@ class LogcatTab(QWidget):
         self.btn_wrap.setProperty("role", "toggle")
         self.btn_wrap.setCheckable(True)
         self.btn_wrap.setChecked(False)
-        self.btn_wrap.setFixedHeight(28)
-        self.btn_wrap.setFixedWidth(34)
+        self.btn_wrap.setFixedHeight(24)
+        self.btn_wrap.setFixedWidth(28)
         self.btn_wrap.setToolTip("Wrap: wrap long lines instead of scrolling horizontally.")
         self._hand(self.btn_wrap)
         self.btn_wrap.toggled.connect(self._toggle_wrap)
@@ -1836,17 +1836,17 @@ class LogcatTab(QWidget):
             self.search_edit.setMinimumWidth(80)
             if hasattr(self, "_search_layout"):
                 self._search_layout.setSpacing(4)
-                self._search_layout.setContentsMargins(8, 4, 8, 4)
+                self._search_layout.setContentsMargins(6, 4, 6, 4)
             if hasattr(self, "_control_layout"):
                 self._control_layout.setSpacing(6)
-                self._control_layout.setContentsMargins(8, 6, 8, 6)
+                self._control_layout.setContentsMargins(6, 4, 6, 4)
         else:
             if hasattr(self, "_search_layout"):
                 self._search_layout.setSpacing(8)
-                self._search_layout.setContentsMargins(12, 6, 12, 6)
+                self._search_layout.setContentsMargins(8, 4, 8, 4)
             if hasattr(self, "_control_layout"):
-                self._control_layout.setSpacing(10)
-                self._control_layout.setContentsMargins(12, 8, 12, 8)
+                self._control_layout.setSpacing(8)
+                self._control_layout.setContentsMargins(8, 4, 8, 4)
 
         # Compact chip sizing
         if tiny:
@@ -1856,7 +1856,7 @@ class LogcatTab(QWidget):
                 btn.setIconSize(QSize(10, 10))
         else:
             for btn in self._level_chip_buttons:
-                btn.setFixedWidth(26)
+                btn.setFixedWidth(24)
                 btn.setFixedHeight(24)
                 btn.setIconSize(QSize(12, 12))
 
