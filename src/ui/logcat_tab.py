@@ -885,7 +885,7 @@ class VirtualLogView(QAbstractScrollArea):
                     sel_start = s_col if line_idx == s_line else 0
                     sel_end = e_col if line_idx == e_line else len(line.plain)
                     if sel_start != sel_end:
-                        sel_color = QColor("#8A1C1C")
+                        sel_color = QColor(185, 28, 28, 180)
                         if self._wrap:
                             layout, _h, pad_len, gap_len, tag_len = self._get_wrap_layout(line, width)
                             sel_start = self._wrap_to_display_index(sel_start, pad_len, gap_len, tag_len)
@@ -934,7 +934,7 @@ class VirtualLogView(QAbstractScrollArea):
                 for start, end, is_current in highlights:
                     if start == end:
                         continue
-                    color = QColor("#1E3A8A") if is_current else QColor("#3D1510")
+                    color = QColor(255, 213, 74, 180) if is_current else QColor(120, 30, 20, 150)
                     if self._wrap:
                         layout, _h, pad_len, gap_len, tag_len = self._get_wrap_layout(line, width)
                         start = self._wrap_to_display_index(start, pad_len, gap_len, tag_len)
@@ -1509,7 +1509,7 @@ class LogcatTab(QWidget):
 
     def _build_control_bar(self) -> QFrame:
         bar = QFrame()
-        bar.setFixedHeight(48)
+        bar.setFixedHeight(44)
         bar.setObjectName("controlBar")
         bar.setStyleSheet("QFrame#controlBar { background: #242424; border-bottom: 1px solid #333333; }")
 
@@ -1604,7 +1604,7 @@ class LogcatTab(QWidget):
 
     def _build_search_bar(self) -> QFrame:
         bar = QFrame()
-        bar.setFixedHeight(46)
+        bar.setFixedHeight(48)
         bar.setObjectName("searchBar")
         bar.setStyleSheet("QFrame#searchBar { background: #1E1E1E; border-bottom: 1px solid #333333; }")
 
@@ -1617,6 +1617,7 @@ class LogcatTab(QWidget):
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search logs... (⌘F)")
         self.search_edit.setFixedHeight(28)
+        self.search_edit.setMinimumWidth(200)
         self.search_edit.setMinimumWidth(180)
         self.search_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.search_edit.setClearButtonEnabled(True)
@@ -1674,8 +1675,8 @@ class LogcatTab(QWidget):
         def add_level_chip(label: str, color: str, icon_fn, tooltip: str):
             btn = QPushButton()
             btn.setCheckable(True)
-            btn.setFixedHeight(24)
-            btn.setFixedWidth(24)
+            btn.setFixedHeight(28)
+            btn.setFixedWidth(28)
             btn.setIcon(icon_fn())
             btn.setIconSize(QSize(12, 12))
             self._hand(btn)
