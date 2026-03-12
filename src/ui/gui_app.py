@@ -299,7 +299,12 @@ class LogcatGUI(QMainWindow):
             self.lbl_status_mem.setText("— MB")
             return
         self.lbl_status_device.setText(tab.current_device or "—")
-        self.lbl_status_lines.setText(f"{tab.line_count:,} lines")
+        total = tab.total_line_count
+        visible = tab.line_count
+        if total >= visible:
+            self.lbl_status_lines.setText(f"{visible:,} / {total:,} lines")
+        else:
+            self.lbl_status_lines.setText(f"{visible:,} lines")
         self.lbl_status_state.setText("Running" if tab.is_running else "Idle")
         self.lbl_status_state.setTextFormat(Qt.TextFormat.PlainText)
         # Update running icon color

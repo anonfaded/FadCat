@@ -486,7 +486,7 @@ class VirtualLogView(QAbstractScrollArea):
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        self.mousePressEvent(event)
+        return
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -2121,8 +2121,7 @@ class LogcatTab(QWidget):
         new_visible_lines: list[LogLine] = []
         anchor = None
         frozen_scroll = None
-        at_bottom = self.log_view.verticalScrollBar().value() >= self.log_view.verticalScrollBar().maximum() - 1
-        freeze_view = (not self.btn_autoscroll.isChecked()) and (not at_bottom)
+        freeze_view = not self.btn_autoscroll.isChecked()
         if not self.btn_autoscroll.isChecked():
             frozen_scroll = self.log_view.verticalScrollBar().value()
             anchor = self.log_view.capture_anchor()
@@ -2490,6 +2489,10 @@ class LogcatTab(QWidget):
         if self._visible_indices:
             return len(self._visible_indices)
         return 0
+
+    @property
+    def total_line_count(self) -> int:
+        return len(self._lines)
 
     @property
     def current_device(self) -> str:
