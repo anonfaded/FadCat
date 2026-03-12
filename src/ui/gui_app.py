@@ -227,11 +227,13 @@ class LogcatGUI(QMainWindow):
         sb.setStyleSheet("QStatusBar { background: #242424; border-top: 1px solid #444444; }")
 
         self.lbl_status_state = QLabel("Idle")
-        self.lbl_status_state.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
+        self.lbl_status_state.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
         self.lbl_status_device = QLabel("No device")
-        self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 6px; font-size: 12px; background: transparent;")
+        self.lbl_status_device.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
         self.lbl_status_lines = QLabel("0 lines")
         self.lbl_status_lines.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
+        self.lbl_status_lines.setFixedWidth(110)
+        self.lbl_status_lines.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.lbl_status_mem = QLabel("— MB")
         self.lbl_status_mem.setStyleSheet("color: #888888; padding: 0 4px; font-size: 12px; background: transparent;")
 
@@ -243,7 +245,7 @@ class LogcatGUI(QMainWindow):
         self._sb_pause_badge = QPushButton("Paused")
         self._sb_pause_badge.setObjectName("pauseBadge")
         self._sb_pause_badge.setFixedHeight(22)
-        self._sb_pause_badge.setFixedWidth(130)
+        self._sb_pause_badge.setFixedWidth(120)
         self._sb_pause_badge.setVisible(False)
         self._sb_pause_badge.setToolTip("Auto-scroll is off. New logs are buffering. Click to resume.")
         self._sb_pause_badge.setStyleSheet(
@@ -284,6 +286,7 @@ class LogcatGUI(QMainWindow):
         sb.addPermanentWidget(self._sb_sep())
         self._sb_mem_icon, mem_item = self._sb_item(icons.icon_memory(), self.lbl_status_mem)
         sb.addPermanentWidget(mem_item)
+        self._update_statusbar_layout(self.width())
 
     @staticmethod
     def _sb_sep() -> QLabel:
@@ -296,7 +299,7 @@ class LogcatGUI(QMainWindow):
         w = QWidget()
         w.setStyleSheet("background: transparent;")
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(4, 0, 4, 0)
+        lay.setContentsMargins(3, 0, 3, 0)
         lay.setSpacing(3)
         ic = QLabel()
         ic.setPixmap(icon.pixmap(14, 14))
@@ -338,6 +341,10 @@ class LogcatGUI(QMainWindow):
         mem_mb = self._mem_mb()
         self.lbl_status_mem.setText(f"{mem_mb:.1f} MB")
         self.lbl_status_mem.setToolTip(f"Memory used by FadCat: {mem_mb:.1f} MB")
+        if hasattr(self, "_sb_state_icon"):
+            self._sb_state_icon.setToolTip("Status: Running" if tab.is_running else "Status: Idle")
+        if hasattr(self, "_sb_device_icon"):
+            self._sb_device_icon.setToolTip(f"Device: {tab.current_device or '—'}")
         if hasattr(self, "_sb_pause_badge"):
             if tab.is_paused:
                 def _fmt(n: int) -> str:
@@ -351,6 +358,26 @@ class LogcatGUI(QMainWindow):
                 self._sb_pause_badge.setVisible(True)
             else:
                 self._sb_pause_badge.setVisible(False)
+        self._update_statusbar_layout(self.width())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_statusbar_layout(event.size().width())
+
+    def _update_statusbar_layout(self, width: int):
+        compact = width < 860
+        tight = width < 720
+        if compact:
+            self.lbl_status_state.setText("")
+            self.lbl_status_device.setText("")
+        else:
+            if not self.lbl_status_state.text():
+                self.lbl_status_state.setText("Running" if (self._current_tab() and self._current_tab().is_running) else "Idle")
+            if not self.lbl_status_device.text():
+                self.lbl_status_device.setText(self._current_tab().current_device if self._current_tab() else "—")
+        self.lbl_status_state.setVisible(not tight)
+        self.lbl_status_device.setVisible(not tight)
+        self.lbl_status_lines.setFixedWidth(90 if tight else 110)
 
     def _resume_from_pause(self):
         tab = self._current_tab()
