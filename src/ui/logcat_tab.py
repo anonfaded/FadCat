@@ -2082,8 +2082,10 @@ class LogcatTab(QWidget):
             return
         
         try:
+            from src.utils.adb_utils import get_adb_path
             import subprocess
-            cmd = ["adb", "-s", device, "shell", "pm", "list", "packages"]
+            adb_path = get_adb_path()
+            cmd = [adb_path, "-s", device, "shell", "pm", "list", "packages"]
             res = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=3)
             if res.returncode == 0:
                 pkgs = [line.split(":")[1].strip() for line in res.stdout.splitlines() if ":" in line]

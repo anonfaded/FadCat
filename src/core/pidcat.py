@@ -139,7 +139,6 @@ min_level = LOG_LEVELS_MAP[args.min_level.upper()]
 
 package = args.package
 
-print(f"--- Colored FadCat v{VERSION} ---")
 selected_device = check_adb_device()
 
 try:
@@ -151,19 +150,14 @@ except RuntimeError as e:
 
 if args.device_serial:
   base_adb_command.extend(['-s', args.device_serial])
-  print(f" targeting device serial: {args.device_serial}")
 elif selected_device:
   base_adb_command.extend(['-s', selected_device])
-  print(f" targeting selected device: {selected_device}")
 elif args.use_device:
   base_adb_command.append('-d')
-  print(" targeting first connected device.")
 elif args.use_emulator:
   base_adb_command.append('-e')
-  print(" targeting first running emulator.")
 
 if args.current_app:
-  print(" looking for current running app...")
   system_dump_command = base_adb_command + ["shell", "dumpsys", "activity", "activities"]
   system_dump_process = subprocess.Popen(system_dump_command, stdout=PIPE, stderr=PIPE, universal_newlines=True)
   system_dump = system_dump_process.communicate()[0]
@@ -171,18 +165,20 @@ if args.current_app:
   if running_package_name_match:
       current_package = running_package_name_match.group(1)
       package.append(current_package)
-      print(f" found current app: {current_package}")
-
 
 if len(package) == 0:
   args.all = True
-  print("No package name provided, switching to --all mode.")
-else:
-  print(f"Filtering for packages: {package}")
 
 catchall_package = list(filter(lambda p: p.find(":") == -1, package))
 named_processes = list(filter(lambda p: p.find(":") != -1, package))
 named_processes = list(map(lambda p: p if p.find(":") != len(p) - 1 else p[:-1], named_processes))
+
+# Print minimal status header to stderr (not stdout to keep normal output clean)
+if args.all:
+    print("📊 Showing all logcat messages\n", file=sys.stderr)
+elif len(package) > 0:
+    pkg_list = ", ".join(package[:3]) + (f" +{len(package)-3} more" if len(package) > 3 else "")
+    print(f"📦 Filtering: {pkg_list}\n", file=sys.stderr)
 
 header_size = args.tag_width + 1 + 3 + 1
 stdout_isatty = sys.stdout.isatty()
@@ -310,7 +306,6 @@ else:
     adb = FakeStdinProcess()
 
 if not args.all:
-    print(f"Searching for running process(es) for '{', '.join(package)}'...")
     ps_command = base_adb_command + ['shell', 'ps']
     try:
         ps_output = subprocess.check_output(ps_command, universal_newlines=True)
@@ -320,17 +315,11 @@ if not args.all:
                 pid, proc = pid_match.groups()
                 if match_packages(proc):
                     pids.add(pid)
-        if pids:
-            print(f"✅ Success! Found PID(s): {', '.join(pids)}. Now listening...")
-        else:
-            print(f"⚠️ Warning: No running process found for '{', '.join(package)}'. Waiting for it to start...")
     except FileNotFoundError:
         print("❌ ERROR: Could not find a running ADB process. Please check the connection.", file=sys.stderr)
         sys.exit(1)
     except subprocess.CalledProcessError:
-        print("⚠️ Warning: Error executing PS command. Will still attempt to capture logs.")
-
-print("\n--- Listening for logcat messages... ---\n")
+        pass
 
 try:
     while adb and adb.poll() is None:
