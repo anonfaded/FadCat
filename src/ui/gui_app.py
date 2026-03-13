@@ -10,6 +10,7 @@ from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QStatusBar,
     QLabel, QWidget, QSizePolicy, QTabBar, QPushButton, QInputDialog, QFrame, QHBoxLayout,
+    QMenu, QToolButton,
 )
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtGui import QDesktopServices
@@ -45,9 +46,9 @@ class CustomTabBar(QTabBar):
             # Draw X button (top-right of tab)
             x_pos = rect.right() - 30
             y_pos = rect.top() + (rect.height() - 14) // 2
-            
+
             # Close button rect - larger for clickability
-            close_rect = QRect(x_pos - 2, y_pos - 2, 14, 14)
+            close_rect = QRect(x_pos - 2, y_pos - 2, 18, 18)
             self._close_button_rects[i] = close_rect
 
             # Hover background for close
@@ -57,10 +58,10 @@ class CustomTabBar(QTabBar):
                 painter.setPen(QColor(255, 90, 90, 80))
                 painter.drawRoundedRect(close_rect.adjusted(1, 1, -1, -1), 4, 4)
 
-            # Draw X icon (bigger)
+            # Draw X icon (centered)
             pen_color = QColor("#F07A7A") if self._hover_close_idx == i else QColor("#E05555")
             painter.setPen(pen_color)
-            painter.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+            painter.setFont(QFont("Arial", 12, QFont.Weight.Bold))
             painter.drawText(close_rect, Qt.AlignmentFlag.AlignCenter, "×")
 
     def mouseMoveEvent(self, event):
@@ -103,6 +104,19 @@ class CustomTabBar(QTabBar):
             self.tabRenameRequested.emit(idx)
         else:
             super().mouseDoubleClickEvent(event)
+
+    def contextMenuEvent(self, event):
+        idx = self.tabAt(event.pos())
+        if idx < 0:
+            super().contextMenuEvent(event)
+            return
+        menu = QMenu(self)
+        act_rename = menu.addAction("Rename tab…")
+        act_hint = menu.addAction("Tip: Double-click a tab to rename")
+        act_hint.setEnabled(False)
+        action = menu.exec(event.globalPos())
+        if action == act_rename:
+            self.tabRenameRequested.emit(idx)
 
 
 class ClickableLabel(QLabel):
@@ -236,7 +250,7 @@ class LogcatGUI(QMainWindow):
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setTabsClosable(False)  # Close handled by CustomTabBar
         self.tabs.setMovable(True)
-        self.tabs.setUsesScrollButtons(True)
+        self.tabs.setUsesScrollButtons(False)
         self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.setTabBarAutoHide(False)
@@ -245,9 +259,30 @@ class LogcatGUI(QMainWindow):
         custom_tabbar = CustomTabBar()
         custom_tabbar.tabCloseRequested.connect(self._on_tab_close_requested)
         custom_tabbar.tabRenameRequested.connect(self._on_tab_rename_requested)
-        custom_tabbar.setUsesScrollButtons(True)
+        custom_tabbar.setUsesScrollButtons(False)
         custom_tabbar.setExpanding(False)
+        custom_tabbar.setDrawBase(False)
         self.tabs.setTabBar(custom_tabbar)
+
+        # Tab navigation buttons (avoid scroller overlap artifacts)
+        btn_left = QToolButton()
+        btn_left.setObjectName("tabNav")
+        btn_left.setText("‹")
+        btn_left.setToolTip("Previous tab")
+        btn_left.clicked.connect(self._scroll_tab_left)
+        btn_left.setFixedSize(26, 26)
+        btn_left.setAutoRaise(False)
+
+        btn_right = QToolButton()
+        btn_right.setObjectName("tabNav")
+        btn_right.setText("›")
+        btn_right.setToolTip("Next tab")
+        btn_right.clicked.connect(self._scroll_tab_right)
+        btn_right.setFixedSize(26, 26)
+        btn_right.setAutoRaise(False)
+
+        self.tabs.setCornerWidget(btn_left, Qt.Corner.TopLeftCorner)
+        self.tabs.setCornerWidget(btn_right, Qt.Corner.TopRightCorner)
         
         self.tabs.currentChanged.connect(self._refresh_statusbar)
         self.tabs.currentChanged.connect(self._save_sessions)
@@ -496,6 +531,18 @@ class LogcatGUI(QMainWindow):
                     s.save()
             
             self._save_sessions()
+
+    def _scroll_tab_left(self):
+        if self.tabs.count() == 0:
+            return
+        idx = max(0, self.tabs.currentIndex() - 1)
+        self.tabs.setCurrentIndex(idx)
+
+    def _scroll_tab_right(self):
+        if self.tabs.count() == 0:
+            return
+        idx = min(self.tabs.count() - 1, self.tabs.currentIndex() + 1)
+        self.tabs.setCurrentIndex(idx)
 
     def _save_sessions(self):
         """Persist current session titles to settings."""

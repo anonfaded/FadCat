@@ -29,7 +29,7 @@ def launch_gui():
     app.setApplicationName("FadCat")
     app.setOrganizationName("FadCat")
     splash = None
-    splash_delay_ms = 900
+    splash_delay_ms = 1500
     try:
         logo_path = Path(__file__).parent / "src" / "icons" / "fadcat-logo.png"
         if logo_path.exists():
@@ -37,12 +37,10 @@ def launch_gui():
             if not pix.isNull():
                 pix = pix.scaled(280, 280, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                 splash = QSplashScreen(pix)
-                splash.showMessage(
-                    "Loading FadCat…",
-                    Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
-                    Qt.GlobalColor.white,
-                )
+                splash.setMask(pix.mask())
+                splash.setStyleSheet("background: transparent;")
                 splash.show()
+                splash.raise_()
                 app.processEvents()
     except Exception:
         splash = None
@@ -52,10 +50,15 @@ def launch_gui():
         win.show()
         if splash:
             splash.finish(win)
-    if splash:
-        QTimer.singleShot(splash_delay_ms, _show_main)
-    else:
-        _show_main()
+    def _show_splash_then_main():
+        if splash:
+            splash.show()
+            splash.raise_()
+            app.processEvents()
+            QTimer.singleShot(splash_delay_ms, _show_main)
+        else:
+            _show_main()
+    QTimer.singleShot(0, _show_splash_then_main)
     try:
         sys.exit(app.exec())
     except KeyboardInterrupt:
