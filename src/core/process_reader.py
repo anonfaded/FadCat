@@ -18,10 +18,14 @@ class ProcessReader(QtCore.QThread):
         self.process = None
         self._pty_master = None
         self._stop_requested = False
+        self._exec_stop_requester = None  # For exec mode stop requests
 
     def stop(self):
         # Terminate the child process and close PTY to break read loop
         self._stop_requested = True
+        # Also signal exec mode to stop if running
+        if self._exec_stop_requester:
+            self._exec_stop_requester.stop = True
         try:
             self.requestInterruption()
         except Exception:
@@ -116,6 +120,14 @@ class ProcessReader(QtCore.QThread):
                 # In exec mode, we can't read from stdin, so raise EOFError to trigger pidcat's error handling
                 raise EOFError("No stdin available in bundled exec mode")
             
+            class _StopRequester:
+                """Flag object that pidcat's main loop can check to see if stop was requested."""
+                def __init__(self):
+                    self.stop = False
+            
+            stop_requester = _StopRequester()
+            self._exec_stop_requester = stop_requester  # Store so stop() can access it
+            
             namespace = {
                 '__name__': '__main__',
                 '__file__': pidcat_path,
@@ -127,6 +139,10 @@ class ProcessReader(QtCore.QThread):
                 'input': _safe_input,
                 # Make sys.frozen available in the namespace
                 'sys': _sys,
+                # Force colors on in exec mode (stdout.isatty() will be False)
+                '__stdout_isatty_override__': True,
+                # Stop request flag that pidcat's loop can check
+                '__stop_requester__': stop_requester,
             }
             
             # Execute pidcat code
@@ -153,6 +169,7 @@ class ProcessReader(QtCore.QThread):
                 os.environ.pop('FADCAT_ADB_PATH', None)
             else:
                 os.environ['FADCAT_ADB_PATH'] = original_adb_override
+            self._exec_stop_requester = None
             self.finished.emit()
     
     def _emit_print(self, *args, **kwargs):

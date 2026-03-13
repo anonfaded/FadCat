@@ -198,7 +198,7 @@ def termcolor(fg=None, bg=None):
   return '\033[%sm' % ';'.join(codes) if codes else ''
 
 def colorize(message, fg=None, bg=None):
-  return termcolor(fg, bg) + message + RESET if stdout_isatty else message
+  return termcolor(fg, bg) + message + RESET if (stdout_isatty or globals().get('__stdout_isatty_override__', False)) else message
 
 def indent_wrap(message):
     if width <= 0 or (width - header_size) <= 0:
@@ -315,6 +315,11 @@ if not args.all:
 
 try:
     while adb and adb.poll() is None:
+        # Check if stop was requested (for exec mode)
+        stop_requester = globals().get('__stop_requester__', None)
+        if stop_requester and getattr(stop_requester, 'stop', False):
+            break
+        
         try:
             if hasattr(adb, 'stdout') and adb.stdout:
                 line = adb.stdout.readline()
