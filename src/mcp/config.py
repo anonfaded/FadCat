@@ -38,69 +38,98 @@ def get_fadcat_install_path() -> Optional[Path]:
     return None
 
 
-def generate_mcp_config() -> Dict[str, Any]:
+def generate_mcp_config(use_fadcat_command: bool = True) -> Dict[str, Any]:
     """
-    Generate MCP configuration for IDEs.
+    Generate default MCP configuration for IDEs.
     
     Returns config that can be merged into IDE settings.
+    Uses 'fadcat' command by default (available after installation).
+    Falls back to python -m if fadcat command not in PATH.
     """
-    fadcat_path = get_fadcat_install_path()
-    
-    if not fadcat_path:
-        raise RuntimeError(
-            "Could not find FadCat installation. "
-            "Please ensure FadCat is properly installed."
-        )
-    
-    return {
-        "mcpServers": {
-            "fadcat": {
-                "command": "python",
-                "args": ["-m", "src.mcp"],
-                "cwd": str(fadcat_path),
-                "env": {
-                    "PYTHONUNBUFFERED": "1"
+    if use_fadcat_command:
+        return {
+            "mcpServers": {
+                "fadcat": {
+                    "command": "fadcat",
+                    "args": ["--mcp"],
+                    "env": {"PYTHONUNBUFFERED": "1"}
                 }
             }
         }
-    }
+    else:
+        # Fallback: use python -m src.mcp
+        fadcat_path = get_fadcat_install_path()
+        if not fadcat_path:
+            raise RuntimeError(
+                "Could not find FadCat installation. "
+                "Please ensure FadCat is properly installed."
+            )
+        return {
+            "mcpServers": {
+                "fadcat": {
+                    "command": "python",
+                    "args": ["-m", "src.mcp"],
+                    "cwd": str(fadcat_path),
+                    "env": {"PYTHONUNBUFFERED": "1"}
+                }
+            }
+        }
 
 
-def get_vscode_config_path() -> Path:
-    """Get VSCode settings.json path."""
+def get_ide_config_paths() -> Dict[str, Path]:
+    """
+    Get settings file paths for all supported IDEs.
+    
+    Returns dict mapping IDE name to settings/config path.
+    
+    Supported IDEs:
+    - vscode, cursor, windsurf, claude-code: mcpServers in settings.json
+    - cline: mcp_servers.json
+    - antigravity, gemini-cli: config.json
+    """
     if sys.platform == "darwin":  # macOS
-        return Path.home() / ".config" / "Code" / "User" / "settings.json"
+        return {
+            "vscode": Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json",
+            "cursor": Path.home() / "Library" / "Application Support" / "Cursor" / "User" / "settings.json",
+            "windsurf": Path.home() / "Library" / "Application Support" / "Windsurf" / "User" / "settings.json",
+            "claude-code": Path.home() / "Library" / "Application Support" / "Claude" / "User" / "settings.json",
+            "cline": Path.home() / ".config" / "cline" / "mcp_servers.json",
+            "antigravity": Path.home() / ".config" / "antigravity" / "settings.json",
+            "gemini-cli": Path.home() / ".config" / "gemini" / "config.json",
+        }
     elif sys.platform == "win32":  # Windows
-        return Path.home() / "AppData" / "Roaming" / "Code" / "User" / "settings.json"
+        return {
+            "vscode": Path.home() / "AppData" / "Roaming" / "Code" / "User" / "settings.json",
+            "cursor": Path.home() / "AppData" / "Roaming" / "Cursor" / "User" / "settings.json",
+            "windsurf": Path.home() / "AppData" / "Roaming" / "Windsurf" / "User" / "settings.json",
+            "claude-code": Path.home() / "AppData" / "Roaming" / "Claude" / "User" / "settings.json",
+            "cline": Path.home() / "AppData" / "Roaming" / "cline" / "mcp_servers.json",
+            "antigravity": Path.home() / "AppData" / "Roaming" / "antigravity" / "settings.json",
+            "gemini-cli": Path.home() / "AppData" / "Local" / "gemini" / "config.json",
+        }
     else:  # Linux
-        return Path.home() / ".config" / "Code" / "User" / "settings.json"
-
-
-def get_cursor_config_path() -> Path:
-    """Get Cursor settings.json path."""
-    if sys.platform == "darwin":  # macOS
-        return Path.home() / ".config" / "Cursor" / "User" / "settings.json"
-    elif sys.platform == "win32":  # Windows
-        return Path.home() / "AppData" / "Roaming" / "Cursor" / "User" / "settings.json"
-    else:  # Linux
-        return Path.home() / ".config" / "Cursor" / "User" / "settings.json"
-
-
-def get_windsurf_config_path() -> Path:
-    """Get Windsurf settings.json path."""
-    if sys.platform == "darwin":  # macOS
-        return Path.home() / ".config" / "Windsurf" / "User" / "settings.json"
-    elif sys.platform == "win32":  # Windows
-        return Path.home() / "AppData" / "Roaming" / "Windsurf" / "User" / "settings.json"
-    else:  # Linux
-        return Path.home() / ".config" / "Windsurf" / "User" / "settings.json"
+        return {
+            "vscode": Path.home() / ".config" / "Code" / "User" / "settings.json",
+            "cursor": Path.home() / ".config" / "Cursor" / "User" / "settings.json",
+            "windsurf": Path.home() / ".config" / "Windsurf" / "User" / "settings.json",
+            "claude-code": Path.home() / ".config" / "Claude" / "User" / "settings.json",
+            "cline": Path.home() / ".config" / "cline" / "mcp_servers.json",
+            "antigravity": Path.home() / ".config" / "antigravity" / "settings.json",
+            "gemini-cli": Path.home() / ".config" / "gemini" / "config.json",
+        }
 
 
 def generate_config_for_ide(ide: str) -> str:
     """
     Generate config string for a specific IDE.
     
-    Format: JSON that can be pasted into settings.json
+    Supported IDEs:
+    - vscode, cursor, windsurf, claude-code (mcpServers format)
+    - cline, antigravity, gemini-cli (alternative formats)
+    
+    Returns JSON that can be pasted into IDE settings file.
     """
     config = generate_mcp_config()
+    
+    # Most IDEs use mcpServers format
     return json.dumps(config, indent=2)

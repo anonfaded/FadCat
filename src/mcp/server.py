@@ -22,6 +22,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from src.version import __version__, __author__
+
 # Create MCP server
 SERVER = Server("fadcat")
 

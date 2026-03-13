@@ -1,6 +1,7 @@
 """Settings dialog — manage saved packages and ignore list."""
 from __future__ import annotations
 
+import json
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -707,6 +708,9 @@ class SettingsDialog(QDialog):
 
     def _build_mcp_tab(self):
         """Build the MCP (Model Context Protocol) tab."""
+        from src.mcp.config import generate_mcp_config
+        from src.version import __version__, __author__
+        
         mcp_tab = QWidget()
         mcp_lay = QVBoxLayout(mcp_tab)
         
@@ -714,22 +718,38 @@ class SettingsDialog(QDialog):
         status_grp = QGroupBox("MCP Server Status")
         status_lay = QVBoxLayout(status_grp)
         
-        # Status indicator
-        self.mcp_status_label = QLabel("● Checking...")
+        # Status indicator with version/author
+        status_text = f"● Ready (FadCat v{__version__} by {__author__})"
+        self.mcp_status_label = QLabel(status_text)
         self.mcp_status_label.setFont(QFont("monospace", 11))
         status_lay.addWidget(QLabel("Server Status:"))
         status_lay.addWidget(self.mcp_status_label)
         
-        # Server info
+        # Server capabilities info
         self.mcp_info_text = QTextEdit()
         self.mcp_info_text.setReadOnly(True)
         self.mcp_info_text.setMaximumHeight(150)
         self.mcp_info_text.setPlainText(
             "Tools: 13 available\n"
+            "  • Device control (get_devices, clear_logcat)\n"
+            "  • Logcat analysis (get_logcat_stream, search_logs, filter_by_level)\n"
+            "  • Process info (get_app_processes)\n"
+            "  • Error detection (parse_stacktrace, detect_error_type)\n"
+            "  • Performance (analyze_performance, analyze_memory_leak)\n"
+            "  • Network (trace_network_calls)\n"
+            "  • Export (export_logs)\n"
+            "\n"
             "Resources: 4 available\n"
-            "Prompts: 4 available\n"
-            "Connections: 0 active\n"
-            "Uptime: Not running"
+            "  • logcat://device/{serial}\n"
+            "  • android://devices\n"
+            "  • android://packages/{device}\n"
+            "  • android://processes/{device}\n"
+            "\n"
+            "Prompts: 4 templates\n"
+            "  • debug-crash-analyzer\n"
+            "  • logcat-summarizer\n"
+            "  • performance-monitor\n"
+            "  • network-debugger"
         )
         status_lay.addWidget(self.mcp_info_text)
         
@@ -739,23 +759,20 @@ class SettingsDialog(QDialog):
         config_grp = QGroupBox("IDE Configuration")
         config_lay = QVBoxLayout(config_grp)
         
-        config_lay.addWidget(QLabel("Copy this config to your IDE's settings.json:"))
+        config_lay.addWidget(QLabel("✓ Replace in your IDE's settings.json (preferred):"))
         
         self.mcp_config_text = QTextEdit()
         self.mcp_config_text.setReadOnly(True)
         self.mcp_config_text.setMaximumHeight(120)
         self.mcp_config_text.setFont(QFont("monospace", 9))
-        self.mcp_config_text.setPlainText(
-            '{\n'
-            '  "mcpServers": {\n'
-            '    "fadcat": {\n'
-            '      "command": "python",\n'
-            '      "args": ["-m", "src.mcp"],\n'
-            '      "cwd": "/path/to/FadCat"\n'
-            '    }\n'
-            '  }\n'
-            '}'
-        )
+        
+        try:
+            config = generate_mcp_config()
+            config_text = json.dumps(config, indent=2)
+        except Exception as e:
+            config_text = f"Error generating config: {e}\n\nFallback: Use 'fadcat --mcp' command"
+        
+        self.mcp_config_text.setPlainText(config_text)
         config_lay.addWidget(self.mcp_config_text)
         
         # Copy button
@@ -770,10 +787,15 @@ class SettingsDialog(QDialog):
         quickstart_lay = QVBoxLayout(quickstart_grp)
         
         quickstart_lay.addWidget(QLabel(
-            "1. Install dependencies:\n"
-            "   pip install mcp>=1.7.1\n\n"
-            "2. Copy config above to your IDE (VSCode, Cursor, Windsurf)\n\n"
-            "3. Restart IDE and ask AI to debug Android apps!"
+            "Supported IDEs:\n"
+            "  • VSCode, Cursor, Windsurf (mcpServers format)\n"
+            "  • Claude Code, Cline, AntiGravity, Gemini CLI\n\n"
+            "Setup Steps:\n"
+            "1. Ensure FadCat is installed with 'fadcat' command in PATH\n"
+            "2. Copy config above to your IDE's settings.json\n"
+            "3. Restart IDE and ask AI to debug Android apps!\n\n"
+            "Fallback (if 'fadcat' not available):\n"
+            "   python -m src.mcp"
         ))
         
         mcp_lay.addWidget(quickstart_grp)
