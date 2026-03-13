@@ -122,7 +122,7 @@ QTabBar::tab {
     background: #2C2C2C;
     color: #B0B0B0;
     padding: 4px 28px 4px 12px;
-    margin: 2px 4px 2px 0;
+    margin: 6px 4px 6px 4px;
     border: 1px solid #3A3A3A;
     border-radius: 6px;
     font-size: 12px;
@@ -160,7 +160,7 @@ QTabBar::scroller {
     width: 80px;
     border: none;
     background: transparent;
-    padding: 8px 6px;
+    padding: 4px 6px;
     margin: 0;
     spacing: 4px;
     subcontrol-position: right;
