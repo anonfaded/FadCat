@@ -107,6 +107,24 @@ def main():
         run_pidcat_child()
         return
 
+    # MCP (Model Context Protocol) server mode
+    if '--mcp' in sys.argv:
+        try:
+            import asyncio
+            from src.mcp.server import main as run_mcp
+            print("Starting FadCat MCP Server...", file=sys.stderr)
+            asyncio.run(run_mcp())
+        except ImportError:
+            print("MCP dependencies not installed. Run: pip install mcp>=1.7.1", file=sys.stderr)
+            sys.exit(1)
+        except KeyboardInterrupt:
+            print("MCP Server stopped", file=sys.stderr)
+            sys.exit(0)
+        except Exception as e:
+            print(f"MCP Server error: {e}", file=sys.stderr)
+            sys.exit(1)
+        return
+
     # explicit CLI mode
     if '--cli' in sys.argv:
         from src.cli.cli_app import LogcatCLI

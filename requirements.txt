@@ -1,3 +1,4 @@
 PyQt6>=6.9.0
 colorama>=0.4.6
 rapidfuzz>=3.9.0
+mcp>=1.7.1

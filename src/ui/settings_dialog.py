@@ -551,6 +551,9 @@ class SettingsDialog(QDialog):
         
         self.tabs.addTab(about_tab, "About")
 
+        # ── Tab 5: MCP ────────────────────────────────────────────────────────
+        self._build_mcp_tab()
+
         # Dialog buttons
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
@@ -701,3 +704,87 @@ class SettingsDialog(QDialog):
         from PyQt6.QtGui import QDesktopServices
         from PyQt6.QtCore import QUrl
         QDesktopServices.openUrl(QUrl(url))
+
+    def _build_mcp_tab(self):
+        """Build the MCP (Model Context Protocol) tab."""
+        mcp_tab = QWidget()
+        mcp_lay = QVBoxLayout(mcp_tab)
+        
+        # MCP Status Group
+        status_grp = QGroupBox("MCP Server Status")
+        status_lay = QVBoxLayout(status_grp)
+        
+        # Status indicator
+        self.mcp_status_label = QLabel("● Checking...")
+        self.mcp_status_label.setFont(QFont("monospace", 11))
+        status_lay.addWidget(QLabel("Server Status:"))
+        status_lay.addWidget(self.mcp_status_label)
+        
+        # Server info
+        self.mcp_info_text = QTextEdit()
+        self.mcp_info_text.setReadOnly(True)
+        self.mcp_info_text.setMaximumHeight(150)
+        self.mcp_info_text.setPlainText(
+            "Tools: 13 available\n"
+            "Resources: 4 available\n"
+            "Prompts: 4 available\n"
+            "Connections: 0 active\n"
+            "Uptime: Not running"
+        )
+        status_lay.addWidget(self.mcp_info_text)
+        
+        mcp_lay.addWidget(status_grp)
+        
+        # Configuration Group
+        config_grp = QGroupBox("IDE Configuration")
+        config_lay = QVBoxLayout(config_grp)
+        
+        config_lay.addWidget(QLabel("Copy this config to your IDE's settings.json:"))
+        
+        self.mcp_config_text = QTextEdit()
+        self.mcp_config_text.setReadOnly(True)
+        self.mcp_config_text.setMaximumHeight(120)
+        self.mcp_config_text.setFont(QFont("monospace", 9))
+        self.mcp_config_text.setPlainText(
+            '{\n'
+            '  "mcpServers": {\n'
+            '    "fadcat": {\n'
+            '      "command": "python",\n'
+            '      "args": ["-m", "src.mcp"],\n'
+            '      "cwd": "/path/to/FadCat"\n'
+            '    }\n'
+            '  }\n'
+            '}'
+        )
+        config_lay.addWidget(self.mcp_config_text)
+        
+        # Copy button
+        btn_copy = QPushButton("Copy Config")
+        btn_copy.clicked.connect(self._copy_mcp_config)
+        config_lay.addWidget(btn_copy)
+        
+        mcp_lay.addWidget(config_grp)
+        
+        # Quick Start Group
+        quickstart_grp = QGroupBox("Quick Start")
+        quickstart_lay = QVBoxLayout(quickstart_grp)
+        
+        quickstart_lay.addWidget(QLabel(
+            "1. Install dependencies:\n"
+            "   pip install mcp>=1.7.1\n\n"
+            "2. Copy config above to your IDE (VSCode, Cursor, Windsurf)\n\n"
+            "3. Restart IDE and ask AI to debug Android apps!"
+        ))
+        
+        mcp_lay.addWidget(quickstart_grp)
+        mcp_lay.addStretch()
+        
+        self.tabs.addTab(mcp_tab, "MCP")
+    
+    def _copy_mcp_config(self):
+        """Copy MCP config to clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.mcp_config_text.toPlainText())
+        QMessageBox.information(self, "Copied", "MCP config copied to clipboard!")
+
