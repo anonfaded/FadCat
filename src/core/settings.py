@@ -54,7 +54,7 @@ DEFAULT_SETTINGS = {
     "watermark_opacity": 0.20,  # SVG watermark opacity (0.0-1.0)
     "show_watermark": True,     # Enable/disable watermark
     "show_line_numbers": True,  # Show line numbers in log view
-    "log_view_max_lines": 5000, # 0 = unlimited (may cause lag)
+    "log_view_max_lines": 20000, # 0 = unlimited (may cause lag)
     "save_screen_only": True,   # Save only visible logs from the UI
     "color_line_by_tag": True,  # Color full line using tag color (when available)
     "tag_padding": 16           # Minimum tag column width (no truncation)

@@ -934,7 +934,9 @@ class VirtualLogView(QAbstractScrollArea):
                 for start, end, is_current in highlights:
                     if start == end:
                         continue
-                    color = QColor(255, 230, 110, 220) if is_current else QColor(120, 30, 20, 170)
+                    # Current (active) = bright yellow background
+                    # Non-current = orange/red background for better contrast
+                    color = QColor(255, 200, 50, 220) if is_current else QColor(220, 100, 40, 200)
                     if self._wrap:
                         layout, _h, pad_len, gap_len, tag_len = self._get_wrap_layout(line, width)
                         start = self._wrap_to_display_index(start, pad_len, gap_len, tag_len)
@@ -983,6 +985,27 @@ class VirtualLogView(QAbstractScrollArea):
                 layout.draw(painter, QPointF(x0, float(y)))
             else:
                 x = x0
+                # Build highlight ranges with type info (character indices)
+                # is_current=True means yellow bg (needs dark text)
+                # is_current=False means dark red bg (needs white text)
+                highlight_ranges = []
+                if line_idx in self._highlight_map:
+                    for h_start, h_end, is_current in self._highlight_map[line_idx]:
+                        if h_start != h_end:
+                            highlight_ranges.append((h_start, h_end, is_current))
+                
+                # Track character position for highlight color override
+                char_pos = 0  # Position in line.plain
+                
+                def _get_text_color_for_highlight(pos: int) -> QColor | None:
+                    """Return text color if pos is within a highlight range, else None."""
+                    for h_start, h_end, is_current in highlight_ranges:
+                        if h_start <= pos < h_end:
+                            # Yellow bg (current match) -> white text for contrast
+                            # Orange bg (regular match) -> white text for contrast
+                            return QColor("#ffffff")
+                    return None
+                
                 # Draw tag area in fixed column (full tag, right aligned)
                 if badge_idx is not None:
                     x = tag_start_x
@@ -1012,13 +1035,26 @@ class VirtualLogView(QAbstractScrollArea):
                         if italic:
                             fmt.setFontItalic(True)
                         painter.setFont(self.font())
-                        painter.setPen(fmt.foreground().color())
+                        
+                        # Check if this chunk is within ANY highlight and force white text
+                        is_in_highlight = False
+                        for h_start, h_end, is_current in highlight_ranges:
+                            if char_pos < h_end and (char_pos + len(chunk_text)) > h_start:
+                                is_in_highlight = True
+                                break
+                        
+                        if is_in_highlight:
+                            painter.setPen(QColor("#ffffff"))
+                        else:
+                            painter.setPen(fmt.foreground().color())
+                        
                         if fmt.background() != QBrush():
                             bgc = fmt.background().color()
                             if bgc.isValid() and bgc != _DEFAULT_BG:
                                 painter.fillRect(QRect(int(x), int(y), fm.horizontalAdvance(chunk_text), line_h), bgc)
                         painter.drawText(QPoint(int(x), int(y) + fm.ascent() + 2), chunk_text)
                         x += fm.horizontalAdvance(chunk_text)
+                        char_pos += len(chunk_text)
                     x = msg_start_x
                     chunks_to_draw = line.chunks[badge_idx:]
                 else:
@@ -1050,13 +1086,28 @@ class VirtualLogView(QAbstractScrollArea):
                     if italic:
                         fmt.setFontItalic(True)
                     painter.setFont(self.font())
-                    painter.setPen(fmt.foreground().color())
+                    
+                    # Check if any part of this chunk overlaps with highlights
+                    is_in_highlight = False
+                    for h_start, h_end, is_current in highlight_ranges:
+                        if char_pos < h_end and (char_pos + len(chunk_text)) > h_start:
+                            is_in_highlight = True
+                            break
+                    
+                    # Force white text for highlighted text, otherwise use original color
+                    if is_in_highlight:
+                        painter.setPen(QColor("#ffffff"))
+                    else:
+                        painter.setPen(fmt.foreground().color())
+                    
                     if fmt.background() != QBrush():
                         bgc = fmt.background().color()
                         if bgc.isValid() and bgc != _DEFAULT_BG:
                             painter.fillRect(QRect(int(x), int(y), fm.horizontalAdvance(chunk_text), line_h), bgc)
+                    
                     painter.drawText(QPoint(int(x), int(y) + fm.ascent() + 2), chunk_text)
                     x += fm.horizontalAdvance(chunk_text)
+                    char_pos += len(chunk_text)
 
             y += line_h
             i += 1
