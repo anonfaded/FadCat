@@ -1395,8 +1395,17 @@ class PackageComboBox(CustomComboBox):
                 item.setToolTip("Global: show all logs (no package filtering).")
             self._list_widget.addItem(item)
 
-        top_total = len([p for p in self._all_top if p != "Global"])
-        top_matches = [p for p in self._all_top if not ftext or ftext in p.lower()]
+        # Separate Global from FadCat packages
+        top_packages = [p for p in self._all_top if p != "Global"]
+        top_total = len(top_packages)
+        
+        # Always show Global first
+        global_matches = [p for p in self._all_top if p == "Global"]
+        if global_matches:
+            add_item("Global")
+        
+        # Then show FadCat packages
+        top_matches = [p for p in top_packages if not ftext or ftext in p.lower()]
         if top_matches:
             add_header(
                 f"FadCat Packages ({top_total})",

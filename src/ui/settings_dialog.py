@@ -471,6 +471,39 @@ class SettingsDialog(QDialog):
         cmd_display.setFixedHeight(90)
         about_lay.addWidget(cmd_display)
         
+        # Credits Section
+        about_lay.addSpacing(16)
+        
+        credits_label = QLabel("Credits")
+        credits_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #f0f0f0;")
+        about_lay.addWidget(credits_label)
+        
+        credits_text = QLabel("FadCat is built with:")
+        credits_text.setStyleSheet("font-size: 10px; color: #aaaaaa;")
+        credits_text.setWordWrap(True)
+        about_lay.addWidget(credits_text)
+        
+        # Qt Button
+        qt_btn = QPushButton("🔹 Python Qt6 (PyQt6)")
+        qt_btn.setFixedHeight(28)
+        qt_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #d4d4d4;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-size: 10px;
+                text-align: left;
+            }
+            QPushButton:hover { background-color: #3a3a3a; border: 1px solid #4a4a4a; }
+        """)
+        def show_qt_about():
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.aboutQt(self, "About Qt")
+        qt_btn.clicked.connect(show_qt_about)
+        about_lay.addWidget(qt_btn)
+        
         # Status indicator
         status_lay = QHBoxLayout()
         status_lay.setSpacing(6)
