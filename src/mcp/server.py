@@ -120,10 +120,10 @@ async def get_app_processes(device: str, package: str) -> str:
     try:
         from src.mcp import tools
         result = await tools.impl_get_app_processes(device, package)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in get_app_processes")
-        return f"Error: {str(e)}"
+        return json.dumps({"error": str(e)})
 
 
 @server.tool()
@@ -186,14 +186,14 @@ async def analyze_performance(device: str, package: str, duration: int = 10) -> 
         package: Package name
         duration: Duration to monitor in seconds
     """
-    logger.info(f"Tool called: analyze_performance for {package}")
+    logger.info(f"Tool called: analyze_performance for {package} on {device} for {duration}s")
     try:
         from src.mcp import tools
         result = await tools.impl_analyze_performance(device, package, duration)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in analyze_performance")
-        return f"Error: {str(e)}"
+        return json.dumps({"error": str(e)})
 
 
 @server.tool()
@@ -204,14 +204,14 @@ async def trace_network_calls(device: str, package: str) -> str:
         device: Device serial number
         package: Package name
     """
-    logger.info(f"Tool called: trace_network_calls for {package}")
+    logger.info(f"Tool called: trace_network_calls for {package} on {device}")
     try:
         from src.mcp import tools
         result = await tools.impl_trace_network_calls(device, package)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in trace_network_calls")
-        return f"Error: {str(e)}"
+        return json.dumps({"error": str(e)})
 
 
 @server.tool()
@@ -222,14 +222,14 @@ async def analyze_memory_leak(device: str, package: str) -> str:
         device: Device serial number
         package: Package name
     """
-    logger.info(f"Tool called: analyze_memory_leak for {package}")
+    logger.info(f"Tool called: analyze_memory_leak for {package} on {device}")
     try:
         from src.mcp import tools
         result = await tools.impl_analyze_memory_leak(device, package)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in analyze_memory_leak")
-        return f"Error: {str(e)}"
+        return json.dumps({"error": str(e)})
 
 
 @server.tool()
@@ -394,6 +394,16 @@ async def network_debugger() -> str:
 
 def main():
     """Run MCP server on stdio."""
+    # Print FadCat branding
+    print("\n" + "="*70)
+    print("┌" + "─"*68 + "┐")
+    print("│ " + " "*66 + " │")
+    print("│ " + "FadCat MCP Server".center(66) + " │")
+    print("│ " + f"v{__version__} - Android Debug Companion".center(66) + " │")
+    print("│ " + " "*66 + " │")
+    print("└" + "─"*68 + "┘")
+    print("="*70 + "\n")
+    
     logger.info(f"Starting FadCat MCP Server ({__app_name__} v{__version__})")
     try:
         server.run()

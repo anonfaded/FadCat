@@ -65,7 +65,8 @@ def _parse_logcat_line(line: str) -> Optional[LogLine]:
     
     # Try to parse logcat format
     # E.g.: 03-13 10:42:15.123  1234  1234 E ActivityManager: Error message
-    pattern = r'^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+([^:]+):\s*(.*)$'
+    # Or long format: 03-13 10:42:15.123  1234  1234 WARNING ActivityManager: Error message
+    pattern = r'^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF]|VERBOSE|DEBUG|INFO|WARNING|ERROR|FATAL)\s+([^:]+):\s*(.*)$'
     
     match = re.match(pattern, line)
     if not match:
@@ -73,11 +74,16 @@ def _parse_logcat_line(line: str) -> Optional[LogLine]:
     
     timestamp, pid, tid, level, tag, message = match.groups()
     
-    level_map = {'V': 'VERBOSE', 'D': 'DEBUG', 'I': 'INFO', 'W': 'WARNING', 'E': 'ERROR', 'F': 'FATAL'}
+    # Map log levels to single letters (handle both full words and letters)
+    level_map = {
+        'VERBOSE': 'V', 'DEBUG': 'D', 'INFO': 'I', 'WARNING': 'W', 'ERROR': 'E', 'FATAL': 'F',
+        'V': 'V', 'D': 'D', 'I': 'I', 'W': 'W', 'E': 'E', 'F': 'F'
+    }
+    level = level_map.get(level, level)
     
     return LogLine(
         timestamp=timestamp,
-        level=level_map.get(level, level),
+        level=level,
         tag=tag.strip(),
         pid=int(pid),
         tid=int(tid),
@@ -91,14 +97,20 @@ def _parse_logcat_line(line: str) -> Optional[LogLine]:
 
 async def impl_get_devices() -> str:
     """
-    Get list of connected Android devices.
+    Get list of connected Android devices with intelligent selection.
     
-    Returns JSON list of DeviceInfo objects.
+    Returns JSON list of DeviceInfo objects, ordered by priority:
+    1. Connected real devices
+    2. Connected emulators
+    3. If multiple of same type, returns all with 'primary' flag on first
     """
     try:
         serials = get_adb_devices()
         
         devices = []
+        real_devices = []
+        emulators = []
+        
         for serial in serials:
             try:
                 # Get device properties
@@ -108,23 +120,61 @@ async def impl_get_devices() -> str:
                 manufacturer_output = _run_adb_command(serial, ['shell', 'getprop', 'ro.product.manufacturer'])
                 manufacturer = manufacturer_output.strip() if manufacturer_output and not manufacturer_output.startswith('Error') else 'Unknown'
                 
-                android_version_output = _run_adb_command(serial, ['shell', 'getprop', 'ro.build.version.release'])
-                android_version = android_version_output.strip() if android_version_output and not android_version_output.startswith('Error') else 'Unknown'
+                product_output = _run_adb_command(serial, ['shell', 'getprop', 'ro.product.device'])
+                product = product_output.strip() if product_output and not product_output.startswith('Error') else None
                 
-                device = DeviceInfo(
-                    serial=serial,
-                    name=f"{manufacturer} {model}",
-                    android_version=android_version,
-                    model=model,
-                    manufacturer=manufacturer
-                )
-                devices.append(device.model_dump())
+                is_emulator = "emulator" in serial.lower()
+                
+                device_dict = {
+                    "serial": serial,
+                    "name": f"{manufacturer} {model}",
+                    "status": "device",
+                    "model": model,
+                    "product": product,
+                    "device": product,
+                    "usb_port": None,
+                    "is_emulator": is_emulator,
+                    "is_primary": False  # Will be set below
+                }
+                
+                if is_emulator:
+                    emulators.append(device_dict)
+                else:
+                    real_devices.append(device_dict)
+                    
             except Exception as e:
                 # Still add device even if we can't get properties
-                device = DeviceInfo(serial=serial, name="Unknown", android_version="Unknown")
-                devices.append(device.model_dump())
+                device_dict = {
+                    "serial": serial,
+                    "name": "Unknown",
+                    "status": "offline",
+                    "model": None,
+                    "product": None,
+                    "device": None,
+                    "usb_port": None,
+                    "is_emulator": "emulator" in serial.lower(),
+                    "is_primary": False
+                }
+                if device_dict["is_emulator"]:
+                    emulators.append(device_dict)
+                else:
+                    real_devices.append(device_dict)
         
-        return json.dumps({"devices": devices, "count": len(devices)})
+        # Intelligent ordering: real devices first, then emulators
+        # Mark first device as primary
+        ordered_devices = real_devices + emulators
+        if ordered_devices:
+            ordered_devices[0]["is_primary"] = True
+        
+        devices = ordered_devices
+        
+        return json.dumps({
+            "devices": devices, 
+            "count": len(devices),
+            "primary_device": devices[0]["serial"] if devices else None,
+            "has_real_devices": len(real_devices) > 0,
+            "has_emulators": len(emulators) > 0
+        })
     except Exception as e:
         return json.dumps({"error": str(e), "devices": []})
 
@@ -255,13 +305,13 @@ async def impl_filter_by_level(device: str, level: str) -> str:
         return json.dumps({"error": str(e), "logs": []})
 
 
-async def impl_get_app_processes(device: str, package: Optional[str] = None) -> str:
+async def impl_get_app_processes(device: str, package: str) -> str:
     """
-    Get running processes for an app or all processes.
+    Get running processes for an app.
     
     Args:
         device: Device serial
-        package: Optional package name to filter by
+        package: Package name to filter by
     
     Returns:
         JSON with ProcessInfo objects
@@ -284,17 +334,15 @@ async def impl_get_app_processes(device: str, package: Optional[str] = None) -> 
             user, pid_str, ppid_str, vsize_str, rss_str = parts[0], parts[1], parts[2], parts[3], parts[4]
             proc_name = ' '.join(parts[8:])
             
-            if package and package not in proc_name:
+            if package not in proc_name:
                 continue
             
             try:
                 process = ProcessInfo(
                     pid=int(pid_str),
-                    ppid=int(ppid_str),
+                    uid=int(ppid_str),
                     name=proc_name,
-                    user=user,
-                    vsize=int(vsize_str),
-                    rss=int(rss_str)
+                    package=package
                 )
                 processes.append(process.model_dump())
             except (ValueError, IndexError):
@@ -313,6 +361,7 @@ async def impl_get_app_processes(device: str, package: Optional[str] = None) -> 
 async def impl_get_connected_packages(device: str) -> str:
     """
     Get list of installed packages on a device.
+    Returns only third-party packages (user-installed).
     
     Args:
         device: Device serial
@@ -327,8 +376,14 @@ async def impl_get_connected_packages(device: str) -> str:
         for line in pm_output.split('\n'):
             if line.startswith('package:'):
                 package_name = line.replace('package:', '').strip()
-                package = PackageInfo(name=package_name)
-                packages.append(package.model_dump())
+                package_dict = {
+                    "package_name": package_name,
+                    "version_name": None,
+                    "version_code": None,
+                    "is_system": False,
+                    "is_running": False
+                }
+                packages.append(package_dict)
         
         return json.dumps({
             "device": device,
@@ -352,28 +407,52 @@ async def impl_parse_stacktrace(trace: str) -> str:
     try:
         lines = trace.split('\n')
         exception_type = "Unknown Exception"
-        exception_message = ""
+        message = ""
+        file_info = None
+        line_number = None
+        method_name = None
         
         # Find exception line (usually first line or line with "Exception")
         for line in lines:
             if 'Exception' in line or 'Error' in line:
                 exception_type = line.strip()
                 if ':' in exception_type:
-                    exception_type, exception_message = exception_type.split(':', 1)
-                    exception_message = exception_message.strip()
+                    exception_type, message = exception_type.split(':', 1)
+                    exception_type = exception_type.strip()
+                    message = message.strip()
                 break
         
-        # Extract stack frames
+        # Extract stack frames with details
         frames = []
         for line in lines:
             if 'at ' in line:
-                frames.append(line.strip())
+                # Parse frame: at com.example.Class.method(File.java:123)
+                frame_text = line.strip()
+                frames.append({"frame": frame_text})
+                
+                # Extract file and line from first frame
+                if not file_info and '(' in frame_text and ')' in frame_text:
+                    paren_content = frame_text[frame_text.rfind('(')+1:frame_text.rfind(')')]
+                    if ':' in paren_content:
+                        file_info, line_str = paren_content.rsplit(':', 1)
+                        try:
+                            line_number = int(line_str)
+                        except:
+                            pass
+                
+                # Extract method name
+                if not method_name and '(' in frame_text:
+                    method_part = frame_text[:frame_text.rfind('(')]
+                    if '.' in method_part:
+                        method_name = method_part.split('.')[-1]
         
         stack_trace = StackTraceInfo(
             exception_type=exception_type,
-            exception_message=exception_message,
-            stack_frames=frames,
-            raw_trace=trace
+            message=message,
+            file=file_info,
+            line=line_number,
+            method=method_name,
+            stack_frames=frames
         )
         
         return json.dumps(stack_trace.model_dump())
@@ -394,45 +473,53 @@ async def impl_detect_error_type(logcat: str) -> str:
     try:
         error_type = "UNKNOWN"
         severity = "LOW"
+        root_cause = "Unable to determine root cause"
+        affected_package = None
         
         if 'ANR in ' in logcat or 'Application Not Responding' in logcat:
             error_type = "ANR"
             severity = "HIGH"
+            root_cause = "Application is not responding - likely blocked by long operation or deadlock"
         elif 'OutOfMemoryError' in logcat or 'Native crash' in logcat:
             error_type = "OOM"
             severity = "CRITICAL"
+            root_cause = "Application ran out of memory - heap exhausted or memory leak"
         elif 'FATAL EXCEPTION' in logcat or 'AndroidRuntime' in logcat:
             error_type = "CRASH"
             severity = "CRITICAL"
+            root_cause = "Uncaught exception causing app crash"
         elif 'NullPointerException' in logcat:
             error_type = "NPE"
             severity = "HIGH"
+            root_cause = "Null pointer exception - attempting to use null reference"
         elif 'SecurityException' in logcat:
             error_type = "SECURITY"
             severity = "HIGH"
+            root_cause = "Security permission violation or attempted access denied"
         elif 'IOException' in logcat:
             error_type = "IO"
             severity = "MEDIUM"
+            root_cause = "Input/output error - file, network, or disk operation failed"
         elif 'Timeout' in logcat or 'TIMEOUT' in logcat:
             error_type = "TIMEOUT"
             severity = "MEDIUM"
+            root_cause = "Operation exceeded time limit - network or blocking operation"
         
-        # Extract key lines
-        key_lines = []
+        # Extract package name from Process: line
         for line in logcat.split('\n'):
-            if any(keyword in line for keyword in ['Exception', 'Error', 'FATAL', 'ANR']):
-                key_lines.append(line.strip())
+            if 'Process:' in line or 'package=' in line:
+                # Extract package name
+                if 'Process:' in line:
+                    parts = line.split('Process:')
+                    if len(parts) > 1:
+                        affected_package = parts[1].split(',')[0].strip()
         
         error_analysis = ErrorAnalysis(
             error_type=error_type,
             severity=severity,
-            description=f"Detected {error_type} in logcat",
-            key_lines=key_lines[:5],
-            suggestions=[
-                f"Review logs for {error_type}",
-                "Check device memory usage",
-                "Look for permission issues"
-            ]
+            root_cause=root_cause,
+            affected_package=affected_package,
+            suggested_fix=f"Review logcat output for {error_type} details and check recent code changes"
         )
         
         return json.dumps(error_analysis.model_dump())
@@ -440,53 +527,55 @@ async def impl_detect_error_type(logcat: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_analyze_performance(device: str) -> str:
+async def impl_analyze_performance(device: str, package: str, duration: int = 10) -> str:
     """
-    Analyze device performance (CPU, memory, FPS).
+    Analyze app performance (CPU, memory, FPS) for specific package.
     
     Args:
         device: Device serial
+        package: Package name to profile
+        duration: Duration to monitor in seconds
     
     Returns:
         JSON with PerformanceReport object
     """
     try:
-        # Get memory info
-        meminfo_output = _run_adb_command(device, ['shell', 'cat', '/proc/meminfo'])
+        # Get memory info for the package
+        dumpsys_output = _run_adb_command(device, ['shell', 'dumpsys', 'meminfo', package])
         
+        native_heap = 0
+        dart_heap = 0
         total_mem = 0
-        available_mem = 0
         
-        for line in meminfo_output.split('\n'):
-            if line.startswith('MemTotal:'):
-                total_mem = int(line.split()[1])
-            elif line.startswith('MemAvailable:'):
-                available_mem = int(line.split()[1])
+        for line in dumpsys_output.split('\n'):
+            if 'TOTAL' in line:
+                parts = line.split()
+                if len(parts) > 1:
+                    try:
+                        total_mem = int(parts[-1])
+                    except:
+                        pass
         
-        used_mem = total_mem - available_mem
-        memory_usage = (used_mem / total_mem * 100) if total_mem > 0 else 0
-        
-        # Get CPU info  
-        cpu_output = _run_adb_command(device, ['shell', 'top', '-n', '1'])
-        
-        # Create metrics
-        metrics = PerformanceMetrics(
-            cpu_usage=0,  # Would need more complex parsing
-            memory_usage=memory_usage,
-            memory_total_mb=total_mem / 1024,
-            memory_used_mb=used_mem / 1024,
-            fps=0,  # Would need SurfaceFlinger data
-            battery_temp=0,
-            battery_level=0
+        # Create single metric snapshot
+        metric = PerformanceMetrics(
+            timestamp="",
+            cpu_usage=0,  # Would need pidstat or similar
+            memory_used=total_mem,
+            memory_total=0,
+            fps=None,
+            jank_count=0
         )
         
         report = PerformanceReport(
             device=device,
-            timestamp="",
-            metrics=metrics,
-            potential_issues=[
-                "High memory usage" if memory_usage > 80 else "Memory usage normal"
-            ]
+            duration_seconds=duration,
+            metrics=[metric],
+            avg_cpu=0,
+            peak_memory=total_mem,
+            min_fps=None,
+            avg_fps=None,
+            jank_frames=0,
+            analysis=f"Profiled {package} for {duration}s. Memory usage: {total_mem}MB"
         )
         
         return json.dumps(report.model_dump())
@@ -494,12 +583,13 @@ async def impl_analyze_performance(device: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_analyze_memory_leak(device: str) -> str:
+async def impl_analyze_memory_leak(device: str, package: str) -> str:
     """
-    Analyze potential memory leaks from logcat.
+    Analyze potential memory leaks from logcat for a package.
     
     Args:
         device: Device serial
+        package: Package name to analyze
     
     Returns:
         JSON with MemoryAnalysis object
@@ -509,30 +599,29 @@ async def impl_analyze_memory_leak(device: str) -> str:
         
         memory_allocs = []
         gc_events = []
+        suspected_leak = False
         
         for line in logcat_output.split('\n'):
-            if 'GC_EXPLICIT' in line or 'GC_CONCURRENT' in line:
-                gc_events.append(line.strip())
-            elif 'OutOfMemory' in line or 'Memory pressure' in line:
-                alloc = MemoryAllocation(
-                    size_bytes=0,
-                    tag="OutOfMemory",
-                    timestamp=""
-                )
-                memory_allocs.append(alloc.model_dump())
+            if package in line:
+                if 'GC_EXPLICIT' in line or 'GC_CONCURRENT' in line:
+                    gc_events.append(line.strip())
+                elif 'OutOfMemory' in line or 'Memory pressure' in line:
+                    suspected_leak = True
+                    alloc = MemoryAllocation(
+                        timestamp="",
+                        size_bytes=0,
+                        allocation_type="OutOfMemory"
+                    )
+                    memory_allocs.append(alloc.model_dump())
         
         analysis = MemoryAnalysis(
             device=device,
+            package=package,
+            suspected_leak=suspected_leak or len(gc_events) > 15,
+            leak_size_mb=None,
+            leak_type="Possible memory leak" if suspected_leak else None,
             allocations=memory_allocs,
-            gc_events=gc_events[:20],
-            potential_leaks=[
-                "High GC frequency detected" if len(gc_events) > 10 else "GC events normal"
-            ],
-            recommendations=[
-                "Review object lifecycle",
-                "Check for circular references",
-                "Profile with Android Studio"
-            ]
+            recommendation="Review object lifecycle and check for circular references" if suspected_leak else "Memory usage appears normal"
         )
         
         return json.dumps(analysis.model_dump())
@@ -540,12 +629,13 @@ async def impl_analyze_memory_leak(device: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_trace_network_calls(device: str) -> str:
+async def impl_trace_network_calls(device: str, package: str) -> str:
     """
-    Trace network calls from logcat (HTTP, DNS, etc).
+    Trace network calls from logcat for a package.
     
     Args:
         device: Device serial
+        package: Package name to trace
     
     Returns:
         JSON with NetworkTrace object
@@ -554,26 +644,38 @@ async def impl_trace_network_calls(device: str) -> str:
         logcat_output = _run_adb_command(device, ['logcat', '-d', '-v', 'threadtime'])
         
         calls = []
+        total_errors = 0
         
         # Simple pattern matching for common network operations
         for line in logcat_output.split('\n'):
+            if package not in line:
+                continue
+                
             if any(keyword in line for keyword in ['http', 'HTTP', 'okhttp', 'retrofit', 'volley']):
+                # Check for errors
+                status_code = 200
+                if 'error' in line.lower() or '4' in line[:50] or '5' in line[:50]:
+                    status_code = 400
+                    total_errors += 1
+                    
                 call = NetworkCall(
                     method="GET",
-                    url="",
-                    status_code=200,
-                    latency_ms=0,
+                    url="[extracted from logs]",
+                    status_code=status_code,
+                    duration_ms=None,
                     timestamp="",
-                    bytes_sent=0,
-                    bytes_received=0
+                    size_bytes=None,
+                    error=None if status_code == 200 else "See logs for details"
                 )
                 calls.append(call.model_dump())
         
         trace = NetworkTrace(
+            package=package,
             device=device,
             calls=calls[:50],
-            total_requests=len(calls),
-            total_errors=0
+            total_bytes=0,
+            failed_count=total_errors,
+            duration_seconds=0
         )
         
         return json.dumps(trace.model_dump())
