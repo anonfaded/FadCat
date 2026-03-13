@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -26,6 +27,7 @@ class SettingsDialog(QDialog):
         self.setModal(True)
         self.resize(520, 500)
         self._settings = Settings()
+        self.mcp_process = None  # Initialize MCP server process
         self._build_ui()
         self._populate()
 
@@ -713,93 +715,111 @@ class SettingsDialog(QDialog):
         
         mcp_tab = QWidget()
         mcp_lay = QVBoxLayout(mcp_tab)
+        mcp_lay.setSpacing(8)
+        mcp_lay.setContentsMargins(12, 12, 12, 12)
         
-        # MCP Status Group
-        status_grp = QGroupBox("MCP Server Status")
-        status_lay = QVBoxLayout(status_grp)
+        # Server Control Group
+        control_grp = QGroupBox("Server Control")
+        control_grp_lay = QVBoxLayout(control_grp)
+        control_grp_lay.setSpacing(6)
         
-        # Status indicator with version/author
-        status_text = f"● Ready (FadCat v{__version__} by {__author__})"
-        self.mcp_status_label = QLabel(status_text)
-        self.mcp_status_label.setFont(QFont("monospace", 11))
-        status_lay.addWidget(QLabel("Server Status:"))
-        status_lay.addWidget(self.mcp_status_label)
+        # Server control buttons and status
+        control_lay = QHBoxLayout()
+        self.btn_toggle_server = QPushButton("Start Server")
+        self.btn_toggle_server.setProperty("role", "primary")
+        self.btn_toggle_server.setFixedHeight(32)
+        self.btn_toggle_server.clicked.connect(self._toggle_mcp_server)
+        control_lay.addWidget(self.btn_toggle_server)
+        control_lay.addStretch()
+        control_lay.addWidget(QLabel("Status:"))
+        self.mcp_status_label = QLabel("● Idle")
+        self.mcp_status_label.setFont(QFont("monospace", 10))
+        self.mcp_status_label.setFixedWidth(120)
+        control_lay.addWidget(self.mcp_status_label)
+        control_lay.addWidget(QLabel("Port:"))
+        self.mcp_port_label = QLabel("stdio")
+        self.mcp_port_label.setFont(QFont("monospace", 10))
+        self.mcp_port_label.setFixedWidth(80)
+        control_lay.addWidget(self.mcp_port_label)
+        control_lay.addStretch()
         
-        # Server capabilities info
+        control_grp_lay.addLayout(control_lay)
+        mcp_lay.addWidget(control_grp)
+        
+        # Scroll area for config and info
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; }")
+        
+        # Container for scrollable content
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setSpacing(8)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Info Group
+        info_grp = QGroupBox("Available")
+        info_lay = QVBoxLayout(info_grp)
+        info_lay.setSpacing(4)
+        
         self.mcp_info_text = QTextEdit()
         self.mcp_info_text.setReadOnly(True)
-        self.mcp_info_text.setMaximumHeight(150)
+        self.mcp_info_text.setMaximumHeight(100)
+        self.mcp_info_text.setFont(QFont("monospace", 9))
         self.mcp_info_text.setPlainText(
-            "Tools: 13 available\n"
-            "  • Device control (get_devices, clear_logcat)\n"
-            "  • Logcat analysis (get_logcat_stream, search_logs, filter_by_level)\n"
-            "  • Process info (get_app_processes)\n"
-            "  • Error detection (parse_stacktrace, detect_error_type)\n"
-            "  • Performance (analyze_performance, analyze_memory_leak)\n"
-            "  • Network (trace_network_calls)\n"
-            "  • Export (export_logs)\n"
-            "\n"
-            "Resources: 4 available\n"
-            "  • logcat://device/{serial}\n"
-            "  • android://devices\n"
-            "  • android://packages/{device}\n"
-            "  • android://processes/{device}\n"
-            "\n"
-            "Prompts: 4 templates\n"
-            "  • debug-crash-analyzer\n"
-            "  • logcat-summarizer\n"
-            "  • performance-monitor\n"
-            "  • network-debugger"
+            "Tools: 13 • Resources: 4 • Prompts: 4"
         )
-        status_lay.addWidget(self.mcp_info_text)
+        info_lay.addWidget(self.mcp_info_text)
+        scroll_layout.addWidget(info_grp)
         
-        mcp_lay.addWidget(status_grp)
-        
-        # Configuration Group
-        config_grp = QGroupBox("IDE Configuration")
+        # Config Group
+        config_grp = QGroupBox("Configuration")
         config_lay = QVBoxLayout(config_grp)
-        
-        config_lay.addWidget(QLabel("✓ Replace in your IDE's settings.json (preferred):"))
+        config_lay.setSpacing(4)
         
         self.mcp_config_text = QTextEdit()
         self.mcp_config_text.setReadOnly(True)
-        self.mcp_config_text.setMaximumHeight(120)
-        self.mcp_config_text.setFont(QFont("monospace", 9))
+        self.mcp_config_text.setFont(QFont("monospace", 8))
         
         try:
             config = generate_mcp_config()
             config_text = json.dumps(config, indent=2)
         except Exception as e:
-            config_text = f"Error generating config: {e}\n\nFallback: Use 'fadcat --mcp' command"
+            config_text = f"Error: {e}\n\nCommand: fadcat --mcp"
         
         self.mcp_config_text.setPlainText(config_text)
         config_lay.addWidget(self.mcp_config_text)
         
         # Copy button
         btn_copy = QPushButton("Copy Config")
+        btn_copy.setFixedHeight(28)
         btn_copy.clicked.connect(self._copy_mcp_config)
         config_lay.addWidget(btn_copy)
         
-        mcp_lay.addWidget(config_grp)
+        scroll_layout.addWidget(config_grp)
         
         # Quick Start Group
         quickstart_grp = QGroupBox("Quick Start")
         quickstart_lay = QVBoxLayout(quickstart_grp)
+        quickstart_lay.setSpacing(4)
         
-        quickstart_lay.addWidget(QLabel(
-            "Supported IDEs:\n"
-            "  • VSCode, Cursor, Windsurf (mcpServers format)\n"
-            "  • Claude Code, Cline, AntiGravity, Gemini CLI\n\n"
-            "Setup Steps:\n"
-            "1. Ensure FadCat is installed with 'fadcat' command in PATH\n"
-            "2. Copy config above to your IDE's settings.json\n"
-            "3. Restart IDE and ask AI to debug Android apps!\n\n"
-            "Fallback (if 'fadcat' not available):\n"
-            "   python -m src.mcp"
-        ))
+        quick_text = QTextEdit()
+        quick_text.setReadOnly(True)
+        quick_text.setFont(QFont("sans-serif", 9))
+        quick_text.setPlainText(
+            "1. Copy config above\n"
+            "2. Open VSCode settings.json\n"
+            "3. Paste under 'mcpServers'\n"
+            "4. Restart VSCode\n\n"
+            "Supported: VSCode, Cursor, Windsurf, Claude Code, Cline"
+        )
+        quick_text.setMaximumHeight(120)
+        quickstart_lay.addWidget(quick_text)
+        scroll_layout.addWidget(quickstart_grp)
         
-        mcp_lay.addWidget(quickstart_grp)
-        mcp_lay.addStretch()
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        mcp_lay.addWidget(scroll)
         
         self.tabs.addTab(mcp_tab, "MCP")
     
@@ -809,4 +829,81 @@ class SettingsDialog(QDialog):
         clipboard = QApplication.clipboard()
         clipboard.setText(self.mcp_config_text.toPlainText())
         QMessageBox.information(self, "Copied", "MCP config copied to clipboard!")
+
+    def _toggle_mcp_server(self):
+        """Toggle MCP server on/off."""
+        if hasattr(self, 'mcp_process') and self.mcp_process and self.mcp_process.poll() is None:
+            # Server is running, stop it
+            self._stop_mcp_server()
+        else:
+            # Server is not running, start it
+            self._start_mcp_server()
+
+    def _start_mcp_server(self):
+        """Start the MCP server using fadcat command."""
+        import subprocess
+        
+        try:
+            # Only use fadcat command, no fallbacks
+            self.mcp_process = subprocess.Popen(
+                ["fadcat", "--mcp"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            self.btn_toggle_server.setText("Stop Server")
+            self.btn_toggle_server.setProperty("role", "danger")
+            self.style().polish(self.btn_toggle_server)
+            self.mcp_status_label.setText("● Running")
+            self.mcp_port_label.setText("stdio")
+            self.mcp_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
+            QMessageBox.information(self, "Success", "MCP server started: fadcat --mcp")
+        except FileNotFoundError:
+            # fadcat command not found - ask user for help
+            QMessageBox.critical(
+                self, 
+                "fadcat Not Found", 
+                "The 'fadcat' command is not available.\n\n"
+                "Please ensure FadCat is properly installed:\n\n"
+                "1. cd /path/to/FadCat\n"
+                "2. pip install -e .\n\n"
+                "Then the 'fadcat' command will be available."
+            )
+            self.mcp_status_label.setText("● Error")
+            self.mcp_port_label.setText("-")
+            self.mcp_status_label.setStyleSheet("color: #F44336;")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to start server:\n{e}")
+            self.mcp_status_label.setText("● Error")
+            self.mcp_port_label.setText("-")
+            self.mcp_status_label.setStyleSheet("color: #F44336;")
+    
+    def _stop_mcp_server(self):
+        """Stop the MCP server."""
+        try:
+            if hasattr(self, 'mcp_process') and self.mcp_process:
+                self.mcp_process.terminate()
+                try:
+                    self.mcp_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.mcp_process.kill()
+                
+                self.btn_toggle_server.setText("Start Server")
+                self.btn_toggle_server.setProperty("role", "primary")
+                self.style().polish(self.btn_toggle_server)
+                self.mcp_status_label.setText("● Stopped")
+                self.mcp_port_label.setText("-")
+                self.mcp_status_label.setStyleSheet("color: #FF9800;")
+                QMessageBox.information(self, "Success", "MCP server stopped")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to stop server:\n{e}")
+    
+    def closeEvent(self, event):
+        """Stop MCP server when dialog closes."""
+        if hasattr(self, 'mcp_process') and self.mcp_process:
+            try:
+                self.mcp_process.terminate()
+            except:
+                pass
+        super().closeEvent(event)
 

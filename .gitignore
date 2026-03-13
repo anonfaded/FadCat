@@ -21,3 +21,4 @@ build/FadCat-*/
 
 # macOS
 .DS_Store
+fadcat_settings.json

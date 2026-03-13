@@ -3,7 +3,7 @@
 import sys
 import logging
 from typing import Any, Optional, List
-from mcp.server import Server
+from mcp.server import Server, InitializationOptions
 from mcp.types import (
     Tool,
     TextContent,
@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from src.version import __version__, __author__
+from src.version import __version__, __author__, __app_name__
 
 # Create MCP server
 SERVER = Server("fadcat")
@@ -219,106 +219,66 @@ async def call_tool(name: str, arguments: dict) -> List[TextContent]:
     logger.info(f"Tool called: {name} with args: {arguments}")
     
     try:
+        from src.mcp import tools
+        
         if name == "get_devices":
-            return await tool_get_devices()
+            result = await tools.impl_get_devices()
         elif name == "get_logcat_stream":
-            return await tool_get_logcat_stream(arguments)
+            result = await tools.impl_get_logcat_stream(
+                arguments.get('device'),
+                arguments.get('package'),
+                arguments.get('level', 'I'),
+                arguments.get('lines', 100)
+            )
         elif name == "search_logs":
-            return await tool_search_logs(arguments)
+            result = await tools.impl_search_logs(
+                arguments.get('query'),
+                arguments.get('tag_filter'),
+                arguments.get('level_filter'),
+                arguments.get('limit', 50)
+            )
         elif name == "filter_by_level":
-            return await tool_filter_by_level(arguments)
+            result = await tools.impl_filter_by_level(
+                arguments.get('device'),
+                arguments.get('level')
+            )
         elif name == "get_app_processes":
-            return await tool_get_app_processes(arguments)
+            result = await tools.impl_get_app_processes(
+                arguments.get('device'),
+                arguments.get('package')
+            )
         elif name == "get_connected_packages":
-            return await tool_get_connected_packages(arguments)
+            result = await tools.impl_get_connected_packages(arguments.get('device'))
         elif name == "parse_stacktrace":
-            return await tool_parse_stacktrace(arguments)
+            result = await tools.impl_parse_stacktrace(arguments.get('trace', ''))
         elif name == "detect_error_type":
-            return await tool_detect_error_type(arguments)
+            result = await tools.impl_detect_error_type(arguments.get('logcat', ''))
         elif name == "analyze_performance":
-            return await tool_analyze_performance(arguments)
+            result = await tools.impl_analyze_performance(arguments.get('device'))
         elif name == "trace_network_calls":
-            return await tool_trace_network_calls(arguments)
+            result = await tools.impl_trace_network_calls(arguments.get('device'))
         elif name == "analyze_memory_leak":
-            return await tool_analyze_memory_leak(arguments)
+            result = await tools.impl_analyze_memory_leak(arguments.get('device'))
         elif name == "clear_logcat":
-            return await tool_clear_logcat(arguments)
+            result = await tools.impl_clear_logcat(arguments.get('device'))
         elif name == "export_logs":
-            return await tool_export_logs(arguments)
+            result = await tools.impl_export_logs(
+                arguments.get('device'),
+                arguments.get('format', 'json'),
+                arguments.get('lines', 1000)
+            )
         else:
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
+            result = json.dumps({"error": f"Unknown tool: {name}"})
+        
+        return [TextContent(type="text", text=result)]
     except Exception as e:
         logger.exception(f"Error calling tool {name}")
-        return [TextContent(type="text", text=f"Error: {str(e)}")]
-
+        return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
 # ============================================================================
-# Tool Implementations (Stubs - Will be filled in Phase 2)
+# Tool Implementations - Moved to src/mcp/tools.py
+# All 13 tools are now fully implemented with cross-platform support
 # ============================================================================
-
-async def tool_get_devices() -> List[TextContent]:
-    """Get connected devices."""
-    return [TextContent(type="text", text="TODO: Implement get_devices")]
-
-
-async def tool_get_logcat_stream(args: dict) -> List[TextContent]:
-    """Get logcat stream."""
-    return [TextContent(type="text", text="TODO: Implement get_logcat_stream")]
-
-
-async def tool_search_logs(args: dict) -> List[TextContent]:
-    """Search logs."""
-    return [TextContent(type="text", text="TODO: Implement search_logs")]
-
-
-async def tool_filter_by_level(args: dict) -> List[TextContent]:
-    """Filter by level."""
-    return [TextContent(type="text", text="TODO: Implement filter_by_level")]
-
-
-async def tool_get_app_processes(args: dict) -> List[TextContent]:
-    """Get app processes."""
-    return [TextContent(type="text", text="TODO: Implement get_app_processes")]
-
-
-async def tool_get_connected_packages(args: dict) -> List[TextContent]:
-    """Get connected packages."""
-    return [TextContent(type="text", text="TODO: Implement get_connected_packages")]
-
-
-async def tool_parse_stacktrace(args: dict) -> List[TextContent]:
-    """Parse stacktrace."""
-    return [TextContent(type="text", text="TODO: Implement parse_stacktrace")]
-
-
-async def tool_detect_error_type(args: dict) -> List[TextContent]:
-    """Detect error type."""
-    return [TextContent(type="text", text="TODO: Implement detect_error_type")]
-
-
-async def tool_analyze_performance(args: dict) -> List[TextContent]:
-    """Analyze performance."""
-    return [TextContent(type="text", text="TODO: Implement analyze_performance")]
-
-
-async def tool_trace_network_calls(args: dict) -> List[TextContent]:
-    """Trace network calls."""
-    return [TextContent(type="text", text="TODO: Implement trace_network_calls")]
-
-
-async def tool_analyze_memory_leak(args: dict) -> List[TextContent]:
-    """Analyze memory leak."""
-    return [TextContent(type="text", text="TODO: Implement analyze_memory_leak")]
-
-
-async def tool_clear_logcat(args: dict) -> List[TextContent]:
-    """Clear logcat."""
-    return [TextContent(type="text", text="TODO: Implement clear_logcat")]
-
-
-async def tool_export_logs(args: dict) -> List[TextContent]:
-    """Export logs."""
-    return [TextContent(type="text", text="TODO: Implement export_logs")]
 
 
 @SERVER.list_resources()
@@ -345,9 +305,28 @@ async def list_resources() -> List[ResourceTemplate]:
 
 @SERVER.read_resource()
 async def read_resource(uri: str) -> str:
-    """Read a resource."""
+    """Read a resource by URI."""
     logger.info(f"Reading resource: {uri}")
-    return f"Resource: {uri}"  # TODO: Implement resource reading
+    
+    try:
+        from src.mcp import resources
+        
+        if uri.startswith("logcat://device/"):
+            device_serial = uri.replace("logcat://device/", "")
+            return await resources.read_logcat_device_resource(device_serial)
+        elif uri == "android://devices":
+            return await resources.read_android_devices_resource()
+        elif uri.startswith("android://packages/"):
+            device_serial = uri.replace("android://packages/", "")
+            return await resources.read_android_packages_resource(device_serial)
+        elif uri.startswith("android://processes/"):
+            device_serial = uri.replace("android://processes/", "")
+            return await resources.read_android_processes_resource(device_serial)
+        else:
+            return json.dumps({"error": f"Unknown resource: {uri}"})
+    except Exception as e:
+        logger.exception(f"Error reading resource {uri}")
+        return json.dumps({"error": str(e)})
 
 
 @SERVER.list_prompts()
@@ -356,48 +335,56 @@ async def list_prompts() -> List[Prompt]:
     return [
         Prompt(
             name="debug-crash-analyzer",
-            description="Analyze Android crash logs and provide root cause",
-            arguments=[
-                PromptArgument(name="logcat", description="Raw logcat content")
-            ]
+            description="Analyze Android crash logs and provide root cause analysis",
+            arguments=[]
         ),
         Prompt(
             name="logcat-summarizer",
-            description="Summarize what's happening in the app",
-            arguments=[
-                PromptArgument(name="logcat", description="Raw logcat content")
-            ]
+            description="Summarize what's happening in the app from logcat",
+            arguments=[]
         ),
         Prompt(
             name="performance-monitor",
-            description="Find performance bottlenecks",
-            arguments=[
-                PromptArgument(name="device", description="Device serial")
-            ]
+            description="Find performance bottlenecks and optimization opportunities",
+            arguments=[]
         ),
         Prompt(
             name="network-debugger",
-            description="Trace and debug network calls",
-            arguments=[
-                PromptArgument(name="package", description="Package to debug")
-            ]
+            description="Trace and debug network calls and connectivity issues",
+            arguments=[]
         ),
     ]
 
 
 @SERVER.get_prompt()
 async def get_prompt(name: str, arguments: dict) -> str:
-    """Get prompt content."""
+    """Get prompt content for a specific debugging task."""
     logger.info(f"Getting prompt: {name}")
-    return f"Prompt: {name}"  # TODO: Implement prompt generation
+    
+    try:
+        from src.mcp import prompts
+        return await prompts.get_prompt(name)
+    except Exception as e:
+        logger.exception(f"Error getting prompt {name}")
+        return f"Error: {str(e)}"
 
 
 async def main():
     """Run MCP server on stdio."""
     logger.info("Starting FadCat MCP Server")
-    async with SERVER:
+    from mcp.server.stdio import stdio_server
+    
+    # Create initialization options for MCP server using version info
+    init_options = InitializationOptions(
+        server_name=__app_name__,
+        server_version=__version__,
+        capabilities={}
+    )
+    
+    # Run server on stdio transport
+    async with stdio_server() as (read_stream, write_stream):
         logger.info("FadCat MCP Server running on stdio")
-        # Server runs indefinitely, handling requests from client
+        await SERVER.run(read_stream, write_stream, init_options)
 
 
 if __name__ == "__main__":
