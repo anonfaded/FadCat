@@ -307,7 +307,7 @@ class LogcatGUI(QMainWindow):
         self.lbl_status_lines.setMinimumWidth(fm.horizontalAdvance("88.8k / 88.8k lines") + 4)
         self.lbl_status_mem.setFixedWidth(fm.horizontalAdvance("888.8 MB") + 4)
 
-        self._sb_state_icon, state_item = self._sb_item(icons.icon_status(), self.lbl_status_state)
+        self._sb_state_icon, state_item = self._sb_item(icons.icon_status(), self.lbl_status_state, left_margin=12)
         sb.addWidget(state_item)
         
         # Small divider after status state
@@ -377,11 +377,11 @@ class LogcatGUI(QMainWindow):
         return sep
 
     @staticmethod
-    def _sb_item(icon: QIcon, label: QLabel) -> tuple[QLabel, QWidget]:
+    def _sb_item(icon: QIcon, label: QLabel, left_margin: int = 6) -> tuple[QLabel, QWidget]:
         w = QWidget()
         w.setStyleSheet("background: transparent;")
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(left_margin, 0, 0, 0)
         lay.setSpacing(2)
         ic = QLabel()
         ic.setPixmap(icon.pixmap(14, 14))
