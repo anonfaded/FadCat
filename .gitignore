@@ -1,1 +1,19 @@
 **/__pycache__/*
+
+# PyInstaller
+dist/
+build/FadCat-*/
+*.pkg
+*.dmg
+*.exe
+*.deb
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store

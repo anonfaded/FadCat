@@ -68,7 +68,7 @@ class LogcatCLI:
     def run(self):
         while True:
             try:
-                pkg = input(f'Enter package (or ENTER for default "{self.default_package}", "all" for full): ').strip()
+                pkg = input(f'Enter package (or ENTER for default "{self.default_package}"): ').strip()
                 self.run_logcat(pkg if pkg else None)
                 cont = input('Run another? (y/n): ').strip().lower()
                 if cont != 'y':

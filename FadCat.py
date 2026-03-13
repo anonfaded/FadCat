@@ -3,11 +3,7 @@ FadCat entry point
 """
 import sys
 
-print("DEBUG: FadCat.py starting...")
-
 from src.core.pidcat_runner import run_pidcat_child
-
-print("DEBUG: pidcat_runner imported")
 
 try:
     from PyQt6.QtWidgets import QApplication, QSplashScreen
@@ -15,9 +11,7 @@ try:
     from PyQt6.QtCore import Qt, QTimer
     from pathlib import Path
     QT_AVAILABLE = True
-    print("DEBUG: PyQt6 imported successfully")
 except ImportError as e:
-    print(f"DEBUG: Import error: {e}")
     QT_AVAILABLE = False
 
 
@@ -25,13 +19,33 @@ def launch_gui():
     if not QT_AVAILABLE:
         print("PyQt6 is not installed. Run: pip install PyQt6")
         sys.exit(1)
+    
+    # Suppress PyQt warnings (font, platform theme, etc)
+    # These are cosmetic warnings that don't affect functionality
+    import os
+    os.environ['QT_LOGGING_RULES'] = '*=false'
+    
     app = QApplication(sys.argv)
-    app.setApplicationName("FadCat")
-    app.setOrganizationName("FadCat")
+    
+    # Import version
+    from src.version import __version__, __app_name__
+    app.setApplicationName(__app_name__)
+    app.setApplicationVersion(__version__)
+    app.setOrganizationName("FadSecLab")
+    
     splash = None
     splash_delay_ms = 1500
     try:
+        # Try multiple possible icon paths for bundled/dev environments
         logo_path = Path(__file__).parent / "src" / "icons" / "fadcat-logo.png"
+        if not logo_path.exists():
+            # Try relative to Resources in bundled app
+            logo_path = Path(__file__).parent / "Resources" / "src" / "icons" / "fadcat-logo.png"
+        if not logo_path.exists():
+            # Try looking in sys.frozen context
+            if hasattr(sys, 'frozen'):
+                logo_path = Path(sys.frozen) / "src" / "icons" / "fadcat-logo.png"
+        
         if logo_path.exists():
             pix = QPixmap(str(logo_path))
             if not pix.isNull():

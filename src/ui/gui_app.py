@@ -152,6 +152,7 @@ class LogcatGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("FadCat")
+        self.setWindowIcon(icons.app_icon())
         self.resize(980, 640)
         self.setMinimumSize(800, 550)
         self.setStyleSheet(theme.get_stylesheet())
@@ -230,7 +231,17 @@ class LogcatGUI(QMainWindow):
         tb.addWidget(left_divider)
 
         # Branding / Logo area - centered
-        logo_path = os.path.join(os.path.dirname(__file__), '..', 'icons', 'fadcat-logo.svg')
+        # Resolve icon path for bundled or dev environments
+        import os
+        from pathlib import Path
+        icon_dir = Path(__file__).parent.parent / 'icons'
+        logo_path = str(icon_dir / 'fadcat-logo.svg')
+        
+        # Fallback if not found
+        if not Path(logo_path).exists():
+            # Try alternative path for bundled app
+            logo_path = str(Path(__file__).parent.parent.parent / 'Resources' / 'src' / 'icons' / 'fadcat-logo.svg')
+        
         svg_logo = QSvgWidget(logo_path)
         svg_logo.setFixedSize(100, 33)
         svg_logo.setStyleSheet("background: transparent;")

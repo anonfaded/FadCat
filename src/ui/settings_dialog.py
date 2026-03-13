@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
     QListWidget, QListWidgetItem, QPushButton,
     QComboBox, QLineEdit, QLabel, QDialogButtonBox,
     QSizePolicy, QTabWidget, QWidget, QMessageBox,
-    QCheckBox, QSlider, QSpinBox,
+    QCheckBox, QSlider, QSpinBox, QTextEdit, QScrollArea,
 )
 
 from src.core.settings import Settings, DEFAULT_SETTINGS
@@ -217,14 +218,297 @@ class SettingsDialog(QDialog):
 
         self.tabs.addTab(disp_tab, "Display")
 
+        # ── Tab 4: About ──────────────────────────────────────────────────────
+        about_tab = QWidget()
+        about_tab_layout = QVBoxLayout(about_tab)
+        about_tab_layout.setContentsMargins(0, 0, 0, 0)
+        about_tab_layout.setSpacing(0)
+        
+        # Scroll area for about content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("QScrollArea { border: none; }")
+        
+        # Container widget for scroll area
+        scroll_widget = QWidget()
+        scroll_widget.setStyleSheet("")
+        about_lay = QVBoxLayout(scroll_widget)
+        about_lay.setSpacing(12)
+        about_lay.setContentsMargins(20, 20, 20, 20)
+        
+        # Import version info
+        from src.version import __version__, __app_name__, __github_url__, __website_url__, __discord_url__, __patreon_url__
+        
+        # ─ Header: Icon, Title, Version (centered)
+        header_lay = QHBoxLayout()
+        header_lay.setSpacing(12)
+        header_lay.setContentsMargins(0, 0, 0, 0)
+        header_lay.addStretch()
+        
+        # Try to load app icon
+        from pathlib import Path
+        from PyQt6.QtSvgWidgets import QSvgWidget
+        from PyQt6.QtWidgets import QLabel as QLabel_
+        from PyQt6.QtGui import QPixmap
+        
+        icon_loaded = False
+        try:
+            # Try PNG first
+            icon_path = Path(__file__).parent.parent / 'icons' / 'fadcat.png'
+            if not icon_path.exists():
+                icon_path = Path(__file__).parent.parent.parent / 'Resources' / 'src' / 'icons' / 'fadcat.png'
+            
+            if icon_path.exists():
+                pixmap = QPixmap(str(icon_path))
+                if not pixmap.isNull():
+                    scaled = pixmap.scaledToWidth(56, Qt.TransformationMode.SmoothTransformation)
+                    icon_label = QLabel_()
+                    icon_label.setPixmap(scaled)
+                    icon_label.setFixedSize(56, 56)
+                    icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                    header_lay.addWidget(icon_label)
+                    icon_loaded = True
+        except:
+            pass
+        
+        # Fallback to SVG
+        if not icon_loaded:
+            try:
+                icon_path = Path(__file__).parent.parent / 'icons' / 'fadcat.svg'
+                if not icon_path.exists():
+                    icon_path = Path(__file__).parent.parent.parent / 'Resources' / 'src' / 'icons' / 'fadcat.svg'
+                if icon_path.exists():
+                    icon_widget = QSvgWidget(str(icon_path))
+                    icon_widget.setFixedSize(56, 56)
+                    header_lay.addWidget(icon_widget)
+            except:
+                pass
+        
+        # Title and version
+        title_info_lay = QVBoxLayout()
+        title_info_lay.setSpacing(2)
+        title_info_lay.setContentsMargins(0, 0, 0, 0)
+        
+        title_label = QLabel(f"<b>{__app_name__}</b>")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #f0f0f0;")
+        title_info_lay.addWidget(title_label)
+        
+        version_label = QLabel(f"v{__version__}")
+        version_label.setStyleSheet("font-size: 11px; color: #999;")
+        title_info_lay.addWidget(version_label)
+        
+        header_lay.addLayout(title_info_lay)
+        header_lay.addStretch()
+        about_lay.addLayout(header_lay)
+        
+        # Description (centered)
+        desc_label = QLabel("Advanced Logcat Viewer for Android Development")
+        desc_label.setStyleSheet("color: #b0b0b0; font-size: 11px; line-height: 1.4;")
+        desc_label.setWordWrap(True)
+        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        about_lay.addWidget(desc_label)
+        
+        about_lay.addSpacing(8)
+        
+        # ─ Links section (macOS style buttons)
+        links_container = QWidget()
+        links_container.setStyleSheet("background-color: #1e1e1e; border-radius: 6px;")
+        links_lay = QVBoxLayout(links_container)
+        links_lay.setSpacing(6)
+        links_lay.setContentsMargins(12, 10, 12, 10)
+        
+        def create_link_button(text, url, color="#007AFF"):
+            """Create a colored link button"""
+            btn = QPushButton(text)
+            # Define hover and press colors
+            hover_colors = {
+                "#007AFF": "#0052CC",
+                "#333": "#555",
+                "#5865F2": "#4752C4"
+            }
+            press_colors = {
+                "#007AFF": "#004099",
+                "#333": "#222",
+                "#5865F2": "#3c3f9b"
+            }
+            hover_color = hover_colors.get(color, color)
+            press_color = press_colors.get(color, color)
+            
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 14px;
+                    font-size: 11px;
+                    color: white;
+                    text-align: center;
+                    font-weight: 500;
+                }}
+                QPushButton:hover {{
+                    background-color: {hover_color};
+                }}
+                QPushButton:pressed {{
+                    background-color: {press_color};
+                }}
+            """)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda: self._open_url(url))
+            return btn
+        
+        links_lay.addWidget(create_link_button("🌐 Website", __website_url__, "#007AFF"))
+        links_lay.addWidget(create_link_button("💻 GitHub Repository", __github_url__, "#333"))
+        links_lay.addWidget(create_link_button("💬 Discord Community", __discord_url__, "#5865F2"))
+        
+        about_lay.addWidget(links_container)
+        
+        # ─ Donation section (prominent)
+        about_lay.addSpacing(8)
+        
+        support_text = QLabel("💝 Support FadCat Development")
+        support_text.setStyleSheet("font-size: 12px; font-weight: bold; color: #e8e8e8; text-align: center;")
+        support_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        about_lay.addWidget(support_text)
+        
+        support_desc = QLabel("Help support the development and keep improving FadCat!")
+        support_desc.setStyleSheet("font-size: 10px; color: #b0b0b0; text-align: center;")
+        support_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        support_desc.setWordWrap(True)
+        about_lay.addWidget(support_desc)
+        
+        patreon_btn = QPushButton("❤️ Donate on Patreon")
+        patreon_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff424d;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 24px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #ff5563;
+            }
+            QPushButton:pressed {
+                background-color: #e53339;
+            }
+        """)
+        patreon_btn.setMinimumHeight(36)
+        patreon_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        patreon_btn.clicked.connect(lambda: self._open_url(__patreon_url__))
+        about_lay.addWidget(patreon_btn)
+        
+        # ─ Command reference section (dark themed, color-coded)
+        about_lay.addSpacing(12)
+        
+        import sys
+        import platform
+        
+        is_installed = getattr(sys, 'frozen', False)
+        system = platform.system()
+        
+        # Generate color-coded HTML for commands with explanations
+        def get_command_html():
+            if system == "Darwin":  # macOS
+                if is_installed:
+                    return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">
+<span style="color: #888;"># 📱 Launch CLI Mode</span><br>
+<span style="color: #4ec9b0;">fadcat</span> <span style="color: #9cdcfe;">--cli</span><br><br>
+<span style="color: #888;"># ⏹ Uninstall FadCat</span><br>
+<span style="color: #4ec9b0;">bash</span> <span style="color: #ce9178;">/Applications/FadCat.app/../../../build/macos/uninstall.sh</span>
+</div>"""
+                else:
+                    return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">
+<span style="color: #888;"># 📱 Launch CLI Mode (Dev)</span><br>
+<span style="color: #4ec9b0;">python</span> <span style="color: #ce9178;">FadCat.py</span> <span style="color: #9cdcfe;">--cli</span>
+</div>"""
+            elif system == "Windows":
+                if is_installed:
+                    return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">
+<span style="color: #888;">REM 📱 Launch CLI Mode</span><br>
+<span style="color: #4ec9b0;">fadcat</span> <span style="color: #9cdcfe;">--cli</span><br><br>
+<span style="color: #888;">REM ⏹ Uninstall FadCat</span><br>
+<span style="color: #ce9178;">build\\windows\\uninstall.bat</span>
+</div>"""
+                else:
+                    return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">
+<span style="color: #888;">REM 📱 Launch CLI Mode (Dev)</span><br>
+<span style="color: #4ec9b0;">python</span> <span style="color: #ce9178;">FadCat.py</span> <span style="color: #9cdcfe;">--cli</span>
+</div>"""
+            else:  # Linux
+                if is_installed:
+                    return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">
+<span style="color: #888;"># 📱 Launch CLI Mode</span><br>
+<span style="color: #4ec9b0;">fadcat</span> <span style="color: #9cdcfe;">--cli</span><br><br>
+<span style="color: #888;"># ⏹ Uninstall FadCat</span><br>
+<span style="color: #4ec9b0;">bash</span> <span style="color: #ce9178;">/usr/share/fadcat/build/linux/uninstall.sh</span>
+</div>"""
+                else:
+                    return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">
+<span style="color: #888;"># 📱 Launch CLI Mode (Dev)</span><br>
+<span style="color: #4ec9b0;">python</span> <span style="color: #ce9178;">FadCat.py</span> <span style="color: #9cdcfe;">--cli</span>
+</div>"""
+        
+        # Command reference label
+        cmd_label = QLabel("<b>❯_ Command Reference</b>")
+        cmd_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #f0f0f0;")
+        about_lay.addWidget(cmd_label)
+        
+        cmd_display = QTextEdit()
+        cmd_display.setHtml(get_command_html())
+        cmd_display.setReadOnly(True)
+        cmd_display.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #404040;
+                border-radius: 4px;
+                padding: 10px;
+                margin: 0;
+            }
+        """)
+        cmd_display.setFixedHeight(90)
+        about_lay.addWidget(cmd_display)
+        
+        # Status indicator
+        status_lay = QHBoxLayout()
+        status_lay.setSpacing(6)
+        status_lay.setContentsMargins(0, 4, 0, 0)
+        
+        if is_installed:
+            status_dot = QLabel("✓")
+            status_dot.setStyleSheet("color: #44dd88; font-size: 11px; font-weight: bold;")
+            status_lay.addWidget(status_dot)
+            status_text = QLabel("Installed")
+            status_text.setStyleSheet("font-size: 10px; color: #44dd88;")
+        else:
+            status_dot = QLabel("⚙")
+            status_dot.setStyleSheet("color: #aaa; font-size: 11px;")
+            status_lay.addWidget(status_dot)
+            status_text = QLabel("Development Mode")
+            status_text.setStyleSheet("font-size: 10px; color: #aaa;")
+        
+        status_lay.addWidget(status_text)
+        status_lay.addStretch()
+        about_lay.addLayout(status_lay)
+        
+        about_lay.addStretch()
+        
+        # Add scroll widget to scroll area
+        scroll_area.setWidget(scroll_widget)
+        about_tab_layout.addWidget(scroll_area)
+        
+        self.tabs.addTab(about_tab, "About")
+
         # Dialog buttons
         btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save |
+            QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel
         )
-        save_btn = btns.button(QDialogButtonBox.StandardButton.Save)
-        if save_btn:
-            save_btn.setProperty("role", "primary")
+        ok_btn = btns.button(QDialogButtonBox.StandardButton.Ok)
+        if ok_btn:
+            ok_btn.setProperty("role", "primary")
         btns.accepted.connect(self._save)
         btns.rejected.connect(self.reject)
         root.addWidget(btns)
@@ -361,3 +645,9 @@ class SettingsDialog(QDialog):
         self._apply_display_changes()
         self._settings.save()
         self.accept()
+    
+    def _open_url(self, url):
+        """Open a URL in the default browser."""
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl(url))

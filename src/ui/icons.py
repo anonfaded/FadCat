@@ -123,3 +123,9 @@ def icon_lines() -> QIcon:
 
 def icon_memory() -> QIcon:
     return _svg_icon("memory.svg", size=(16, 16))
+
+
+def app_icon() -> QIcon:
+    """Load the main app icon from PNG."""
+    path = Path(__file__).parent.parent / "icons" / "fadcat-scanlines.png"
+    return QIcon(str(path))
