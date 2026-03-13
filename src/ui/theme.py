@@ -157,23 +157,26 @@ QTabBar::tear {
     background: transparent;
 }
 QTabBar::scroller {
-    width: 80px;
+    width: 62px;
     border: none;
     background: transparent;
-    padding: 4px 6px;
-    margin: 0;
+    padding: 0px;
+    margin: 0px;
     spacing: 4px;
     subcontrol-position: right;
 }
 QTabBar QToolButton {
     background: #2B2B2B;
     border: 1px solid #3A3A3A;
-    border-radius: 3px;
-    margin: 0 1px;
-    padding: 2px;
-    width: 18px;
-    height: 18px;
-    max-height: 20px;
+    border-radius: 4px;
+    margin: 4px 2px;
+    padding: 0px;
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    max-width: 24px;
+    max-height: 24px;
     color: #E8E8E8;
     icon-size: 12px;
     qproperty-cursor: LinkingHandCursor;
