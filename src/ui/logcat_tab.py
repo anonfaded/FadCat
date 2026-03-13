@@ -268,6 +268,9 @@ class VirtualLogView(QAbstractScrollArea):
     def set_wrap_enabled(self, enabled: bool):
         if self._wrap != enabled:
             self._wrap = enabled
+            # Clear all cached layouts so they're recalculated with new wrap setting
+            for line in self._lines:
+                line.layout_cache.clear()
             self._recompute_layout_cache()
             self.viewport().update()
 
