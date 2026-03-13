@@ -5,6 +5,7 @@
 
 import os
 import sys
+from PyInstaller.utils.hooks import collect_data_files, collect_all
 
 # Import version info from single source of truth
 sys.path.insert(0, os.path.abspath('.'))
@@ -15,18 +16,22 @@ except ImportError:
     __app_name__ = "FadCat"
     __company__ = "FadSec Lab"
 
+# Collect all fastmcp data and binaries (CRITICAL for bundling)
+datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
+
 block_cipher = None
 
 a = Analysis(
     ['../FadCat.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries_fastmcp,
     datas=[
         ('../src', 'src'),
-        ('../fadcat_settings.json', '.'),
+        ('../fadcat_cli.py', '.'),
+        ('../FadCat.py', '.'),
         ('../build/platform-tools/linux/adb', 'platform-tools/linux'),
         ('../build/linux/uninstall.sh', 'build/linux'),
-    ],
+    ] + datas_fastmcp,
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',
@@ -38,24 +43,37 @@ a = Analysis(
         'rapidfuzz',
         'rapidfuzz.fuzz',
         'colorama',
-        # MCP Server dependencies
+        # FastMCP and its bundled dependencies (3.1.0)
+        'fastmcp',
         'mcp',
         'mcp.server',
         'mcp.server.stdio',
-        'mcp.server.lowlevel',
         'mcp.types',
-        'mcp.shared',
-        'mcp.shared.message',
-        'pydantic',
-        'pydantic.json_schema',
-        'pydantic_core',
-        'anyio',
-        'anyio.lowlevel',
-        'anyio.streams',
-        'anyio.streams.memory',
+        'authlib',
+        'cyclopts',
+        'exceptiongroup',
         'httpx',
         'httpx_sse',
         'jsonschema',
+        'jsonref',
+        'jsonschema_path',
+        'openapi_pydantic',
+        'opentelemetry',
+        'packaging',
+        'platformdirs',
+        'pydantic',
+        'pydantic_core',
+        'pydantic_settings',
+        'pyperclip',
+        'python_dotenv',
+        'pyyaml',
+        'rich',
+        'starlette',
+        'sse_starlette',
+        'uvicorn',
+        'watchfiles',
+        'websockets',
+        'anyio',
     ],
     hookspath=[],
     hooksconfig={},

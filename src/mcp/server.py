@@ -3,15 +3,7 @@
 import sys
 import logging
 from typing import Any, Optional, List
-from mcp.server import Server, InitializationOptions
-from mcp.types import (
-    Tool,
-    TextContent,
-    Resource,
-    ResourceTemplate,
-    Prompt,
-    PromptArgument,
-)
+from fastmcp import FastMCP
 import json
 
 # Setup logging to stderr (MCP requirement - stdout is reserved for protocol)
@@ -24,369 +16,393 @@ logger = logging.getLogger(__name__)
 
 from src.version import __version__, __author__, __app_name__
 
-# Create MCP server
-SERVER = Server("fadcat")
+# Create MCP server with FastMCP
+server = FastMCP(__app_name__, __version__)
 
 # Module-level state
 _server_start_time = None
 _active_connections = 0
 
+# ============================================================================
+# TOOLS - Android Debugging Operations
+# ============================================================================
 
-@SERVER.list_tools()
-async def list_tools() -> List[Tool]:
-    """List all available MCP tools."""
-    return [
-        # Device and Connection Tools
-        Tool(
-            name="get_devices",
-            description="Get list of connected Android devices",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        ),
-        
-        # Logcat Tools
-        Tool(
-            name="get_logcat_stream",
-            description="Get logcat stream from a device with optional filters",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"},
-                    "package": {"type": "string", "description": "Filter by package (optional)"},
-                    "level": {"type": "string", "description": "Minimum log level (V/D/I/W/E/F)"},
-                    "lines": {"type": "integer", "description": "Number of lines to retrieve"}
-                },
-                "required": ["device"]
-            }
-        ),
-        
-        Tool(
-            name="search_logs",
-            description="Search in logcat history",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "tag_filter": {"type": "string", "description": "Optional tag filter"},
-                    "level_filter": {"type": "string", "description": "Optional level filter"},
-                    "limit": {"type": "integer", "description": "Max results"}
-                },
-                "required": ["query"]
-            }
-        ),
-        
-        Tool(
-            name="filter_by_level",
-            description="Filter current logcat by severity level",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"},
-                    "level": {"type": "string", "description": "Log level (V/D/I/W/E/F)"}
-                },
-                "required": ["device", "level"]
-            }
-        ),
-        
-        # Process and Package Tools
-        Tool(
-            name="get_app_processes",
-            description="Get running processes for an app",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"},
-                    "package": {"type": "string", "description": "Package name"}
-                },
-                "required": ["device", "package"]
-            }
-        ),
-        
-        Tool(
-            name="get_connected_packages",
-            description="Get list of installed packages on device",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"},
-                    "running_only": {"type": "boolean", "description": "Only running apps"}
-                },
-                "required": ["device"]
-            }
-        ),
-        
-        # Error Analysis Tools
-        Tool(
-            name="parse_stacktrace",
-            description="Parse and analyze Java exception stacktrace",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "trace": {"type": "string", "description": "Raw stacktrace text"}
-                },
-                "required": ["trace"]
-            }
-        ),
-        
-        Tool(
-            name="detect_error_type",
-            description="Detect error type from logcat (ANR/CRASH/OOM/etc)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "logcat": {"type": "string", "description": "Logcat content"},
-                    "device": {"type": "string", "description": "Device serial (optional)"}
-                },
-                "required": ["logcat"]
-            }
-        ),
-        
-        # Performance and Monitoring Tools
-        Tool(
-            name="analyze_performance",
-            description="Analyze performance metrics (CPU, memory, FPS)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"},
-                    "duration_seconds": {"type": "integer", "description": "Duration to monitor"}
-                },
-                "required": ["device"]
-            }
-        ),
-        
-        Tool(
-            name="trace_network_calls",
-            description="Extract and trace network calls from logs",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"},
-                    "package": {"type": "string", "description": "Package to trace"}
-                },
-                "required": ["device", "package"]
-            }
-        ),
-        
-        Tool(
-            name="analyze_memory_leak",
-            description="Detect potential memory leaks",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"},
-                    "package": {"type": "string", "description": "Package to analyze"}
-                },
-                "required": ["device", "package"]
-            }
-        ),
-        
-        # Device Management Tools
-        Tool(
-            name="clear_logcat",
-            description="Clear logcat buffer on device",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"}
-                },
-                "required": ["device"]
-            }
-        ),
-        
-        Tool(
-            name="export_logs",
-            description="Export logcat to file (JSON, CSV, HTML)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "device": {"type": "string", "description": "Device serial"},
-                    "format": {"type": "string", "enum": ["json", "csv", "html"]},
-                    "lines": {"type": "integer", "description": "Number of lines"}
-                },
-                "required": ["device", "format"]
-            }
-        ),
-    ]
-
-
-@SERVER.call_tool()
-async def call_tool(name: str, arguments: dict) -> List[TextContent]:
-    """Execute a tool."""
-    logger.info(f"Tool called: {name} with args: {arguments}")
-    
+@server.tool()
+async def get_devices() -> str:
+    """Get list of connected Android devices"""
+    logger.info("Tool called: get_devices")
     try:
         from src.mcp import tools
-        
-        if name == "get_devices":
-            result = await tools.impl_get_devices()
-        elif name == "get_logcat_stream":
-            result = await tools.impl_get_logcat_stream(
-                arguments.get('device'),
-                arguments.get('package'),
-                arguments.get('level', 'I'),
-                arguments.get('lines', 100)
-            )
-        elif name == "search_logs":
-            result = await tools.impl_search_logs(
-                arguments.get('query'),
-                arguments.get('tag_filter'),
-                arguments.get('level_filter'),
-                arguments.get('limit', 50)
-            )
-        elif name == "filter_by_level":
-            result = await tools.impl_filter_by_level(
-                arguments.get('device'),
-                arguments.get('level')
-            )
-        elif name == "get_app_processes":
-            result = await tools.impl_get_app_processes(
-                arguments.get('device'),
-                arguments.get('package')
-            )
-        elif name == "get_connected_packages":
-            result = await tools.impl_get_connected_packages(arguments.get('device'))
-        elif name == "parse_stacktrace":
-            result = await tools.impl_parse_stacktrace(arguments.get('trace', ''))
-        elif name == "detect_error_type":
-            result = await tools.impl_detect_error_type(arguments.get('logcat', ''))
-        elif name == "analyze_performance":
-            result = await tools.impl_analyze_performance(arguments.get('device'))
-        elif name == "trace_network_calls":
-            result = await tools.impl_trace_network_calls(arguments.get('device'))
-        elif name == "analyze_memory_leak":
-            result = await tools.impl_analyze_memory_leak(arguments.get('device'))
-        elif name == "clear_logcat":
-            result = await tools.impl_clear_logcat(arguments.get('device'))
-        elif name == "export_logs":
-            result = await tools.impl_export_logs(
-                arguments.get('device'),
-                arguments.get('format', 'json'),
-                arguments.get('lines', 1000)
-            )
-        else:
-            result = json.dumps({"error": f"Unknown tool: {name}"})
-        
-        return [TextContent(type="text", text=result)]
+        result = await tools.impl_get_devices()
+        return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
-        logger.exception(f"Error calling tool {name}")
-        return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
-
-# ============================================================================
-# Tool Implementations - Moved to src/mcp/tools.py
-# All 13 tools are now fully implemented with cross-platform support
-# ============================================================================
-
-
-@SERVER.list_resources()
-async def list_resources() -> List[ResourceTemplate]:
-    """List available resources."""
-    return [
-        ResourceTemplate(
-            uri_template="logcat://device/{device_serial}",
-            name="Device Logcat",
-            description="Current logcat stream from a device"
-        ),
-        ResourceTemplate(
-            uri_template="android://devices",
-            name="Connected Devices",
-            description="List of connected Android devices"
-        ),
-        ResourceTemplate(
-            uri_template="android://packages/{device_serial}",
-            name="Device Packages",
-            description="Installed packages on a device"
-        ),
-    ]
-
-
-@SERVER.read_resource()
-async def read_resource(uri: str) -> str:
-    """Read a resource by URI."""
-    logger.info(f"Reading resource: {uri}")
-    
-    try:
-        from src.mcp import resources
-        
-        if uri.startswith("logcat://device/"):
-            device_serial = uri.replace("logcat://device/", "")
-            return await resources.read_logcat_device_resource(device_serial)
-        elif uri == "android://devices":
-            return await resources.read_android_devices_resource()
-        elif uri.startswith("android://packages/"):
-            device_serial = uri.replace("android://packages/", "")
-            return await resources.read_android_packages_resource(device_serial)
-        elif uri.startswith("android://processes/"):
-            device_serial = uri.replace("android://processes/", "")
-            return await resources.read_android_processes_resource(device_serial)
-        else:
-            return json.dumps({"error": f"Unknown resource: {uri}"})
-    except Exception as e:
-        logger.exception(f"Error reading resource {uri}")
-        return json.dumps({"error": str(e)})
-
-
-@SERVER.list_prompts()
-async def list_prompts() -> List[Prompt]:
-    """List available prompts."""
-    return [
-        Prompt(
-            name="debug-crash-analyzer",
-            description="Analyze Android crash logs and provide root cause analysis",
-            arguments=[]
-        ),
-        Prompt(
-            name="logcat-summarizer",
-            description="Summarize what's happening in the app from logcat",
-            arguments=[]
-        ),
-        Prompt(
-            name="performance-monitor",
-            description="Find performance bottlenecks and optimization opportunities",
-            arguments=[]
-        ),
-        Prompt(
-            name="network-debugger",
-            description="Trace and debug network calls and connectivity issues",
-            arguments=[]
-        ),
-    ]
-
-
-@SERVER.get_prompt()
-async def get_prompt(name: str, arguments: dict) -> str:
-    """Get prompt content for a specific debugging task."""
-    logger.info(f"Getting prompt: {name}")
-    
-    try:
-        from src.mcp import prompts
-        return await prompts.get_prompt(name)
-    except Exception as e:
-        logger.exception(f"Error getting prompt {name}")
+        logger.exception("Error in get_devices")
         return f"Error: {str(e)}"
 
 
-async def main():
+@server.tool()
+async def get_logcat_stream(
+    device: str,
+    package: Optional[str] = None,
+    level: str = "I",
+    lines: int = 100
+) -> str:
+    """Get logcat stream from a device with optional filters
+    
+    Args:
+        device: Device serial number
+        package: Optional package name to filter by
+        level: Minimum log level (V/D/I/W/E/F)
+        lines: Number of lines to retrieve
+    """
+    logger.info(f"Tool called: get_logcat_stream for device {device}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_get_logcat_stream(device, package, level, lines)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in get_logcat_stream")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def search_logs(
+    query: str,
+    tag_filter: Optional[str] = None,
+    level_filter: Optional[str] = None,
+    limit: int = 50
+) -> str:
+    """Search in logcat history
+    
+    Args:
+        query: Search query string
+        tag_filter: Optional tag filter
+        level_filter: Optional log level filter
+        limit: Maximum number of results
+    """
+    logger.info(f"Tool called: search_logs with query '{query}'")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_search_logs(query, tag_filter, level_filter, limit)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in search_logs")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def filter_by_level(device: str, level: str) -> str:
+    """Filter current logcat by severity level
+    
+    Args:
+        device: Device serial number
+        level: Log level (V/D/I/W/E/F)
+    """
+    logger.info(f"Tool called: filter_by_level for device {device} with level {level}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_filter_by_level(device, level)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in filter_by_level")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def get_app_processes(device: str, package: str) -> str:
+    """Get running processes for an app
+    
+    Args:
+        device: Device serial number
+        package: Package name
+    """
+    logger.info(f"Tool called: get_app_processes for {package} on {device}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_get_app_processes(device, package)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in get_app_processes")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def get_connected_packages(device: str) -> str:
+    """Get all packages connected to ADB on device
+    
+    Args:
+        device: Device serial number
+    """
+    logger.info(f"Tool called: get_connected_packages for device {device}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_get_connected_packages(device)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in get_connected_packages")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def parse_stacktrace(stacktrace: str) -> str:
+    """Parse Android stacktrace and identify issues
+    
+    Args:
+        stacktrace: The stack trace to parse
+    """
+    logger.info("Tool called: parse_stacktrace")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_parse_stacktrace(stacktrace)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in parse_stacktrace")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def detect_error_type(logs: str) -> str:
+    """Detect error types from logs
+    
+    Args:
+        logs: Log content to analyze
+    """
+    logger.info("Tool called: detect_error_type")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_detect_error_type(logs)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in detect_error_type")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def analyze_performance(device: str, package: str, duration: int = 10) -> str:
+    """Analyze app performance metrics
+    
+    Args:
+        device: Device serial number
+        package: Package name
+        duration: Duration to monitor in seconds
+    """
+    logger.info(f"Tool called: analyze_performance for {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_analyze_performance(device, package, duration)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in analyze_performance")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def trace_network_calls(device: str, package: str) -> str:
+    """Trace network calls from an app
+    
+    Args:
+        device: Device serial number
+        package: Package name
+    """
+    logger.info(f"Tool called: trace_network_calls for {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_trace_network_calls(device, package)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in trace_network_calls")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def analyze_memory_leak(device: str, package: str) -> str:
+    """Analyze memory leaks in an app
+    
+    Args:
+        device: Device serial number
+        package: Package name
+    """
+    logger.info(f"Tool called: analyze_memory_leak for {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_analyze_memory_leak(device, package)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in analyze_memory_leak")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def clear_logcat(device: str) -> str:
+    """Clear logcat buffer on device
+    
+    Args:
+        device: Device serial number
+    """
+    logger.info(f"Tool called: clear_logcat for device {device}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_clear_logcat(device)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in clear_logcat")
+        return f"Error: {str(e)}"
+
+
+@server.tool()
+async def export_logs(device: str, format: str = "json", lines: int = 1000) -> str:
+    """Export logcat to file
+    
+    Args:
+        device: Device serial number
+        format: Export format (json, csv, html)
+        lines: Number of lines to export
+    """
+    logger.info(f"Tool called: export_logs for device {device} in {format} format")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_export_logs(device, format, lines)
+        return json.dumps(result) if isinstance(result, dict) else result
+    except Exception as e:
+        logger.exception("Error in export_logs")
+        return f"Error: {str(e)}"
+
+
+# ============================================================================
+# RESOURCES - URI-based Android data access
+# ============================================================================
+
+@server.resource("logcat://device/{device_serial}")
+async def logcat_device_resource(device_serial: str) -> str:
+    """Current logcat stream from a device"""
+    logger.info(f"Resource accessed: logcat://device/{device_serial}")
+    try:
+        from src.mcp import resources
+        return await resources.read_logcat_device_resource(device_serial)
+    except Exception as e:
+        logger.exception(f"Error reading logcat resource for {device_serial}")
+        return json.dumps({"error": str(e)})
+
+
+@server.resource("android://devices")
+async def android_devices_resource() -> str:
+    """List of connected Android devices"""
+    logger.info("Resource accessed: android://devices")
+    try:
+        from src.mcp import resources
+        return await resources.read_android_devices_resource()
+    except Exception as e:
+        logger.exception("Error reading devices resource")
+        return json.dumps({"error": str(e)})
+
+
+@server.resource("android://packages/{device_serial}")
+async def android_packages_resource(device_serial: str) -> str:
+    """Installed packages on a device"""
+    logger.info(f"Resource accessed: android://packages/{device_serial}")
+    try:
+        from src.mcp import resources
+        return await resources.read_android_packages_resource(device_serial)
+    except Exception as e:
+        logger.exception(f"Error reading packages resource for {device_serial}")
+        return json.dumps({"error": str(e)})
+
+
+@server.resource("android://processes/{device_serial}")
+async def android_processes_resource(device_serial: str) -> str:
+    """Running processes on a device"""
+    logger.info(f"Resource accessed: android://processes/{device_serial}")
+    try:
+        from src.mcp import resources
+        return await resources.read_android_processes_resource(device_serial)
+    except Exception as e:
+        logger.exception(f"Error reading processes resource for {device_serial}")
+        return json.dumps({"error": str(e)})
+
+
+# ============================================================================
+# PROMPTS - AI-guided debugging workflows
+# ============================================================================
+
+@server.prompt()
+async def debug_crash_analyzer() -> str:
+    """Crash/Exception Analysis
+    
+    Helps analyze crash logs and exceptions from the logcat stream.
+    Identify the root cause and potential fixes.
+    """
+    logger.info("Prompt accessed: debug-crash-analyzer")
+    try:
+        from src.mcp import prompts
+        return await prompts.get_prompt("debug-crash-analyzer")
+    except Exception as e:
+        logger.exception("Error getting crash analyzer prompt")
+        return f"Error: {str(e)}"
+
+
+@server.prompt()
+async def logcat_summarizer() -> str:
+    """Logcat Analysis Summary
+    
+    Summarize what's happening in the app from logcat output.
+    Identify errors, warnings, and important events.
+    """
+    logger.info("Prompt accessed: logcat-summarizer")
+    try:
+        from src.mcp import prompts
+        return await prompts.get_prompt("logcat-summarizer")
+    except Exception as e:
+        logger.exception("Error getting logcat summarizer prompt")
+        return f"Error: {str(e)}"
+
+
+@server.prompt()
+async def performance_monitor() -> str:
+    """Performance Optimization
+    
+    Find performance bottlenecks and optimization opportunities.
+    Analyze CPU usage, memory, and frame rates.
+    """
+    logger.info("Prompt accessed: performance-monitor")
+    try:
+        from src.mcp import prompts
+        return await prompts.get_prompt("performance-monitor")
+    except Exception as e:
+        logger.exception("Error getting performance monitor prompt")
+        return f"Error: {str(e)}"
+
+
+@server.prompt()
+async def network_debugger() -> str:
+    """Network Debugging
+    
+    Trace and debug network calls and connectivity issues.
+    Analyze API responses and network errors.
+    """
+    logger.info("Prompt accessed: network-debugger")
+    try:
+        from src.mcp import prompts
+        return await prompts.get_prompt("network-debugger")
+    except Exception as e:
+        logger.exception("Error getting network debugger prompt")
+        return f"Error: {str(e)}"
+
+
+# ============================================================================
+# SERVER ENTRY POINT
+# ============================================================================
+
+def main():
     """Run MCP server on stdio."""
-    logger.info("Starting FadCat MCP Server")
-    from mcp.server.stdio import stdio_server
-    
-    # Create initialization options for MCP server using version info
-    init_options = InitializationOptions(
-        server_name=__app_name__,
-        server_version=__version__,
-        capabilities={}
-    )
-    
-    # Run server on stdio transport
-    async with stdio_server() as (read_stream, write_stream):
-        logger.info("FadCat MCP Server running on stdio")
-        await SERVER.run(read_stream, write_stream, init_options)
+    logger.info(f"Starting FadCat MCP Server ({__app_name__} v{__version__})")
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        logger.info("MCP Server stopped by user")
+    except Exception as e:
+        logger.exception(f"MCP Server fatal error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()

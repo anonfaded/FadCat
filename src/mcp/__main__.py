@@ -1,6 +1,5 @@
 """MCP Server entry point - Run as: python -m src.mcp"""
 
-import asyncio
 import sys
 import logging
 
@@ -17,7 +16,7 @@ def main():
     """Entry point for MCP server."""
     try:
         from src.mcp.server import main as run_mcp
-        asyncio.run(run_mcp())
+        run_mcp()
     except KeyboardInterrupt:
         logger.info("MCP Server stopped by user")
         sys.exit(0)

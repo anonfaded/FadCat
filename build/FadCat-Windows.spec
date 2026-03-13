@@ -3,7 +3,7 @@
 # Creates a folder-based distribution (faster startup, no extraction on each run)
 # Build with: pyinstaller FadCat-Windows.spec
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
 from PyInstaller.building.api import EXE, COLLECT
 from PyInstaller.building.datastruct import Tree
 import os
@@ -18,18 +18,22 @@ except ImportError:
     __app_name__ = "FadCat"
     __company__ = "FadSec Lab"
 
+# Collect all fastmcp data and binaries (CRITICAL for bundling)
+datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
+
 block_cipher = None
 
 a = Analysis(
     ['../FadCat.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries_fastmcp,
     datas=[
         ('../src', 'src'),
-        ('../fadcat_settings.json', '.'),
+        ('../fadcat_cli.py', '.'),
+        ('../FadCat.py', '.'),
         ('../build/platform-tools/windows/adb.exe', 'platform-tools/windows'),
         ('../build/windows/uninstall.bat', 'build/windows'),
-    ],
+    ] + datas_fastmcp,
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',
@@ -41,24 +45,37 @@ a = Analysis(
         'rapidfuzz',
         'rapidfuzz.fuzz',
         'colorama',
-        # MCP Server dependencies
+        # FastMCP and its bundled dependencies (3.1.0)
+        'fastmcp',
         'mcp',
         'mcp.server',
         'mcp.server.stdio',
-        'mcp.server.lowlevel',
         'mcp.types',
-        'mcp.shared',
-        'mcp.shared.message',
-        'pydantic',
-        'pydantic.json_schema',
-        'pydantic_core',
-        'anyio',
-        'anyio.lowlevel',
-        'anyio.streams',
-        'anyio.streams.memory',
+        'authlib',
+        'cyclopts',
+        'exceptiongroup',
         'httpx',
         'httpx_sse',
         'jsonschema',
+        'jsonref',
+        'jsonschema_path',
+        'openapi_pydantic',
+        'opentelemetry',
+        'packaging',
+        'platformdirs',
+        'pydantic',
+        'pydantic_core',
+        'pydantic_settings',
+        'pyperclip',
+        'python_dotenv',
+        'pyyaml',
+        'rich',
+        'starlette',
+        'sse_starlette',
+        'uvicorn',
+        'watchfiles',
+        'websockets',
+        'anyio',
     ],
     hookspath=[],
     hooksconfig={},

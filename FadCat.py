@@ -114,8 +114,9 @@ def main():
             from src.mcp.server import main as run_mcp
             print("Starting FadCat MCP Server...", file=sys.stderr)
             asyncio.run(run_mcp())
-        except ImportError:
-            print("MCP dependencies not installed. Run: pip install mcp>=1.7.1", file=sys.stderr)
+        except ImportError as e:
+            print(f"MCP dependencies not installed: {e}", file=sys.stderr)
+            print("Run: pip install -r requirements.txt", file=sys.stderr)
             sys.exit(1)
         except KeyboardInterrupt:
             print("MCP Server stopped", file=sys.stderr)
