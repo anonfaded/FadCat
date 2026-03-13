@@ -622,12 +622,24 @@ class VirtualLogView(QAbstractScrollArea):
                 total += h
                 heights.append(total)
             if not self._wrap:
-                if last_line is not None:
-                    if not hasattr(last_line, "plain_width") or last_line.plain_width is None:
-                        last_line.plain_width = self.fontMetrics().horizontalAdvance(last_line.plain)
-                    max_width = max(max_width, last_line.plain_width)
+                if not hasattr(last_line, "plain_width") or last_line.plain_width is None:
+                    last_line.plain_width = self.fontMetrics().horizontalAdvance(last_line.plain)
+                max_width = max(max_width, last_line.plain_width)
+            # Also calculate tag column width for scrollbar in non-wrap mode
+            if last_line and (not hasattr(last_line, "tag_width") or last_line.tag_width is None):
+                if last_line.tag:
+                    last_line.tag_width = self.fontMetrics().horizontalAdvance(last_line.tag)
+                else:
+                    last_line.tag_width = 0
+            if last_line:
+                self._tag_col_width_cache = max(self._tag_col_width_cache, last_line.tag_width)
             self._prefix_heights = heights
             self._total_height = total
+            # When not wrapping, account for tag column width + gap for scrollbar
+            if not self._wrap and max_width > 0:
+                tag_col_w = self._tag_column_width()
+                gap_w = self.fontMetrics().horizontalAdvance("  ")  # ~6px gap
+                max_width += tag_col_w + gap_w
             if max_width:
                 self._max_line_width = max(self._max_line_width, max_width)
             self._update_scrollbars()
@@ -659,6 +671,11 @@ class VirtualLogView(QAbstractScrollArea):
                     line.tag_width = 0
             self._tag_col_width_cache = max(self._tag_col_width_cache, line.tag_width)
         self._total_height = total
+        # When not wrapping, max_line_width should include tag column width + gap + message width
+        if not self._wrap and max_width > 0:
+            tag_col_w = self._tag_column_width()
+            gap_w = self.fontMetrics().horizontalAdvance("  ")  # ~6px gap
+            max_width += tag_col_w + gap_w
         self._max_line_width = max_width
         self._update_scrollbars()
 
