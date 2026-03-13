@@ -147,6 +147,43 @@ class MemoryAnalysis(BaseModel):
     recommendation: Optional[str] = None
 
 
+class BatteryInfo(BaseModel):
+    """Battery status information."""
+    level: int  # Battery percentage (0-100)
+    status: str  # CHARGING, DISCHARGING, FULL, etc.
+    voltage: Optional[int] = None  # mV
+    temperature: Optional[float] = None  # Celsius
+    technology: Optional[str] = None
+    health: Optional[str] = None  # GOOD, OVERHEAT, etc.
+
+
+class MemoryInfo(BaseModel):
+    """System memory information."""
+    total_memory: int  # Total RAM in MB
+    available_memory: int  # Available RAM in MB
+    used_memory: int  # Used RAM in MB
+    memory_usage_percent: float  # Percentage used
+    cached_memory: Optional[int] = None  # Cached memory in MB
+    buffers_memory: Optional[int] = None  # Buffer memory in MB
+    low_memory: bool = False  # Is system in low memory state
+
+
+class SystemInfo(BaseModel):
+    """Comprehensive system information."""
+    device: str
+    battery: BatteryInfo
+    memory: MemoryInfo
+    volume_level: Optional[int] = None  # Media volume (0-15)
+    screen_brightness: Optional[int] = None  # Screen brightness (0-255)
+    wifi_enabled: Optional[bool] = None
+    mobile_data_enabled: Optional[bool] = None
+    airplane_mode: Optional[bool] = None
+    screen_on: Optional[bool] = None
+    uptime_seconds: Optional[int] = None
+    cpu_cores: Optional[int] = None
+    cpu_frequency: Optional[int] = None  # MHz
+
+
 class MCPServerStatus(BaseModel):
     """Status of the MCP server."""
     running: bool

@@ -268,6 +268,23 @@ async def export_logs(device: str, format: str = "json", lines: int = 1000) -> s
         return f"Error: {str(e)}"
 
 
+@server.tool()
+async def get_system_info(device: str) -> str:
+    """Get comprehensive system information
+    
+    Args:
+        device: Device serial number
+    """
+    logger.info(f"Tool called: get_system_info for device {device}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_get_system_info(device)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in get_system_info")
+        return json.dumps({"error": str(e)})
+
+
 # ============================================================================
 # RESOURCES - URI-based Android data access
 # ============================================================================

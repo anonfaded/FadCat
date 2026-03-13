@@ -767,3 +767,190 @@ async def impl_export_logs(device: str, format: str = "json", lines: int = 1000)
         })
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)})
+
+
+async def impl_get_system_info(device: str) -> str:
+    """
+    Get comprehensive system information from device.
+    
+    Args:
+        device: Device serial
+    
+    Returns:
+        JSON with SystemInfo object containing battery, memory, and other system data
+    """
+    try:
+        # Get battery info
+        dumpsys_output = _run_adb_command(device, ['shell', 'dumpsys', 'battery'])
+        
+        battery_info = {
+            "level": 0,
+            "status": "UNKNOWN",
+            "voltage": None,
+            "temperature": None,
+            "technology": None,
+            "health": None
+        }
+        
+        for line in dumpsys_output.split('\n'):
+            line = line.strip()
+            if ': ' in line:
+                key, value = line.split(': ', 1)
+                key = key.strip().lower()
+                value = value.strip()
+                
+                if key == 'level':
+                    battery_info["level"] = int(value)
+                elif key == 'status':
+                    status_map = {
+                        '1': 'UNKNOWN',
+                        '2': 'CHARGING',
+                        '3': 'DISCHARGING',
+                        '4': 'NOT_CHARGING',
+                        '5': 'FULL'
+                    }
+                    battery_info["status"] = status_map.get(value, value)
+                elif key == 'voltage':
+                    battery_info["voltage"] = int(value)
+                elif key == 'temperature':
+                    battery_info["temperature"] = int(value) / 10.0  # Convert to Celsius
+                elif key == 'technology':
+                    battery_info["technology"] = value
+                elif key == 'health':
+                    health_map = {
+                        '1': 'UNKNOWN',
+                        '2': 'GOOD',
+                        '3': 'OVERHEAT',
+                        '4': 'DEAD',
+                        '5': 'OVER_VOLTAGE',
+                        '6': 'UNSPECIFIED_FAILURE',
+                        '7': 'COLD'
+                    }
+                    battery_info["health"] = health_map.get(value, value)
+        
+        # Get memory info
+        meminfo_output = _run_adb_command(device, ['shell', 'cat', '/proc/meminfo'])
+        
+        total_memory = 0
+        available_memory = 0
+        cached_memory = 0
+        buffers_memory = 0
+        
+        for line in meminfo_output.split('\n'):
+            if line.startswith('MemTotal:'):
+                total_memory = int(line.split()[1]) // 1024  # Convert to MB
+            elif line.startswith('MemAvailable:'):
+                available_memory = int(line.split()[1]) // 1024
+            elif line.startswith('Cached:'):
+                cached_memory = int(line.split()[1]) // 1024
+            elif line.startswith('Buffers:'):
+                buffers_memory = int(line.split()[1]) // 1024
+        
+        used_memory = total_memory - available_memory
+        memory_usage_percent = (used_memory / total_memory) * 100 if total_memory > 0 else 0
+        
+        # Check for low memory
+        low_memory = memory_usage_percent > 90
+        
+        memory_info = {
+            "total_memory": total_memory,
+            "available_memory": available_memory,
+            "used_memory": used_memory,
+            "memory_usage_percent": round(memory_usage_percent, 1),
+            "cached_memory": cached_memory,
+            "buffers_memory": buffers_memory,
+            "low_memory": low_memory
+        }
+        
+        # Get additional system info
+        system_info = {
+            "volume_level": None,
+            "screen_brightness": None,
+            "wifi_enabled": None,
+            "mobile_data_enabled": None,
+            "airplane_mode": None,
+            "screen_on": None,
+            "uptime_seconds": None,
+            "cpu_cores": None,
+            "cpu_frequency": None
+        }
+        
+        # Try to get volume level
+        try:
+            volume_output = _run_adb_command(device, ['shell', 'settings', 'get', 'system', 'volume_music_speaker'])
+            if volume_output.strip().isdigit():
+                system_info["volume_level"] = int(volume_output.strip())
+        except:
+            pass
+        
+        # Try to get screen brightness
+        try:
+            brightness_output = _run_adb_command(device, ['shell', 'settings', 'get', 'system', 'screen_brightness'])
+            if brightness_output.strip().isdigit():
+                system_info["screen_brightness"] = int(brightness_output.strip())
+        except:
+            pass
+        
+        # Try to get wifi state
+        try:
+            wifi_output = _run_adb_command(device, ['shell', 'settings', 'get', 'global', 'wifi_on'])
+            system_info["wifi_enabled"] = wifi_output.strip() == '1'
+        except:
+            pass
+        
+        # Try to get mobile data state
+        try:
+            mobile_output = _run_adb_command(device, ['shell', 'settings', 'get', 'global', 'mobile_data'])
+            system_info["mobile_data_enabled"] = mobile_output.strip() == '1'
+        except:
+            pass
+        
+        # Try to get airplane mode
+        try:
+            airplane_output = _run_adb_command(device, ['shell', 'settings', 'get', 'global', 'airplane_mode_on'])
+            system_info["airplane_mode"] = airplane_output.strip() == '1'
+        except:
+            pass
+        
+        # Try to get screen state
+        try:
+            screen_output = _run_adb_command(device, ['shell', 'dumpsys', 'power', '|', 'grep', 'mScreenOn'])
+            system_info["screen_on"] = 'true' in screen_output.lower()
+        except:
+            pass
+        
+        # Try to get uptime
+        try:
+            uptime_output = _run_adb_command(device, ['shell', 'cat', '/proc/uptime'])
+            uptime_seconds = float(uptime_output.split()[0])
+            system_info["uptime_seconds"] = int(uptime_seconds)
+        except:
+            pass
+        
+        # Try to get CPU info
+        try:
+            cpu_output = _run_adb_command(device, ['shell', 'cat', '/proc/cpuinfo', '|', 'grep', 'processor', '|', 'wc', '-l'])
+            system_info["cpu_cores"] = int(cpu_output.strip())
+        except:
+            pass
+        
+        # Try to get CPU frequency
+        try:
+            freq_output = _run_adb_command(device, ['shell', 'cat', '/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq'])
+            system_info["cpu_frequency"] = int(freq_output.strip()) // 1000  # Convert to MHz
+        except:
+            pass
+        
+        from src.mcp.models import SystemInfo, BatteryInfo, MemoryInfo
+        battery = BatteryInfo(**battery_info)
+        memory = MemoryInfo(**memory_info)
+        
+        system = SystemInfo(
+            device=device,
+            battery=battery,
+            memory=memory,
+            **system_info
+        )
+        return json.dumps(system.model_dump())
+    except Exception as e:
+        return json.dumps({"error": str(e)})
