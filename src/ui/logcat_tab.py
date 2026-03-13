@@ -2327,20 +2327,38 @@ class LogcatTab(QWidget):
         query = self.search_edit.text()
         grep_mode = self.btn_grep.isChecked()
         self._grep_active = grep_mode
+        
+        # Stop highlight timer and clear pending highlights
+        if self._selection_timer.isActive():
+            self._selection_timer.stop()
+        self._pending_ranges = []
+        self._applied_selections = []
+        
         indices = []
         for i, line in enumerate(self._lines):
             if self._passes_filters(line, query, grep_mode):
                 indices.append(i)
         self._visible_indices = indices
         self.log_view.sync_visible_indices(indices, incremental=False)
-        if self._match_ranges:
+        
+        # Only show highlights if there's a search query and matches exist
+        if query and self._match_ranges:
             self.log_view.set_highlights(self._match_ranges, self._match_idx)
+        else:
+            self.log_view.set_highlights([], None)
 
     def _apply_highlights(self, query: str):
         if not query:
+            # Stop highlight batching timer to prevent old highlights from rendering
+            if self._selection_timer.isActive():
+                self._selection_timer.stop()
+            # Clear all highlight data
             self._match_positions = []
             self._match_ranges = []
             self._match_idx = 0
+            self._pending_ranges = []
+            self._applied_selections = []
+            # Clear highlights from view
             self.log_view.set_highlights([], None)
             self._update_line_count_label()
             return
@@ -2371,16 +2389,25 @@ class LogcatTab(QWidget):
         self._match_positions = [s for s, _, _ in ranges]
         self._match_idx = 0 if ranges else 0
 
-        self._pending_ranges = ranges[:]
-        self._applied_selections = []
+        # Stop old batching if running and reset batching state
         if self._selection_timer.isActive():
             self._selection_timer.stop()
+        self._pending_ranges = ranges[:]
+        self._applied_selections = []
+        
+        # If we have results, immediately jump to first finding and show it
+        if ranges:
+            line_idx, start, end = ranges[0]
+            self.log_view.scroll_to_line(line_idx)
+        
+        # Restart batching with new ranges
         self._selection_timer.start()
         self._update_line_count_label()
 
     def _apply_selection_batch(self):
         if not self._pending_ranges:
             self._selection_timer.stop()
+            # Always show current match highlighted (yellow) when done batching
             self.log_view.set_highlights(self._match_ranges, self._match_idx if self._match_ranges else None)
             return
 
@@ -2392,7 +2419,8 @@ class LogcatTab(QWidget):
                 continue
             self._applied_selections.append((idx, start, end))
             batch += 1
-        self.log_view.set_highlights(self._applied_selections, None)
+        # Show current match (index 0) highlighted during batching too
+        self.log_view.set_highlights(self._match_ranges, self._match_idx if self._match_ranges else None)
 
     def _update_line_count_label(self):
         count = len(self._match_positions)
