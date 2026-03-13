@@ -22,18 +22,18 @@ cd dist
 # create-dmg uses version from app's CFBundleShortVersionString
 npx create-dmg FadCat.app --overwrite --no-code-sign 2>&1 || true
 
-# Rename the created DMG to our standard name
+# Rename the created DMG to our standard name with version and platform
 DMG_FILE=$(ls -t FadCat*.dmg 2>/dev/null | head -1)
 if [ -n "$DMG_FILE" ]; then
-    mv "$DMG_FILE" FadCat-Installer.dmg
-    SIZE=$(du -h FadCat-Installer.dmg | awk '{print $1}')
+    mv "$DMG_FILE" "FadCat-v${VERSION}-macOS.dmg"
+    SIZE=$(du -h "FadCat-v${VERSION}-macOS.dmg" | awk '{print $1}')
     
     # Clean up: remove the app since it's now packaged in the DMG
     rm -rf FadCat.app 2>/dev/null
     
     echo ""
     echo "✅ Professional FadCat installer created!"
-    echo "   📁 FadCat-Installer.dmg ($SIZE)"
+    echo "   📁 FadCat-v${VERSION}-macOS.dmg ($SIZE)"
     echo "   📦 Version: ${VERSION}"
     echo ""
     echo "Features:"

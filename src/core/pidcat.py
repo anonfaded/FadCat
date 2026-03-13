@@ -315,6 +315,10 @@ if not args.all:
                 pid, proc = pid_match.groups()
                 if match_packages(proc):
                     pids.add(pid)
+        
+        # Inform user if app is not currently running
+        if not pids:
+            print(f"⏳ Waiting for app to start... (will capture logs once '{', '.join(package)}' launches)\n", file=sys.stderr)
     except FileNotFoundError:
         print("❌ ERROR: Could not find a running ADB process. Please check the connection.", file=sys.stderr)
         sys.exit(1)
