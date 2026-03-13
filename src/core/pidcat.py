@@ -28,6 +28,12 @@ import subprocess
 from subprocess import PIPE
 import shutil
 import colorama
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports to work when run as a script
+_project_root = str(Path(__file__).parent.parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from src.utils.adb_path import get_adb_path
 from src.version import __version__
@@ -37,6 +43,9 @@ colorama.init()
 
 # A sensible version bump reflecting new features.
 VERSION = __version__
+
+# FadCat branding (pidcat is internal script)
+APP_NAME = "FadCat"
 
 
 def check_adb_device():
@@ -82,6 +91,13 @@ def check_adb_device():
                     print("❌ Invalid selection. Please try again.")
             except ValueError:
                 print("❌ Please enter a valid number.")
+            except EOFError:
+                # Occurs in bundled exec mode when stdin is not available
+                # Use the first connected device as fallback
+                print(f"⚠️  Interactive device selection not available.", file=sys.stderr)
+                print(f"⚠️  Defaulting to first device: {authorized_devices[0]}", file=sys.stderr)
+                selection = authorized_devices[0]
+                break
                 
         print(f"✅ Selected device: {selection}")
         return selection
@@ -399,7 +415,7 @@ try:
             print(linebuf)
 
         except KeyboardInterrupt:
-            print("\n--- Exiting gracefully. ---")
+            print(f"\n--- {APP_NAME} stopped. ---")
         except Exception as e:
             print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
 finally:

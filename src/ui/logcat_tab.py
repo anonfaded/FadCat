@@ -2176,14 +2176,22 @@ class LogcatTab(QWidget):
         
         self.status_changed.emit()
 
-        from src.core.pidcat_runner import get_pidcat_path
+        from src.core.pidcat_runner import get_pidcat_path, get_python_executable
         from src.core.settings import SettingsManager
         import sys as _sys
 
         pidcat_path = get_pidcat_path()
         
-        # If package is empty, pidcat shows everything (no filtering)
-        cmd = [_sys.executable, pidcat_path]
+        # In bundled mode (sys.frozen), we must NOT use subprocess because 
+        # sys.executable points to the FadCat app, which would re-launch it!
+        # Instead, we'll modify ProcessReader to handle this.
+        if getattr(_sys, 'frozen', False):
+            # Bundled mode: run pidcat via exec in ProcessReader
+            cmd = ['__exec_pidcat__', pidcat_path]
+        else:
+            # Dev mode: normal subprocess with Python
+            python_executable = get_python_executable()
+            cmd = [python_executable, pidcat_path]
         if package:
             cmd.append(package)
 

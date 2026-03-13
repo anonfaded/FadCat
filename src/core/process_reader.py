@@ -46,6 +46,93 @@ class ProcessReader(QtCore.QThread):
                 pass
             self._pty_master = None
 
+    def _run_pidcat_via_exec(self, pidcat_path, pidcat_args=None):
+        """Run pidcat.py directly via exec() to avoid subprocess re-launching FadCat app.
+        
+        This is called in bundled mode to execute pidcat code directly without subprocess,
+        which would cause sys.executable (the FadCat app binary) to be re-launched.
+        
+        Args:
+            pidcat_path: Path to pidcat.py script
+            pidcat_args: List of arguments to pass to pidcat (e.g., ['-s', 'device', 'package'])
+        
+        Edge cases handled:
+        - pidcat.py not found in bundle
+        - Import errors due to missing modules
+        - Interrupted execution (Ctrl+C)
+        - Missing command-line arguments (set sys.argv)
+        """
+        import sys as _sys
+        from pathlib import Path
+        
+        pidcat_file = Path(pidcat_path)
+        
+        # Edge case 1: Check if file exists
+        if not pidcat_file.exists():
+            self.line_ready.emit(f"❌ Error: pidcat script not found at {pidcat_path}\n")
+            self.line_ready.emit(f"   Expected location: {pidcat_file}\n")
+            self.line_ready.emit(f"   sys._MEIPASS: {getattr(_sys, '_MEIPASS', 'N/A')}\n")
+            self.line_ready.emit(f"   sys.executable: {_sys.executable}\n")
+            self.finished.emit()
+            return
+        
+        # Save original sys.argv to restore later
+        original_argv = _sys.argv
+        
+        try:
+            # Set sys.argv to pidcat's arguments so argparse works correctly
+            # Format: ['pidcat.py', '-s', 'device', 'package', ...]
+            _sys.argv = [str(pidcat_file)] + (pidcat_args or [])
+            
+            with open(pidcat_path, 'r') as f:
+                pidcat_code = f.read()
+            
+            # Create a namespace for pidcat execution with custom print and input that emits signals
+            def _safe_input(prompt=""):
+                """Fallback input() for when stdin is not available in exec mode."""
+                self._emit_print(prompt, end="")
+                # In exec mode, we can't read from stdin, so raise EOFError to trigger pidcat's error handling
+                raise EOFError("No stdin available in bundled exec mode")
+            
+            namespace = {
+                '__name__': '__main__',
+                '__file__': pidcat_path,
+                '_process_reader': self,
+                '_original_print': print,
+                # Override print to emit lines via the signal
+                'print': self._emit_print,
+                # Override input to handle missing stdin in exec mode
+                'input': _safe_input,
+            }
+            
+            # Execute pidcat code
+            exec(compile(pidcat_code, pidcat_path, 'exec'), namespace)
+        except KeyboardInterrupt:
+            self.line_ready.emit("--- FadCat stopped. ---\n")
+        except FileNotFoundError as e:
+            self.line_ready.emit(f"❌ Error: File not found: {e}\n")
+        except ImportError as e:
+            self.line_ready.emit(f"❌ Import Error: {e}\n")
+            self.line_ready.emit("   Make sure all dependencies are bundled in the app.\n")
+        except SyntaxError as e:
+            self.line_ready.emit(f"❌ Syntax Error in pidcat.py: {e}\n")
+        except Exception as e:
+            import traceback
+            self.line_ready.emit(f"❌ Error running pidcat: {e}\n")
+            self.line_ready.emit("--- Traceback ---\n")
+            self.line_ready.emit(traceback.format_exc())
+        finally:
+            # Restore original sys.argv
+            _sys.argv = original_argv
+            self.finished.emit()
+    
+    def _emit_print(self, *args, **kwargs):
+        """Custom print function that emits lines via signal instead of to stdout."""
+        end = kwargs.get('end', '\n')
+        sep = kwargs.get('sep', ' ')
+        line = sep.join(str(arg) for arg in args) + end
+        self.line_ready.emit(line)
+
     def run(self):
         env = dict(self.env)
         env.setdefault('PYTHONUNBUFFERED', '1')
@@ -55,6 +142,13 @@ class ProcessReader(QtCore.QThread):
         # Ask pidcat to treat the terminal as very wide so it doesn't hard-wrap lines
         env.setdefault('COLUMNS', '2000')
         env.setdefault('LINES', '2000')
+
+        # Special case: __exec_pidcat__ means run pidcat via exec to avoid re-launching app
+        if self.cmd and self.cmd[0] == '__exec_pidcat__':
+            pidcat_path = self.cmd[1] if len(self.cmd) > 1 else None
+            pidcat_args = self.cmd[2:] if len(self.cmd) > 2 else []
+            self._run_pidcat_via_exec(pidcat_path, pidcat_args)
+            return
 
         # On POSIX, spawn the child attached to a pty so pidcat thinks it's a TTY
         if os.name == 'posix':

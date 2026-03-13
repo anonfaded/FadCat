@@ -80,6 +80,28 @@ def launch_gui():
 
 
 def main():
+    # Handle direct pidcat.py execution (when bundled FadCat runs pidcat as subprocess)
+    if len(sys.argv) > 1 and 'pidcat.py' in sys.argv[1]:
+        # Run pidcat directly instead of GUI
+        # pidcat.py expects to execute when imported, so we use exec to run its code
+        pidcat_path = sys.argv[1]
+        pidcat_args = sys.argv[2:] if len(sys.argv) > 2 else []
+        
+        # Update sys.argv to what pidcat expects
+        sys.argv = [pidcat_path] + pidcat_args
+        
+        try:
+            with open(pidcat_path, 'r') as f:
+                pidcat_code = f.read()
+            # Execute pidcat code with proper namespace
+            exec(compile(pidcat_code, pidcat_path, 'exec'), {'__name__': '__main__'})
+        except Exception as e:
+            import traceback
+            print(f"Error running pidcat: {e}", file=sys.stderr)
+            traceback.print_exc()
+            sys.exit(1)
+        return
+    
     # internal child-process mode used by ProcessReader
     if '--child-pidcat' in sys.argv:
         run_pidcat_child()

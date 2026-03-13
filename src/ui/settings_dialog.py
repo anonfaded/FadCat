@@ -416,7 +416,7 @@ class SettingsDialog(QDialog):
 <span style="color: #888;"># 📱 Launch CLI Mode</span><br>
 <span style="color: #4ec9b0;">fadcat</span> <span style="color: #9cdcfe;">--cli</span><br><br>
 <span style="color: #888;"># ⏹ Uninstall FadCat</span><br>
-<span style="color: #4ec9b0;">bash</span> <span style="color: #ce9178;">/Applications/FadCat.app/../../../build/macos/uninstall.sh</span>
+<span style="color: #4ec9b0;">bash</span> <span style="color: #ce9178;\">$(/Applications/FadCat.app/Contents/Resources/build/macos/uninstall.sh)</span>
 </div>"""
                 else:
                     return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">
@@ -429,7 +429,7 @@ class SettingsDialog(QDialog):
 <span style="color: #888;">REM 📱 Launch CLI Mode</span><br>
 <span style="color: #4ec9b0;">fadcat</span> <span style="color: #9cdcfe;">--cli</span><br><br>
 <span style="color: #888;">REM ⏹ Uninstall FadCat</span><br>
-<span style="color: #ce9178;">build\\windows\\uninstall.bat</span>
+<span style="color: #ce9178;\">%ProgramFiles%\\FadCat\\build\\windows\\uninstall.bat</span>
 </div>"""
                 else:
                     return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">
@@ -442,7 +442,7 @@ class SettingsDialog(QDialog):
 <span style="color: #888;"># 📱 Launch CLI Mode</span><br>
 <span style="color: #4ec9b0;">fadcat</span> <span style="color: #9cdcfe;">--cli</span><br><br>
 <span style="color: #888;"># ⏹ Uninstall FadCat</span><br>
-<span style="color: #4ec9b0;">bash</span> <span style="color: #ce9178;">/usr/share/fadcat/build/linux/uninstall.sh</span>
+<span style="color: #4ec9b0;">bash</span> <span style="color: #ce9178;\">/opt/fadcat/build/linux/uninstall.sh</span>
 </div>"""
                 else:
                     return """<div style="color: #d4d4d4; font-size: 10px; line-height: 1.6;">

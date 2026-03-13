@@ -20,9 +20,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('../src/icons', 'src/icons'),
+        ('../src', 'src'),
         ('../fadcat_settings.json', '.'),
         ('../build/platform-tools/macos/adb', 'platform-tools/macos'),
+        ('../build/macos/uninstall.sh', 'build/macos'),
     ],
     hiddenimports=[
         'PyQt6',

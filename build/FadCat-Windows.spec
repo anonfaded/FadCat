@@ -25,9 +25,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('../src/icons', 'src/icons'),
+        ('../src', 'src'),
         ('../fadcat_settings.json', '.'),
         ('../build/platform-tools/windows/adb.exe', 'platform-tools/windows'),
+        ('../build/windows/uninstall.bat', 'build/windows'),
     ],
     hiddenimports=[
         'PyQt6',

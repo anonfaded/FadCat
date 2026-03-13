@@ -22,9 +22,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('../src/icons', 'src/icons'),
+        ('../src', 'src'),
         ('../fadcat_settings.json', '.'),
         ('../build/platform-tools/linux/adb', 'platform-tools/linux'),
+        ('../build/linux/uninstall.sh', 'build/linux'),
     ],
     hiddenimports=[
         'PyQt6',
