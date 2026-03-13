@@ -8,6 +8,12 @@ import shutil
 import re
 from datetime import datetime
 from collections import deque
+
+try:
+    from rapidfuzz import fuzz as rapidfuzz_fuzz
+    HAS_RAPIDFUZZ = True
+except ImportError:
+    HAS_RAPIDFUZZ = False
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize, QPoint, QRect, QEvent, QObject, QRectF, QPointF
@@ -1138,13 +1144,64 @@ class VirtualLogView(QAbstractScrollArea):
 class _SearchWorker(QObject):
     finished = pyqtSignal(int, list)
 
-    def __init__(self, seq: int, lines: list[str], query: str, regex: bool, case: bool):
+    def __init__(self, seq: int, lines: list[str], query: str, regex: bool, case: bool, fuzzy: bool = False):
         super().__init__()
         self._seq = seq
         self._lines = lines
         self._query = query
         self._regex = regex
         self._case = case
+        self._fuzzy = fuzzy
+
+    @staticmethod
+    def _fuzzy_match(text: str, needle: str, case: bool = False) -> list[tuple[int, int]]:
+        """Fuzzy match using rapidfuzz or fallback to conservative algorithm.
+        Returns list of (start, end) position tuples only if score >= 75%.
+        """
+        if not needle:
+            return []
+        
+        text_cmp = text if case else text.lower()
+        needle_cmp = needle if case else needle.lower()
+        
+        # Use rapidfuzz if available for better accuracy
+        if HAS_RAPIDFUZZ:
+            # Score the line against the query
+            score = rapidfuzz_fuzz.partial_ratio(needle_cmp, text_cmp)
+            
+            # Only return match if score is good enough (≥75%)
+            if score < 75:
+                return []
+            
+            # Find best substring match position
+            best_start = 0
+            best_score = 0
+            for i in range(max(0, len(text_cmp) - len(needle_cmp) + 1)):
+                substring = text_cmp[i:i + len(needle_cmp)]
+                sub_score = rapidfuzz_fuzz.ratio(needle_cmp, substring)
+                if sub_score > best_score:
+                    best_score = sub_score
+                    best_start = i
+            
+            # Return the best matching region
+            if best_score >= 50:  # Reasonable match within the substring
+                return [(best_start, best_start + len(needle_cmp))]
+            return []
+        else:
+            # Fallback: conservative character-by-character matching
+            # Only match if characters are relatively close (within 2x needle length)
+            ranges = []
+            needle_idx = 0
+            max_gap = len(needle_cmp) * 2  # Allow characters up to 2x query length apart
+            
+            for i, char in enumerate(text_cmp):
+                if needle_idx < len(needle_cmp) and char == needle_cmp[needle_idx]:
+                    if needle_idx == 0 or i - ranges[-1][1] < max_gap:
+                        ranges.append((i, i + 1))
+                        needle_idx += 1
+            
+            # Only return if all characters matched
+            return ranges if needle_idx == len(needle_cmp) else []
 
     def run(self):
         ranges: list[tuple[int, int]] = []
@@ -1152,7 +1209,14 @@ class _SearchWorker(QObject):
             self.finished.emit(self._seq, ranges)
             return
 
-        if self._regex:
+        if self._fuzzy:
+            # Fuzzy search: match all characters in order but not necessarily consecutive
+            needle = self._query if self._case else self._query.lower()
+            for i, line in enumerate(self._lines):
+                match_ranges = self._fuzzy_match(line, needle, self._case)
+                for start, end in match_ranges:
+                    ranges.append((i, start, end))
+        elif self._regex:
             flags = 0 if self._case else re.IGNORECASE
             try:
                 pattern = re.compile(self._query, flags)
@@ -1664,17 +1728,18 @@ class LogcatTab(QWidget):
         h.setSpacing(8)
         self._search_layout = h
 
-        # Search input
+        # Search input (narrower)
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search logs... (⌘F)")
         self.search_edit.setFixedHeight(24)
-        self.search_edit.setMinimumWidth(220)
-        self.search_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.search_edit.setMaximumWidth(280)
+        self.search_edit.setMinimumWidth(140)
+        self.search_edit.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setStyleSheet("QLineEdit { padding: 0 8px; font-size: 11px; }")
         self.search_edit.textChanged.connect(self._on_search_changed)
         self.search_edit.returnPressed.connect(self._next_match)
-        h.addWidget(self.search_edit, stretch=3)
+        h.addWidget(self.search_edit, stretch=0)
 
         # Filter toggles
         self.btn_case = QPushButton("Aa")
@@ -1701,6 +1766,20 @@ class LogcatTab(QWidget):
         self._hand(self.btn_regex)
         self.btn_regex.toggled.connect(self._on_search_changed)
         h.addWidget(self.btn_regex, stretch=0)
+
+        self.btn_fuzzy = QPushButton("≈")
+        self.btn_fuzzy.setProperty("role", "toggle")
+        self.btn_fuzzy.setCheckable(True)
+        self.btn_fuzzy.setToolTip(
+            "Fuzzy search: match characters in order, but not necessarily consecutive. "
+            "Example: 'ace' matches 'Application crashed everywhere'."
+        )
+        self.btn_fuzzy.setMinimumWidth(28)
+        self.btn_fuzzy.setFixedHeight(24)
+        self.btn_fuzzy.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self._hand(self.btn_fuzzy)
+        self.btn_fuzzy.toggled.connect(self._on_search_changed)
+        h.addWidget(self.btn_fuzzy, stretch=0)
 
         self.btn_grep = QPushButton("Grep ⌥G")
         self.btn_grep.setIcon(icons.icon_grep())
@@ -2368,14 +2447,15 @@ class LogcatTab(QWidget):
         self._search_seq += 1
         seq = self._search_seq
         lines = [l.plain for l in self._lines]
-        regex = self.btn_regex.isChecked()
+        fuzzy = self.btn_fuzzy.isChecked()
+        regex = self.btn_regex.isChecked() and not fuzzy  # Fuzzy takes priority
         case = self.btn_case.isChecked()
 
         if self._search_thread:
             self._search_thread.quit()
             self._search_thread.wait(50)
         self._search_thread = QThread(self)
-        self._search_worker = _SearchWorker(seq, lines, query, regex, case)
+        self._search_worker = _SearchWorker(seq, lines, query, regex, case, fuzzy)
         self._search_worker.moveToThread(self._search_thread)
         self._search_thread.started.connect(self._search_worker.run)
         self._search_worker.finished.connect(self._on_search_results)
@@ -2441,6 +2521,13 @@ class LogcatTab(QWidget):
     # ── Search / highlight ────────────────────────────────────────────────────
 
     def _on_search_changed(self):
+        # Make fuzzy and regex mutually exclusive
+        sender = self.sender()
+        if sender == self.btn_fuzzy and self.btn_fuzzy.isChecked():
+            self.btn_regex.setChecked(False)
+        elif sender == self.btn_regex and self.btn_regex.isChecked():
+            self.btn_fuzzy.setChecked(False)
+        
         self._search_timer.start()
 
     def _apply_search_now(self):
