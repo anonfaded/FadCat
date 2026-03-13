@@ -309,13 +309,23 @@ class LogcatGUI(QMainWindow):
 
         self._sb_state_icon, state_item = self._sb_item(icons.icon_status(), self.lbl_status_state)
         sb.addWidget(state_item)
+        
+        # Small divider after status state
+        sb.addWidget(self._sb_sep_small())
+        
         self._sb_device_icon, device_item = self._sb_item(icons.icon_device(), self.lbl_status_device)
         sb.addWidget(device_item)
-        sb.addWidget(self._sb_sep())
+        
+        # Full height divider after device
+        full_divider = QFrame()
+        full_divider.setFrameShape(QFrame.Shape.VLine)
+        full_divider.setFrameShadow(QFrame.Shadow.Plain)
+        full_divider.setStyleSheet("color: #333333;")
+        sb.addWidget(full_divider)
+        
         self._sb_pause_badge = QPushButton("Paused")
         self._sb_pause_badge.setObjectName("pauseBadge")
         self._sb_pause_badge.setFixedHeight(22)
-        self._sb_pause_badge.setFixedWidth(100)
         self._sb_pause_badge.setVisible(False)
         self._sb_pause_badge.setToolTip("Auto-scroll is off. New logs are buffering. Click to resume.")
         self._sb_pause_badge.setStyleSheet(
@@ -325,6 +335,11 @@ class LogcatGUI(QMainWindow):
         )
         self._sb_pause_badge.setCursor(Qt.CursorShape.PointingHandCursor)
         self._sb_pause_badge.clicked.connect(self._resume_from_pause)
+        
+        # Small divider after pause badge (only visible when pause badge is visible)
+        self._sb_pause_divider = QLabel("|")
+        self._sb_pause_divider.setStyleSheet("color: #333333; padding: 0 1px;")
+        self._sb_pause_divider.setVisible(False)
         
         # Copyright and website link (left side)
         copyright_label = QLabel("© 2024–2026")
@@ -340,15 +355,9 @@ class LogcatGUI(QMainWindow):
         self._sb_website = website_label
         sb.addWidget(website_label)
         
-        # Vertical divider before lines
-        divider = QFrame()
-        divider.setFrameShape(QFrame.Shape.VLine)
-        divider.setFrameShadow(QFrame.Shadow.Plain)
-        divider.setStyleSheet("color: #333333;")
-        sb.addPermanentWidget(divider)
-        
         self._sb_lines_icon, lines_item = self._sb_item(icons.icon_lines(), self.lbl_status_lines)
         sb.addPermanentWidget(self._sb_pause_badge)
+        sb.addPermanentWidget(self._sb_pause_divider)
         sb.addPermanentWidget(lines_item)
         sb.addPermanentWidget(self._sb_sep())
         self._sb_mem_icon, mem_item = self._sb_item(icons.icon_memory(), self.lbl_status_mem)
@@ -359,6 +368,12 @@ class LogcatGUI(QMainWindow):
     def _sb_sep() -> QLabel:
         sep = QLabel("|")
         sep.setStyleSheet("color: #333333; padding: 0 1px;")
+        return sep
+
+    @staticmethod
+    def _sb_sep_small() -> QLabel:
+        sep = QLabel("•")
+        sep.setStyleSheet("color: #333333; padding: 0 2px;")
         return sep
 
     @staticmethod
@@ -425,8 +440,10 @@ class LogcatGUI(QMainWindow):
                 text = f"Paused • {_fmt_small(tab.paused_count)} new" if tab.paused_count else "Paused"
                 self._sb_pause_badge.setText(text)
                 self._sb_pause_badge.setVisible(True)
+                self._sb_pause_divider.setVisible(True)
             else:
                 self._sb_pause_badge.setVisible(False)
+                self._sb_pause_divider.setVisible(False)
         self._update_statusbar_layout(self.width())
 
     def resizeEvent(self, event):
