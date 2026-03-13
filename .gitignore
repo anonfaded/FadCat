@@ -9,6 +9,10 @@ build/FadCat-*/
 *.deb
 *.egg-info/
 
+# Exception: Keep bundled ADB binaries
+!build/platform-tools/**/*.exe
+!build/platform-tools/**/adb
+
 # IDE
 .vscode/
 .idea/

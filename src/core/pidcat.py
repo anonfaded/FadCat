@@ -29,18 +29,22 @@ from subprocess import PIPE
 import shutil
 import colorama
 
+from src.utils.adb_path import get_adb_path
+from src.version import __version__
+
 # Initialize colorama to process ANSI escape codes on Windows
 colorama.init()
 
 # A sensible version bump reflecting new features.
-__version__ = '2.3.0'
+VERSION = __version__
 
 
 def check_adb_device():
     """Checks for a connected ADB device and prompts for selection if multiple are found."""
     try:
+        adb_path = get_adb_path()
         # Use a timeout to prevent the command from hanging indefinitely.
-        result = subprocess.run(['adb', 'devices'], capture_output=True, text=True, check=True, timeout=5)
+        result = subprocess.run([adb_path, 'devices'], capture_output=True, text=True, check=True, timeout=5)
         lines = result.stdout.strip().splitlines()
         
         # Skip the first line which is just a header
@@ -82,8 +86,11 @@ def check_adb_device():
         print(f"✅ Selected device: {selection}")
         return selection
             
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("❌ ERROR: 'adb' command not found. Is the Android SDK Platform-Tools in your system's PATH?", file=sys.stderr)
+    except RuntimeError as e:
+        print(f"❌ ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"❌ ERROR: ADB execution failed: {e}", file=sys.stderr)
         sys.exit(1)
     except subprocess.TimeoutExpired:
         print("❌ ERROR: 'adb devices' command timed out. ADB server may be unresponsive.", file=sys.stderr)
@@ -108,7 +115,7 @@ parser.add_argument('-e', '--emulator', dest='use_emulator', action='store_true'
 parser.add_argument('-c', '--clear', dest='clear_logcat', action='store_true', help='Clear the entire log before running')
 parser.add_argument('-t', '--tag', dest='tag', action='append', help='Filter output by specified tag(s)')
 parser.add_argument('-i', '--ignore-tag', dest='ignored_tag', action='append', help='Filter output by ignoring specified tag(s)')
-parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__, help='Print the version number and exit')
+parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + VERSION, help='Print the version number and exit')
 parser.add_argument('-a', '--all', dest='all', action='store_true', default=False, help='Print all log messages')
 
 args = parser.parse_args()
@@ -116,10 +123,16 @@ min_level = LOG_LEVELS_MAP[args.min_level.upper()]
 
 package = args.package
 
-print(f"--- Colored FadCat v{__version__} ---")
+print(f"--- Colored FadCat v{VERSION} ---")
 selected_device = check_adb_device()
 
-base_adb_command = ['adb']
+try:
+    adb_path = get_adb_path()
+    base_adb_command = [adb_path]
+except RuntimeError as e:
+    print(f"❌ ERROR: {e}", file=sys.stderr)
+    sys.exit(1)
+
 if args.device_serial:
   base_adb_command.extend(['-s', args.device_serial])
   print(f" targeting device serial: {args.device_serial}")

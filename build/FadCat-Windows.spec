@@ -27,6 +27,7 @@ a = Analysis(
     datas=[
         ('../src/icons', 'src/icons'),
         ('../fadcat_settings.json', '.'),
+        ('../build/platform-tools/windows/adb.exe', 'platform-tools/windows'),
     ],
     hiddenimports=[
         'PyQt6',
