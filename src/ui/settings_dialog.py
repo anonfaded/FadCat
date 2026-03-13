@@ -526,6 +526,23 @@ class SettingsDialog(QDialog):
         status_lay.addStretch()
         about_lay.addLayout(status_lay)
         
+        # Made with love message
+        about_lay.addSpacing(20)
+        
+        love_msg = QLabel("Made with ❤️ at <span style='color: #E05555; font-weight: bold;'>FadSec Lab</span> in Pakistan 🇵🇰")
+        love_msg.setStyleSheet("font-size: 11px; color: #E8E8E8;")
+        love_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        about_lay.addWidget(love_msg)
+        
+        about_lay.addSpacing(12)
+        
+        # Copyright and website footer
+        footer_msg = QLabel(f"© 2024-2026 FadSec Lab • <a href='{__website_url__}' style='color: #E05555; text-decoration: none;'>{__website_url__.replace('https://', '')}</a>")
+        footer_msg.setStyleSheet("font-size: 9px; color: #888888;")
+        footer_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        footer_msg.setOpenExternalLinks(True)
+        about_lay.addWidget(footer_msg)
+        
         about_lay.addStretch()
         
         # Add scroll widget to scroll area

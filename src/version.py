@@ -4,7 +4,7 @@ Single source of truth for version, author, and metadata
 Update this file to change the version across the entire application
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0"
 __app_name__ = "FadCat"
 __description__ = "Advanced Logcat Viewer for Android Development"
 __author__ = "Faded"

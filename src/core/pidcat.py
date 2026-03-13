@@ -381,7 +381,14 @@ try:
               message = message.lstrip()
               owner = app_pid
 
-            if not args.all and owner not in pids: continue
+            # Filter by PID if we have collected any, otherwise use package name matching
+            if not args.all:
+              if pids and owner not in pids:
+                # We have PIDs collected, so skip if this PID isn't one we care about
+                continue
+              elif not pids and not match_packages(tag):
+                # No PIDs collected yet, filter by package name in the tag
+                continue
             if level in LOG_LEVELS_MAP and LOG_LEVELS_MAP[level] < min_level: continue
             if args.ignored_tag and tag_in_tags_regex(tag, args.ignored_tag): continue
             if args.tag and not tag_in_tags_regex(tag, args.tag): continue
