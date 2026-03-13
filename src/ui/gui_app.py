@@ -10,7 +10,7 @@ from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QStatusBar,
     QLabel, QWidget, QSizePolicy, QTabBar, QPushButton, QInputDialog, QFrame, QHBoxLayout,
-    QMenu, QToolButton,
+    QMenu,
 )
 from PyQt6.QtSvgWidgets import QSvgWidget
 from PyQt6.QtGui import QDesktopServices
@@ -30,6 +30,9 @@ class CustomTabBar(QTabBar):
         self._close_button_rects: dict[int, QRect] = {}
         self._hover_close_idx: int | None = None
         self.setMouseTracking(True)
+        # Set compact height for the tab bar
+        self.setFixedHeight(32)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -117,6 +120,17 @@ class CustomTabBar(QTabBar):
         action = menu.exec(event.globalPos())
         if action == act_rename:
             self.tabRenameRequested.emit(idx)
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().x() or event.angleDelta().y()
+        if delta == 0:
+            super().wheelEvent(event)
+            return
+        step = -1 if delta > 0 else 1
+        idx = max(0, min(self.count() - 1, self.currentIndex() + step))
+        if idx != self.currentIndex():
+            self.setCurrentIndex(idx)
+        event.accept()
 
 
 class ClickableLabel(QLabel):
@@ -250,7 +264,7 @@ class LogcatGUI(QMainWindow):
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setTabsClosable(False)  # Close handled by CustomTabBar
         self.tabs.setMovable(True)
-        self.tabs.setUsesScrollButtons(False)
+        self.tabs.setUsesScrollButtons(True)
         self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.setTabBarAutoHide(False)
@@ -259,30 +273,14 @@ class LogcatGUI(QMainWindow):
         custom_tabbar = CustomTabBar()
         custom_tabbar.tabCloseRequested.connect(self._on_tab_close_requested)
         custom_tabbar.tabRenameRequested.connect(self._on_tab_rename_requested)
-        custom_tabbar.setUsesScrollButtons(False)
+        custom_tabbar.setUsesScrollButtons(True)
         custom_tabbar.setExpanding(False)
         custom_tabbar.setDrawBase(False)
         self.tabs.setTabBar(custom_tabbar)
 
-        # Tab navigation buttons (avoid scroller overlap artifacts)
-        btn_left = QToolButton()
-        btn_left.setObjectName("tabNav")
-        btn_left.setText("‹")
-        btn_left.setToolTip("Previous tab")
-        btn_left.clicked.connect(self._scroll_tab_left)
-        btn_left.setFixedSize(26, 26)
-        btn_left.setAutoRaise(False)
-
-        btn_right = QToolButton()
-        btn_right.setObjectName("tabNav")
-        btn_right.setText("›")
-        btn_right.setToolTip("Next tab")
-        btn_right.clicked.connect(self._scroll_tab_right)
-        btn_right.setFixedSize(26, 26)
-        btn_right.setAutoRaise(False)
-
-        self.tabs.setCornerWidget(btn_left, Qt.Corner.TopLeftCorner)
-        self.tabs.setCornerWidget(btn_right, Qt.Corner.TopRightCorner)
+        # Clear corner widgets to allow built-in scrollers to show correctly
+        self.tabs.setCornerWidget(None, Qt.Corner.TopLeftCorner)
+        self.tabs.setCornerWidget(None, Qt.Corner.TopRightCorner)
         
         self.tabs.currentChanged.connect(self._refresh_statusbar)
         self.tabs.currentChanged.connect(self._save_sessions)
@@ -532,17 +530,7 @@ class LogcatGUI(QMainWindow):
             
             self._save_sessions()
 
-    def _scroll_tab_left(self):
-        if self.tabs.count() == 0:
-            return
-        idx = max(0, self.tabs.currentIndex() - 1)
-        self.tabs.setCurrentIndex(idx)
 
-    def _scroll_tab_right(self):
-        if self.tabs.count() == 0:
-            return
-        idx = min(self.tabs.count() - 1, self.tabs.currentIndex() + 1)
-        self.tabs.setCurrentIndex(idx)
 
     def _save_sessions(self):
         """Persist current session titles to settings."""
