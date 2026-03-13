@@ -63,6 +63,8 @@ class ProcessReader(QtCore.QThread):
         - Missing command-line arguments (set sys.argv)
         """
         import sys as _sys
+        import os
+        import platform
         from pathlib import Path
         
         pidcat_file = Path(pidcat_path)
@@ -76,13 +78,33 @@ class ProcessReader(QtCore.QThread):
             self.finished.emit()
             return
         
-        # Save original sys.argv to restore later
+        # Determine bundled ADB path
+        system = platform.system()
+        if getattr(_sys, '_MEIPASS', None):
+            # Running as bundled app (PyInstaller)
+            base_path = Path(_sys._MEIPASS) / "platform-tools" / system.lower()
+        else:
+            # Fallback to macOS default for testing
+            base_path = Path(_sys.executable).parent.parent / "Resources" / "platform-tools" / system.lower()
+        
+        adb_binary = "adb.exe" if system == "Windows" else "adb"
+        bundled_adb_path = str(base_path / adb_binary)
+        
+        # Save original sys.argv, sys.frozen, and environment to restore later
         original_argv = _sys.argv
+        original_frozen = getattr(_sys, 'frozen', False)
+        original_adb_override = os.environ.get('FADCAT_ADB_PATH', None)
         
         try:
             # Set sys.argv to pidcat's arguments so argparse works correctly
             # Format: ['pidcat.py', '-s', 'device', 'package', ...]
             _sys.argv = [str(pidcat_file)] + (pidcat_args or [])
+            
+            # Ensure sys.frozen is True
+            _sys.frozen = True
+            
+            # Set environment variable to override ADB path
+            os.environ['FADCAT_ADB_PATH'] = bundled_adb_path
             
             with open(pidcat_path, 'r') as f:
                 pidcat_code = f.read()
@@ -103,6 +125,8 @@ class ProcessReader(QtCore.QThread):
                 'print': self._emit_print,
                 # Override input to handle missing stdin in exec mode
                 'input': _safe_input,
+                # Make sys.frozen available in the namespace
+                'sys': _sys,
             }
             
             # Execute pidcat code
@@ -122,8 +146,13 @@ class ProcessReader(QtCore.QThread):
             self.line_ready.emit("--- Traceback ---\n")
             self.line_ready.emit(traceback.format_exc())
         finally:
-            # Restore original sys.argv
+            # Restore original sys.argv, sys.frozen, and environment variable
             _sys.argv = original_argv
+            _sys.frozen = original_frozen
+            if original_adb_override is None:
+                os.environ.pop('FADCAT_ADB_PATH', None)
+            else:
+                os.environ['FADCAT_ADB_PATH'] = original_adb_override
             self.finished.emit()
     
     def _emit_print(self, *args, **kwargs):

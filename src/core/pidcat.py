@@ -70,10 +70,9 @@ def check_adb_device():
             print("❌ ERROR: No authorized ADB device found. Please connect a device with USB debugging enabled.", file=sys.stderr)
             sys.exit(1)
             
-        # If we have one device, or device selection parameters are already provided, we're good
+        # If we have one device, or device selection parameters are already provided, we're good (silent mode)
         if len(authorized_devices) == 1 or args.device_serial or args.use_device or args.use_emulator:
-            print(f"✅ Found {len(authorized_devices)} device(s).")
-            return None  # No need to select a device
+            return None  # Device already selected or only one available - no need to select
             
         # If we have multiple devices and no selection made, ask the user
         print(f"📱 Multiple devices found ({len(authorized_devices)}). Please select one:")
@@ -258,14 +257,6 @@ if args.clear_logcat:
   except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
     print("Warning: Could not clear log buffer. This is common on newer Android versions.")
 
-class FakeStdinProcess():
-  def __init__(self):
-    self.stdout = sys.stdin
-    self.returncode = None
-  
-  def poll(self):
-    return None
-
 pids = set()
 last_tag = None
 app_pid = None
@@ -299,11 +290,8 @@ def parse_start_proc(line):
 def tag_in_tags_regex(tag, tags):
   return any(re.match(r'^' + t + r'$', tag, re.IGNORECASE) for t in map(str.strip, tags))
 
-# Initialize ADB connection
-if sys.stdin.isatty():
-    adb = subprocess.Popen(adb_command, stdin=PIPE, stdout=PIPE, text=True)
-else:
-    adb = FakeStdinProcess()
+# Initialize ADB connection - always run the actual adb logcat subprocess
+adb = subprocess.Popen(adb_command, stdin=PIPE, stdout=PIPE, text=True)
 
 if not args.all:
     ps_command = base_adb_command + ['shell', 'ps']

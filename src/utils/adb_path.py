@@ -9,6 +9,11 @@ def get_adb_path():
     """
     Get the path to the ADB binary.
     
+    Priority:
+    1. Environment variable FADCAT_ADB_PATH (set by ProcessReader for bundled mode)
+    2. Bundled ADB for PyInstaller apps
+    3. Development ADB from build/platform-tools
+    
     For bundled apps (PyInstaller):
     - macOS: bundle/Contents/Resources/adb
     - Linux: dist/adb
@@ -20,6 +25,13 @@ def get_adb_path():
     Raises:
         RuntimeError: If ADB cannot be found
     """
+    # Check for environment variable override (set by ProcessReader in bundled mode)
+    if 'FADCAT_ADB_PATH' in os.environ:
+        adb_path = os.environ['FADCAT_ADB_PATH']
+        if os.path.exists(adb_path):
+            return adb_path
+        # Fall through to normal detection if env var path doesn't exist
+    
     system = platform.system()
     is_bundled = getattr(sys, 'frozen', False)
     
