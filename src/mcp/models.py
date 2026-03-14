@@ -182,6 +182,31 @@ class SystemInfo(BaseModel):
     uptime_seconds: Optional[int] = None
     cpu_cores: Optional[int] = None
     cpu_frequency: Optional[int] = None  # MHz
+    total_storage: Optional[int] = None  # Total storage in bytes
+    used_storage: Optional[int] = None  # Used storage in bytes
+    available_storage: Optional[int] = None  # Available storage in bytes
+
+
+class MediaFile(BaseModel):
+    """Information about a media file pulled from device."""
+    filename: str
+    size_bytes: int
+    timestamp: str  # Device timestamp
+    local_path: str  # Path where file was saved locally
+    media_type: str  # "video" or "screenshot"
+    camera_type: Optional[str] = None  # "back", "front", or None for screenshots
+
+
+class FadCamMediaPullResult(BaseModel):
+    """Result of pulling FadCam media files."""
+    device: str
+    package: str
+    media_type: str  # "videos", "screenshots", or "all"
+    output_dir: str
+    files_pulled: List[MediaFile]
+    total_files: int
+    total_size_bytes: int
+    errors: List[str] = []
 
 
 class MCPServerStatus(BaseModel):

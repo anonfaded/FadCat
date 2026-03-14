@@ -285,6 +285,113 @@ async def get_system_info(device: str) -> str:
         return json.dumps({"error": str(e)})
 
 
+@server.tool()
+async def pull_fadcam_media(device: str, package: str, media_type: str = "all",
+                           output_dir: str = "./fadcam_media", limit: Optional[int] = None) -> str:
+    """Pull FadCam media files from device
+    
+    Pulls videos and screenshots from FadCam apps (com.fadcam, com.fadcam.beta, etc.).
+    Supports all storage modes and app variants automatically.
+    
+    Args:
+        device: Device serial number
+        package: App package (auto-detects all com.fadcam.* variants)
+        media_type: Type of media to pull ("videos", "screenshots", or "all")
+        output_dir: Local directory to save files
+        limit: Maximum number of files to pull (optional)
+    """
+    logger.info(f"Tool called: pull_fadcam_media for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_pull_fadcam_media(device, package, media_type, output_dir, limit)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in pull_fadcam_media")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool()
+async def fadcam_list_packages(device: str) -> str:
+    """List all FadCam packages installed on a device"""
+    logger.info(f"Tool called: fadcam_list_packages for device {device}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_list_packages(device)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_list_packages")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool()
+async def fadcam_detect_storage(device: str, package: str) -> str:
+    """Detect FadCam storage configuration for a package"""
+    logger.info(f"Tool called: fadcam_detect_storage for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_detect_storage(device, package)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_detect_storage")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool()
+async def fadcam_list_structure(device: str, package: str) -> str:
+    """List FadCam directory structure and file counts"""
+    logger.info(f"Tool called: fadcam_list_structure for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_list_structure(device, package)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_list_structure")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool()
+async def fadcam_get_metadata(device: str, package: str, file_path: str) -> str:
+    """Get metadata for a specific FadCam video file"""
+    logger.info(f"Tool called: fadcam_get_metadata for device {device}, package {package}, path {file_path}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_get_metadata(device, package, file_path)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_get_metadata")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool()
+async def fadcam_pull_files(device: str, package: str, output_dir: str = "./fadcam_files",
+                           category: Optional[str] = None, camera: Optional[str] = None,
+                           limit: Optional[int] = None, date_from: Optional[str] = None,
+                           date_to: Optional[str] = None) -> str:
+    """Pull FadCam files with advanced filtering options"""
+    logger.info(f"Tool called: fadcam_pull_files for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_pull_files(device, package, output_dir, category, camera, limit, date_from, date_to)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_pull_files")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool()
+async def fadcam_browse_files(device: str, package: str, category: Optional[str] = None,
+                             camera: Optional[str] = None, limit: int = 50) -> str:
+    """Browse FadCam files without downloading - returns metadata only"""
+    logger.info(f"Tool called: fadcam_browse_files for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_browse_files(device, package, category, camera, limit)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_browse_files")
+        return json.dumps({"error": str(e)})
+
+
 # ============================================================================
 # RESOURCES - URI-based Android data access
 # ============================================================================
