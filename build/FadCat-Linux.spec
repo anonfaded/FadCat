@@ -1,13 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec for FadCat on Linux
-# Creates a folder-based distribution
+# Bundles ADB for ALL Linux architectures (x86_64 and ARM64)
 # Build with: pyinstaller FadCat-Linux.spec
 
 import os
 import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_all
+from pathlib import Path
 
-# Import version info from single source of truth
 sys.path.insert(0, os.path.abspath('.'))
 try:
     from src.version import __version__, __app_name__, __company__
@@ -16,8 +16,29 @@ except ImportError:
     __app_name__ = "FadCat"
     __company__ = "FadSec Lab"
 
-# Collect all fastmcp data and binaries (CRITICAL for bundling)
 datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
+
+# Bundle ADB for ALL Linux architectures
+project_root = Path(__file__).parent.parent
+platform_tools_dir = project_root / "build" / "platform-tools"
+
+linux_datas = []
+
+# Linux x86_64
+adb_x86_64 = platform_tools_dir / "linux_x86_64" / "adb"
+if adb_x86_64.exists():
+    linux_datas.append((str(adb_x86_64), 'platform-tools/linux_x86_64/adb'))
+    print("✓ Bundling ADB for Linux x86_64")
+else:
+    print("✗ Missing: Linux x86_64 ADB")
+
+# Linux ARM64 (aarch64)
+adb_arm64 = platform_tools_dir / "linux_aarch64" / "adb"
+if adb_arm64.exists():
+    linux_datas.append((str(adb_arm64), 'platform-tools/linux_aarch64/adb'))
+    print("✓ Bundling ADB for Linux ARM64")
+else:
+    print("✗ Missing: Linux ARM64 ADB")
 
 block_cipher = None
 
@@ -29,21 +50,18 @@ a = Analysis(
         ('../src', 'src'),
         ('../fadcat_cli.py', '.'),
         ('../FadCat.py', '.'),
-        ('../build/platform-tools/linux/adb', 'platform-tools/linux'),
         ('../build/linux/uninstall.sh', 'build/linux'),
-    ] + datas_fastmcp,
+    ] + linux_datas + datas_fastmcp,
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',
         'PyQt6.QtGui',
         'PyQt6.QtWidgets',
         'PyQt6.QtSvg',
-        'PyQt6.QtSvgWidgets',
         'PyQt6.sip',
         'rapidfuzz',
         'rapidfuzz.fuzz',
         'colorama',
-        # FastMCP and its bundled dependencies (3.1.0)
         'fastmcp',
         'mcp',
         'mcp.server',

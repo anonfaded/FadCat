@@ -1,9 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec for FadCat on macOS
+# Bundles ADB for ALL macOS architectures (Intel x86_64 and Apple Silicon ARM64)
+# Build with: pyinstaller FadCat-macOS.spec
 
-# Import version info from single source of truth
 import os
 import sys
+from pathlib import Path
 sys.path.insert(0, os.path.abspath('.'))
 try:
     from src.version import __version__, __app_name__, __company__, __author__
@@ -13,9 +15,29 @@ except ImportError:
     __company__ = "FadSec Lab"
     __author__ = "Faded"
 
-# Collect all fastmcp data and binaries (CRITICAL for bundling)
-from PyInstaller.utils.hooks import collect_data_files, collect_all
 datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
+
+# Bundle ADB for ALL macOS architectures
+project_root = Path(__file__).parent.parent
+platform_tools_dir = project_root / "build" / "platform-tools"
+
+macos_datas = []
+
+# macOS x86_64 (Intel)
+adb_x86_64 = platform_tools_dir / "macos_x86_64" / "adb"
+if adb_x86_64.exists():
+    macos_datas.append((str(adb_x86_64), 'platform-tools/macos_x86_64/adb'))
+    print("✓ Bundling ADB for macOS x86_64 (Intel)")
+else:
+    print("✗ Missing: macOS x86_64 ADB")
+
+# macOS ARM64 (Apple Silicon)
+adb_arm64 = platform_tools_dir / "macos_arm64" / "adb"
+if adb_arm64.exists():
+    macos_datas.append((str(adb_arm64), 'platform-tools/macos_arm64/adb'))
+    print("✓ Bundling ADB for macOS ARM64 (Apple Silicon)")
+else:
+    print("✗ Missing: macOS ARM64 ADB")
 
 block_cipher = None
 
@@ -27,21 +49,18 @@ a = Analysis(
         ('../src', 'src'),
         ('../fadcat_cli.py', '.'),
         ('../FadCat.py', '.'),
-        ('../build/platform-tools/macos/adb', 'platform-tools/macos'),
         ('../build/macos/uninstall.sh', 'build/macos'),
-    ] + datas_fastmcp,
+    ] + macos_datas + datas_fastmcp,
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',
         'PyQt6.QtGui',
         'PyQt6.QtWidgets',
         'PyQt6.QtSvg',
-        'PyQt6.QtSvgWidgets',
         'PyQt6.sip',
         'rapidfuzz',
         'rapidfuzz.fuzz',
         'colorama',
-        # FastMCP and its bundled dependencies (3.1.0)
         'fastmcp',
         'mcp',
         'mcp.server',
