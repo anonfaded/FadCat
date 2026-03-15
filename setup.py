@@ -10,7 +10,7 @@ readme = (Path(__file__).parent / "README.md").read_text(encoding="utf-8")
 setup(
     name="fadcat",
     version="1.0.0",
-    description="Advanced Android logcat viewer with fuzzy search and real-time highlighting",
+    description="Advanced lightweight Cross-Platform Logcat viewer — Multi-Tab sessions, filtering, device packages list, and customizable settings",
     long_description=readme,
     long_description_content_type="text/markdown",
     author="FadSecLab",
