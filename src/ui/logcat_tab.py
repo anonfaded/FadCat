@@ -2670,7 +2670,7 @@ class LogcatTab(QWidget):
 
     def save_log(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save log", f"logcat_{datetime.now():%Y%m%d_%H%M%S}.txt",
+            self, "Save log", f"fadcat_{datetime.now():%Y%m%d_%H%M%S}.txt",
             "Text files (*.txt);;All files (*)"
         )
         if path:
