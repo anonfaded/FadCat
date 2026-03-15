@@ -621,17 +621,17 @@ class VirtualLogView(QAbstractScrollArea):
                 h = self._layout_height(line, width)
                 total += h
                 heights.append(total)
-            if not self._wrap:
+            if not self._wrap and last_line is not None:
                 if not hasattr(last_line, "plain_width") or last_line.plain_width is None:
                     last_line.plain_width = self.fontMetrics().horizontalAdvance(last_line.plain)
                 max_width = max(max_width, last_line.plain_width)
             # Also calculate tag column width for scrollbar in non-wrap mode
-            if last_line and (not hasattr(last_line, "tag_width") or last_line.tag_width is None):
+            if last_line is not None and (not hasattr(last_line, "tag_width") or last_line.tag_width is None):
                 if last_line.tag:
                     last_line.tag_width = self.fontMetrics().horizontalAdvance(last_line.tag)
                 else:
                     last_line.tag_width = 0
-            if last_line:
+            if last_line is not None:
                 self._tag_col_width_cache = max(self._tag_col_width_cache, last_line.tag_width)
             self._prefix_heights = heights
             self._total_height = total
@@ -2212,43 +2212,57 @@ class LogcatTab(QWidget):
         import sys as _sys
 
         pidcat_path = get_pidcat_path()
-        
-        # In bundled mode (sys.frozen), we must NOT use subprocess because 
-        # sys.executable points to the FadCat app, which would re-launch it!
-        # Instead, we'll modify ProcessReader to handle this.
-        if getattr(_sys, 'frozen', False):
-            # Bundled mode: run pidcat via exec in ProcessReader
-            cmd = ['__exec_pidcat__', pidcat_path]
-        else:
-            # Dev mode: normal subprocess with Python
-            python_executable = get_python_executable()
-            cmd = [python_executable, pidcat_path]
-        if package:
-            cmd.append(package)
-
-        if device:
-            cmd.extend(['-s', device])
-
+        package = self._selected_package()
+        device = self.device_combo.currentText()
         settings = SettingsManager.load()
+
+        # Build pidcat arguments in correct order:
+        # pidcat.py [package] [-s device] [-w padding] [-i ignored] ...
+        pidcat_args = []
+        if package:
+            pidcat_args.append(package)
+        if device and device != "(no devices)":
+            pidcat_args.extend(['-s', device])
+
         tag_padding = settings.get("tag_padding", 16)
         try:
             tag_padding = int(tag_padding)
         except Exception:
             tag_padding = 16
         if tag_padding >= 4:
-            cmd.extend(['-w', str(tag_padding)])
+            pidcat_args.extend(['-w', str(tag_padding)])
         ignored_tags = settings.get("ignored_tags", [])
         for tag in ignored_tags:
-            cmd.extend(['-i', tag])
+            pidcat_args.extend(['-i', tag])
 
-        env = None
+        # Use subprocess with --child-pidcat flag for bundled mode
+        # This avoids the exec() approach which can cause segfaults on Linux
+        if getattr(_sys, 'frozen', False):
+            # Bundled mode: use FadCat binary with --child-pidcat flag
+            python_executable = get_python_executable()
+            cmd = [python_executable, '--child-pidcat', '--package', pidcat_path] + pidcat_args
+            # Pass environment with FORCE_COLOR_OUTPUT to ensure colors are preserved
+            env = os.environ.copy()
+            env['FORCE_COLOR_OUTPUT'] = '1'
+            env['TERM'] = 'xterm-256color'
+            env['FORCE_COLOR'] = '1'
+        else:
+            # Dev mode: normal subprocess with Python
+            python_executable = get_python_executable()
+            cmd = [python_executable, pidcat_path] + pidcat_args
+            env = None
 
         self._reader = ProcessReader(cmd=cmd, env=env)
         self._reader.line_ready.connect(self._append_line)
         self._reader.finished.connect(self._on_reader_finished)
         self._reader.start()
 
-    def stop_capture(self, wait: bool = False):
+    def stop_capture(self, wait: bool = True):
+        """Stop logcat capture.
+        
+        Args:
+            wait: If True, wait for thread to finish (prevents QThread crash)
+        """
         if self._stopping:
             return
         self._stopping = True
@@ -2257,8 +2271,9 @@ class LogcatTab(QWidget):
                 self._reader.stop()
             except Exception:
                 pass
-        if self._reader and wait:
-            self._reader.wait(500)
+        # Always wait for thread to finish to prevent "QThread: Destroyed while thread is still running"
+        if self._reader:
+            self._reader.wait(1000)  # Wait up to 1 second
 
     def _on_reader_finished(self):
         self._running = False

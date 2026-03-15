@@ -22,6 +22,7 @@ limitations under the License.
 # Package filtering and output improvements by Jake Wharton, http://jakewharton.com
 
 import argparse
+import os
 import sys
 import re
 import subprocess
@@ -31,14 +32,20 @@ import colorama
 from pathlib import Path
 
 # Ensure project root is in sys.path for imports to work when run as a script
-_project_root = str(Path(__file__).parent.parent.parent)
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+# In bundled mode, _MEIPASS is set and modules are in _internal/src
+if getattr(sys, 'frozen', False):
+    # Bundled mode - modules are already in sys.path via _internal
+    pass
+else:
+    # Dev mode - add project root to sys.path
+    _project_root = str(Path(__file__).parent.parent.parent)
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
 
 from src.utils.adb_path import get_adb_path
 from src.version import __version__
 
-# Initialize colorama to process ANSI escape codes on Windows
+# Initialize colorama to process ANSI escape codes
 colorama.init()
 
 # A sensible version bump reflecting new features.
@@ -180,7 +187,8 @@ elif len(package) > 0:
     print(f"📦 Filtering: {pkg_list}\n", file=sys.stderr)
 
 header_size = args.tag_width + 1 + 3 + 1
-stdout_isatty = sys.stdout.isatty()
+# Check if stdout is a TTY, or if we're forcing color output (for subprocess/bundled mode)
+stdout_isatty = sys.stdout.isatty() or os.environ.get('FORCE_COLOR_OUTPUT') == '1'
 
 width = -1
 try:

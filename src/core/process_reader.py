@@ -21,7 +21,7 @@ class ProcessReader(QtCore.QThread):
         self._exec_stop_requester = None  # For exec mode stop requests
 
     def stop(self):
-        # Terminate the child process and close PTY to break read loop
+        """Terminate the child process and close PTY to break read loop."""
         self._stop_requested = True
         # Also signal exec mode to stop if running
         if self._exec_stop_requester:
@@ -51,118 +51,97 @@ class ProcessReader(QtCore.QThread):
             self._pty_master = None
 
     def _run_pidcat_via_exec(self, pidcat_path, pidcat_args=None):
-        """Run pidcat.py directly via exec() to avoid subprocess re-launching FadCat app.
-        
+        """Run pidcat.py via exec() to avoid subprocess re-launching FadCat app.
+
         This is called in bundled mode to execute pidcat code directly without subprocess,
         which would cause sys.executable (the FadCat app binary) to be re-launched.
-        
-        Args:
-            pidcat_path: Path to pidcat.py script
-            pidcat_args: List of arguments to pass to pidcat (e.g., ['-s', 'device', 'package'])
-        
-        Edge cases handled:
-        - pidcat.py not found in bundle
-        - Import errors due to missing modules
-        - Interrupted execution (Ctrl+C)
-        - Missing command-line arguments (set sys.argv)
+
+        Note: This approach works on macOS but can cause segfaults on Linux due to
+        Qt thread safety issues with subprocess calls inside exec().
         """
         import sys as _sys
         import os
         import platform
         from pathlib import Path
-        
+
         pidcat_file = Path(pidcat_path)
-        
-        # Edge case 1: Check if file exists
+
         if not pidcat_file.exists():
             self.line_ready.emit(f"❌ Error: pidcat script not found at {pidcat_path}\n")
-            self.line_ready.emit(f"   Expected location: {pidcat_file}\n")
-            self.line_ready.emit(f"   sys._MEIPASS: {getattr(_sys, '_MEIPASS', 'N/A')}\n")
-            self.line_ready.emit(f"   sys.executable: {_sys.executable}\n")
             self.finished.emit()
             return
-        
+
         # Determine bundled ADB path
         system = platform.system()
-        if getattr(_sys, '_MEIPASS', None):
-            # Running as bundled app (PyInstaller)
+        if hasattr(_sys, '_MEIPASS'):
             base_path = Path(_sys._MEIPASS) / "platform-tools" / system.lower()
         else:
-            # Fallback to macOS default for testing
             base_path = Path(_sys.executable).parent.parent / "Resources" / "platform-tools" / system.lower()
-        
+
         adb_binary = "adb.exe" if system == "Windows" else "adb"
         bundled_adb_path = str(base_path / adb_binary)
-        
-        # Save original sys.argv, sys.frozen, and environment to restore later
+
+        # Save original state
         original_argv = _sys.argv
         original_frozen = getattr(_sys, 'frozen', False)
         original_adb_override = os.environ.get('FADCAT_ADB_PATH', None)
-        
+
         try:
-            # Set sys.argv to pidcat's arguments so argparse works correctly
-            # Format: ['pidcat.py', '-s', 'device', 'package', ...]
+            # Setup for pidcat execution
             _sys.argv = [str(pidcat_file)] + (pidcat_args or [])
-            
-            # Ensure sys.frozen is True
             _sys.frozen = True
-            
-            # Set environment variable to override ADB path
             os.environ['FADCAT_ADB_PATH'] = bundled_adb_path
-            
+
+            # Add _internal to sys.path for imports to work
+            if hasattr(_sys, '_MEIPASS'):
+                _internal_path = Path(_sys._MEIPASS)
+                if (_internal_path / '_internal').exists():
+                    _internal_path = _internal_path / '_internal'
+                if str(_internal_path) not in _sys.path:
+                    _sys.path.insert(0, str(_internal_path))
+
+            # Read pidcat code
             with open(pidcat_path, 'r') as f:
                 pidcat_code = f.read()
-            
-            # Create a namespace for pidcat execution with custom print and input that emits signals
+
+            # Create namespace for execution
             def _safe_input(prompt=""):
-                """Fallback input() for when stdin is not available in exec mode."""
                 self._emit_print(prompt, end="")
-                # In exec mode, we can't read from stdin, so raise EOFError to trigger pidcat's error handling
-                raise EOFError("No stdin available in bundled exec mode")
-            
+                raise EOFError("No stdin available")
+
             class _StopRequester:
-                """Flag object that pidcat's main loop can check to see if stop was requested."""
                 def __init__(self):
                     self.stop = False
-            
+
             stop_requester = _StopRequester()
-            self._exec_stop_requester = stop_requester  # Store so stop() can access it
-            
+            self._exec_stop_requester = stop_requester
+
             namespace = {
                 '__name__': '__main__',
                 '__file__': pidcat_path,
                 '_process_reader': self,
-                '_original_print': print,
-                # Override print to emit lines via the signal
                 'print': self._emit_print,
-                # Override input to handle missing stdin in exec mode
                 'input': _safe_input,
-                # Make sys.frozen available in the namespace
                 'sys': _sys,
-                # Force colors on in exec mode (stdout.isatty() will be False)
                 '__stdout_isatty_override__': True,
-                # Stop request flag that pidcat's loop can check
                 '__stop_requester__': stop_requester,
             }
-            
+
             # Execute pidcat code
             exec(compile(pidcat_code, pidcat_path, 'exec'), namespace)
+
         except KeyboardInterrupt:
             self.line_ready.emit("--- FadCat stopped. ---\n")
-        except FileNotFoundError as e:
-            self.line_ready.emit(f"❌ Error: File not found: {e}\n")
-        except ImportError as e:
-            self.line_ready.emit(f"❌ Import Error: {e}\n")
-            self.line_ready.emit("   Make sure all dependencies are bundled in the app.\n")
-        except SyntaxError as e:
-            self.line_ready.emit(f"❌ Syntax Error in pidcat.py: {e}\n")
+        except SystemExit as e:
+            # pidcat called sys.exit() - this is normal
+            self.line_ready.emit(f"--- pidcat exited with code: {e.code} ---\n")
         except Exception as e:
             import traceback
             self.line_ready.emit(f"❌ Error running pidcat: {e}\n")
             self.line_ready.emit("--- Traceback ---\n")
             self.line_ready.emit(traceback.format_exc())
         finally:
-            # Restore original sys.argv, sys.frozen, and environment variable
+            # Restore original state
             _sys.argv = original_argv
             _sys.frozen = original_frozen
             if original_adb_override is None:
@@ -171,7 +150,7 @@ class ProcessReader(QtCore.QThread):
                 os.environ['FADCAT_ADB_PATH'] = original_adb_override
             self._exec_stop_requester = None
             self.finished.emit()
-    
+
     def _emit_print(self, *args, **kwargs):
         """Custom print function that emits lines via signal instead of to stdout."""
         end = kwargs.get('end', '\n')
@@ -180,11 +159,13 @@ class ProcessReader(QtCore.QThread):
         self.line_ready.emit(line)
 
     def run(self):
+        """Main thread execution - runs pidcat and emits output lines."""
         env = dict(self.env)
         env.setdefault('PYTHONUNBUFFERED', '1')
         # Encourage color output
         env.setdefault('TERM', 'xterm-256color')
         env.setdefault('FORCE_COLOR', '1')
+        env.setdefault('FORCE_COLOR_OUTPUT', '1')  # Force pidcat to output ANSI colors
         # Ask pidcat to treat the terminal as very wide so it doesn't hard-wrap lines
         env.setdefault('COLUMNS', '2000')
         env.setdefault('LINES', '2000')
@@ -259,17 +240,18 @@ class ProcessReader(QtCore.QThread):
                     self.process.stdin.flush()
                 except Exception:
                     pass
-
-            for line in iter(self.process.stdout.readline, ''):
-                if not line:
-                    break
-                self.line_ready.emit(line)
-
-            try:
-                if self.process.stdout:
-                    self.process.stdout.close()
-            except Exception:
-                pass
-            self.process.wait()
+            if self.process.stdout:
+                for line in iter(self.process.stdout.readline, ''):
+                    if self._stop_requested or self.isInterruptionRequested():
+                        break
+                    self.line_ready.emit(line)
+            if self.process:
+                try:
+                    self.process.wait(timeout=0.5)
+                except Exception:
+                    try:
+                        self.process.kill()
+                    except Exception:
+                        pass
         finally:
             self.finished.emit()

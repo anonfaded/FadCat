@@ -87,24 +87,32 @@ def main():
         # pidcat.py expects to execute when imported, so we use exec to run its code
         pidcat_path = sys.argv[1]
         pidcat_args = sys.argv[2:] if len(sys.argv) > 2 else []
-        
+
         # Update sys.argv to what pidcat expects
         sys.argv = [pidcat_path] + pidcat_args
-        
+
         try:
             with open(pidcat_path, 'r') as f:
                 pidcat_code = f.read()
-            # Execute pidcat code with proper namespace
-            exec(compile(pidcat_code, pidcat_path, 'exec'), {'__name__': '__main__'})
+            # Execute pidcat code with proper namespace including required modules
+            import os as _os
+            import sys as _sys
+            exec(compile(pidcat_code, pidcat_path, 'exec'), {
+                '__name__': '__main__',
+                'os': _os,
+                'sys': _sys,
+            })
         except Exception as e:
             import traceback
             print(f"Error running pidcat: {e}", file=sys.stderr)
             traceback.print_exc()
             sys.exit(1)
         return
-    
+
     # internal child-process mode used by ProcessReader
+    # Usage: fadcat --child-pidcat --package /path/to/pidcat.py [--device SERIAL] [PACKAGE_NAME]
     if '--child-pidcat' in sys.argv:
+        from src.core.pidcat_runner import run_pidcat_child
         run_pidcat_child()
         return
 

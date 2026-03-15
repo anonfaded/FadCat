@@ -1,8 +1,15 @@
+"""
+pidcat_runner.py - Helper functions for running pidcat in FadCat.
+
+This module provides functions to:
+- Get the path to the bundled pidcat.py script
+- Get the Python executable path
+- Run pidcat as a child process (for bundled mode)
+"""
 import os
 import sys
 import subprocess
 from pathlib import Path
-from src.core.settings import SettingsManager
 
 def get_pidcat_path():
     """Returns the path to the bundled pidcat script with robust fallback logic.
@@ -63,58 +70,101 @@ def get_python_executable():
     return sys.executable
 
 def run_pidcat_child():
-    """Child mode: run pidcat with the same behavior and forward stdout."""
-    pkg = None
-    dev = None
+    """Child mode: run pidcat via subprocess to avoid re-launching FadCat GUI.
+
+    Command line format:
+        fadcat --child-pidcat --package /path/to/pidcat.py [--device SERIAL] [PACKAGE_NAME] [PIDCAT_ARGS...]
+
+    This is used by ProcessReader in bundled mode to run pidcat without
+    causing the FadCat app to re-launch itself.
+    """
+    # Parse only our custom flags, pass everything else to pidcat
     argv = sys.argv[1:]
+    pidcat_path = None
+    device = None
+
     i = 0
     while i < len(argv):
-        a = argv[i]
-        if a == '--package' and i + 1 < len(argv):
-            pkg = argv[i + 1]; i += 2; continue
-        if a == '--device' and i + 1 < len(argv):
-            dev = argv[i + 1]; i += 2; continue
-        i += 1
+        if argv[i] == '--child-pidcat':
+            i += 1
+        elif argv[i] == '--package' and i + 1 < len(argv):
+            pidcat_path = argv[i + 1]
+            i += 2
+        elif argv[i] == '--device' and i + 1 < len(argv):
+            device = argv[i + 1]
+            i += 2
+        else:
+            break
+
+    # Remaining args are for pidcat (package name + pidcat flags like -w, -i, etc.)
+    pidcat_args = argv[i:]
+
     env = os.environ.copy()
-    if dev:
-        env['ANDROID_SERIAL'] = dev
-    
-    # Ensure project root is in PYTHONPATH for subprocess
+    if device:
+        env['ANDROID_SERIAL'] = device
+
+    # Ensure project root is in PYTHONPATH
     project_root = str(Path(__file__).parent.parent.parent)
     pythonpath = env.get('PYTHONPATH', '')
     if project_root not in pythonpath:
         env['PYTHONPATH'] = project_root + ':' + pythonpath if pythonpath else project_root
-        
-    settings = SettingsManager.load()
-    package = pkg or settings.get("default_package", "com.fadcam.beta")
-    
-    pidcat_path = get_pidcat_path()
+
+    if not pidcat_path:
+        pidcat_path = get_pidcat_path()
+
     python_executable = get_python_executable()
-    
-    # Build pidcat command with ignored tags
-    cmd = [python_executable, pidcat_path, package]
-    
-    # Add ignored tags from settings
-    ignored_tags = settings.get("ignored_tags", [])
-    for tag in ignored_tags:
-        cmd.extend(['-i', tag])
-    
-    try:
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
-        for line in iter(p.stdout.readline, ''):
-            if not line:
-                break
-            sys.stdout.write(line)
-            sys.stdout.flush()
+
+    # Build pidcat command: python pidcat.py [package] [pidcat_args...]
+    cmd = [python_executable, pidcat_path] + pidcat_args
+
+    # On POSIX, use PTY to preserve ANSI colors (pidcat checks isatty)
+    if os.name == 'posix':
+        import pty
+        import select
+        master, slave = pty.openpty()
+        p = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=slave, env=env, close_fds=True)
+        os.close(slave)
         try:
-            p.stdout.close()
-        except Exception:
+            while True:
+                r, _, _ = select.select([master], [], [], 0.2)
+                if r:
+                    chunk = os.read(master, 4096)
+                    if not chunk:
+                        break
+                    sys.stdout.write(chunk.decode('utf-8', errors='replace'))
+                    sys.stdout.flush()
+        except KeyboardInterrupt:
             pass
-        p.wait()
-    except KeyboardInterrupt:
+        finally:
+            try:
+                os.close(master)
+            except OSError:
+                pass
+            try:
+                p.wait(timeout=0.5)
+            except Exception:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+    else:
+        # Windows fallback: use PIPE
         try:
-            if p and getattr(p, 'terminate', None):
-                p.terminate()
-        except Exception:
-            pass
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+            for line in iter(p.stdout.readline, ''):
+                if not line:
+                    break
+                sys.stdout.write(line)
+                sys.stdout.flush()
+            try:
+                p.stdout.close()
+            except OSError:
+                pass
+            p.wait()
+        except KeyboardInterrupt:
+            try:
+                if p and getattr(p, 'terminate', None):
+                    p.terminate()
+            except OSError:
+                pass
     sys.exit(0)
