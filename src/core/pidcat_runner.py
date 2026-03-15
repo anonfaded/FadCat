@@ -11,9 +11,10 @@ import sys
 import subprocess
 from pathlib import Path
 
+
 def get_pidcat_path():
     """Returns the path to the bundled pidcat script with robust fallback logic.
-    
+
     Handles multiple bundle structures:
     - macOS app bundle: Contents/Resources/src/core/pidcat.py
     - Linux dist folder: _internal/src/core/pidcat.py
@@ -24,27 +25,30 @@ def get_pidcat_path():
         # Running as bundled PyInstaller app
         base_dir = Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent))
         pidcat_path = base_dir / "src" / "core" / "pidcat.py"
-        
+
         if pidcat_path.exists():
             return str(pidcat_path)
-        
-        # Fallback 1: Try one level up (sometimes _MEIPASS might be wrong)
+
+        # Fallback 1: Try one level up
         fallback1 = base_dir.parent / "src" / "core" / "pidcat.py"
         if fallback1.exists():
             return str(fallback1)
-        
+
         # Fallback 2: Search in common PyInstaller locations
         fallback2 = Path(sys.executable).parent / "src" / "core" / "pidcat.py"
         if fallback2.exists():
             return str(fallback2)
-        
+
         # Fallback 3: Search relative to frozen app
         if hasattr(sys, 'frozen') and sys.frozen == 'macosx_app':
-            # macOS app: executable is in MacOS/, resources are in Resources/
-            app_resources = Path(sys.executable).parent.parent / "Resources" / "src" / "core" / "pidcat.py"
+            # macOS app: executable in MacOS/, resources in Resources/
+            app_resources = (
+                Path(sys.executable).parent.parent
+                / "Resources" / "src" / "core" / "pidcat.py"
+            )
             if app_resources.exists():
                 return str(app_resources)
-        
+
         # If all else fails, raise error with debugging info
         raise FileNotFoundError(
             f"pidcat.py not found in bundled app.\n"
@@ -57,23 +61,26 @@ def get_pidcat_path():
         project_root = Path(__file__).parent.parent.parent
         return str(project_root / "src" / "core" / "pidcat.py")
 
+
 def get_python_executable():
     """Returns the bundled Python executable.
-    
+
     In both dev and bundled modes, sys.executable IS the Python interpreter:
     - Dev mode: system Python running FadCat.py
     - Bundled mode: PyInstaller-bundled Python (FadCat app binary IS Python)
-    
+
     Note: In bundled mode, pidcat runs via exec() in FadCat.py (not subprocess)
     to avoid re-launching the FadCat app window.
     """
     return sys.executable
 
+
 def run_pidcat_child():
     """Child mode: run pidcat via subprocess to avoid re-launching FadCat GUI.
 
     Command line format:
-        fadcat --child-pidcat --package /path/to/pidcat.py [--device SERIAL] [PACKAGE_NAME] [PIDCAT_ARGS...]
+        fadcat --child-pidcat --package /path/to/pidcat.py \\
+               [--device SERIAL] [PACKAGE_NAME] [PIDCAT_ARGS...]
 
     This is used by ProcessReader in bundled mode to run pidcat without
     causing the FadCat app to re-launch itself.
@@ -96,7 +103,7 @@ def run_pidcat_child():
         else:
             break
 
-    # Remaining args are for pidcat (package name + pidcat flags like -w, -i, etc.)
+    # Remaining args are for pidcat
     pidcat_args = argv[i:]
 
     env = os.environ.copy()
@@ -114,15 +121,19 @@ def run_pidcat_child():
 
     python_executable = get_python_executable()
 
-    # Build pidcat command: python pidcat.py [package] [pidcat_args...]
+    # Build pidcat command
     cmd = [python_executable, pidcat_path] + pidcat_args
 
     # On POSIX, use PTY to preserve ANSI colors (pidcat checks isatty)
     if os.name == 'posix':
         import pty
         import select
+
         master, slave = pty.openpty()
-        p = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=slave, env=env, close_fds=True)
+        p = subprocess.Popen(
+            cmd, stdin=slave, stdout=slave, stderr=slave,
+            env=env, close_fds=True
+        )
         os.close(slave)
         try:
             while True:
@@ -142,15 +153,18 @@ def run_pidcat_child():
                 pass
             try:
                 p.wait(timeout=0.5)
-            except Exception:
+            except BaseException:
                 try:
                     p.kill()
-                except Exception:
+                except BaseException:
                     pass
     else:
         # Windows fallback: use PIPE
         try:
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+            p = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, env=env
+            )
             for line in iter(p.stdout.readline, ''):
                 if not line:
                     break
