@@ -65,19 +65,19 @@ def is_binary_compatible(adb_path):
 def get_adb_path():
     """
     Get the path to the ADB binary (bundled only - no system fallback).
-    
+
     FadCat bundles ADB for all supported architectures:
     - Linux: x86_64, ARM64 (aarch64)
     - macOS: x86_64 (Intel), ARM64 (Apple Silicon)
     - Windows: x86_64, ARM64
-    
+
     Priority:
     1. Environment variable FADCAT_ADB_PATH (set by ProcessReader for bundled mode)
     2. Bundled ADB for current architecture
-    
+
     Returns:
         str: Full path to adb executable
-    
+
     Raises:
         RuntimeError: If ADB cannot be found
     """
@@ -90,35 +90,48 @@ def get_adb_path():
             f"FADCAT_ADB_PATH points to invalid binary: {adb_path}\n"
             f"Please ensure the path is correct and the binary is executable."
         )
-    
+
     system = platform.system()
     is_bundled = getattr(sys, 'frozen', False)
     arch_suffix = get_arch_suffix()
-    
+
     if arch_suffix is None:
         raise RuntimeError(
             f"Unsupported architecture: {get_current_arch()} on {system}\n"
             f"FadCat supports x86_64 and ARM64 on Linux, macOS, and Windows."
         )
-    
+
     # Determine path based on bundled vs development mode
     if is_bundled:
         # Running as bundled app (PyInstaller)
+        # macOS: Resources/platform-tools/{arch}/adb
+        # Linux: _internal/platform-tools/{arch}/adb
+        # Windows: _internal/platform-tools/{arch}/adb.exe
         if system == "Darwin":
+            # macOS .app bundle structure
             base_path = Path(sys.executable).parent.parent / "Resources" / "platform-tools" / arch_suffix
         elif system == "Linux":
-            base_path = Path(sys.executable).parent / "platform-tools" / arch_suffix
+            # Linux folder-based distribution
+            base_path = Path(sys.executable).parent / "_internal" / "platform-tools" / arch_suffix
         elif system == "Windows":
-            base_path = Path(sys.executable).parent / "platform-tools" / arch_suffix
+            # Windows folder-based distribution
+            base_path = Path(sys.executable).parent / "_internal" / "platform-tools" / arch_suffix
         else:
             raise RuntimeError(f"Unsupported platform: {system}")
-        
+
         adb_binary = "adb.exe" if system == "Windows" else "adb"
         adb_path = base_path / adb_binary
-        
+
         if adb_path.exists() and is_binary_compatible(adb_path):
             return str(adb_path)
-        
+
+        # Fallback for Linux: try without _internal
+        if system == "Linux":
+            base_path_fallback = Path(sys.executable).parent / "platform-tools" / arch_suffix
+            adb_path_fallback = base_path_fallback / adb_binary
+            if adb_path_fallback.exists() and is_binary_compatible(adb_path_fallback):
+                return str(adb_path_fallback)
+
         raise RuntimeError(
             f"Bundled ADB not found or incompatible.\n"
             f"Architecture: {get_current_arch()} ({arch_suffix})\n"
@@ -128,7 +141,7 @@ def get_adb_path():
     else:
         # Development mode: use bundled ADB from build/platform-tools
         project_root = Path(__file__).parent.parent.parent
-        
+
         if system == "Darwin":
             adb_path = project_root / "build" / "platform-tools" / arch_suffix / "adb"
         elif system == "Linux":
@@ -137,16 +150,14 @@ def get_adb_path():
             adb_path = project_root / "build" / "platform-tools" / arch_suffix / "adb.exe"
         else:
             raise RuntimeError(f"Unsupported platform: {system}")
-        
+
         if adb_path.exists() and is_binary_compatible(adb_path):
             return str(adb_path)
-        
+
         raise RuntimeError(
-            f"Bundled ADB not found or incompatible.\n"
-            f"Architecture: {get_current_arch()} ({arch_suffix})\n"
-            f"Expected: {adb_path}\n"
-            f"\nRun 'python build/download_adb.py' to download all ADB binaries,\n"
-            f"or ensure build/platform-tools/ contains ADB for your architecture."
+            f"ADB not found for architecture {get_current_arch()}.\n"
+            f"Tried: {adb_path}\n"
+            f"\nRun 'python build/download_adb.py' to download ADB binaries."
         )
 
 

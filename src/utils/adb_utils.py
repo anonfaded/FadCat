@@ -4,12 +4,27 @@ import sys
 from src.utils.adb_path import get_adb_path
 
 
+def start_adb_daemon(adb_path):
+    """Start ADB daemon if not running."""
+    try:
+        # Try to start the daemon
+        subprocess.run(
+            [adb_path, 'start-server'],
+            capture_output=True,
+            timeout=5
+        )
+        return True
+    except Exception:
+        return False
+
+
 def get_adb_devices():
     """Returns a list of connected ADB device serials."""
     try:
         adb_path = get_adb_path()
         print(f"[ADB] Using ADB: {adb_path}", file=sys.stderr)
         
+        # First attempt - try to get devices
         res = subprocess.run(
             [adb_path, 'devices'], 
             capture_output=True, 
@@ -17,6 +32,19 @@ def get_adb_devices():
             check=False, 
             timeout=10
         )
+        
+        # Check if daemon needs to be started
+        if res.returncode != 0 or 'daemon not running' in res.stderr.lower():
+            print(f"[ADB] Starting ADB daemon...", file=sys.stderr)
+            if start_adb_daemon(adb_path):
+                # Retry after starting daemon
+                res = subprocess.run(
+                    [adb_path, 'devices'], 
+                    capture_output=True, 
+                    text=True, 
+                    check=False, 
+                    timeout=10
+                )
         
         print(f"[ADB] Return code: {res.returncode}", file=sys.stderr)
         print(f"[ADB] stdout: {res.stdout.strip()}", file=sys.stderr)

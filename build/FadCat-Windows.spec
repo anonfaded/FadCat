@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec for FadCat on Windows
 # Bundles ADB for ALL Windows architectures (x86_64 and ARM64)
-# Build with: pyinstaller FadCat-Windows.spec
+# Build with: pyinstaller build/FadCat-Windows.spec
 
 from PyInstaller.utils.hooks import collect_data_files, collect_all
 from PyInstaller.building.api import EXE, COLLECT
@@ -17,6 +17,7 @@ except ImportError:
     __app_name__ = "FadCat"
     __company__ = "FadSec Lab"
 
+# Collect all fastmcp data and binaries (CRITICAL for bundling MCP support)
 datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
 
 # Bundle ADB for ALL Windows architectures
@@ -25,18 +26,18 @@ platform_tools_dir = project_root / "build" / "platform-tools"
 
 windows_datas = []
 
-# Windows x86_64
+# Windows x86_64 - copy file to directory
 adb_x86_64 = platform_tools_dir / "windows_x86_64" / "adb.exe"
 if adb_x86_64.exists():
-    windows_datas.append((str(adb_x86_64), 'platform-tools/windows_x86_64/adb.exe'))
+    windows_datas.append((str(adb_x86_64), 'platform-tools/windows_x86_64/'))
     print("✓ Bundling ADB for Windows x86_64")
 else:
     print("✗ Missing: Windows x86_64 ADB")
 
-# Windows ARM64
+# Windows ARM64 - copy file to directory
 adb_arm64 = platform_tools_dir / "windows_arm64" / "adb.exe"
 if adb_arm64.exists():
-    windows_datas.append((str(adb_arm64), 'platform-tools/windows_arm64/adb.exe'))
+    windows_datas.append((str(adb_arm64), 'platform-tools/windows_arm64/'))
     print("✓ Bundling ADB for Windows ARM64")
 else:
     print("✗ Missing: Windows ARM64 ADB")
@@ -63,11 +64,13 @@ a = Analysis(
         'rapidfuzz',
         'rapidfuzz.fuzz',
         'colorama',
+        # FastMCP and MCP (collected via collect_all)
         'fastmcp',
         'mcp',
         'mcp.server',
         'mcp.server.stdio',
         'mcp.types',
+        # Additional dependencies
         'authlib',
         'cyclopts',
         'exceptiongroup',
@@ -97,7 +100,13 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=[],
+    excludedimports=[
+        'PyQt5',
+        'PyQt5.QtCore',
+        'PyQt5.QtGui',
+        'PyQt5.QtWidgets',
+        'PyQt5.sip',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -125,7 +134,7 @@ exe = EXE(
     icon='../icon-assets/fadcat.ico',
 )
 
-coll = Collection(
+coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,

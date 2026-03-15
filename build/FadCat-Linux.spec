@@ -1,14 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec for FadCat on Linux
 # Bundles ADB for ALL Linux architectures (x86_64 and ARM64)
-# Build with: pyinstaller FadCat-Linux.spec
+# Build with: pyinstaller build/FadCat-Linux.spec
 
 import os
 import sys
-from PyInstaller.utils.hooks import collect_data_files, collect_all
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all
 
-sys.path.insert(0, os.path.abspath('.'))
+# Spec file is run from project root, use relative paths
+project_root = Path('.').resolve()
+
+sys.path.insert(0, str(project_root))
 try:
     from src.version import __version__, __app_name__, __company__
 except ImportError:
@@ -16,26 +19,27 @@ except ImportError:
     __app_name__ = "FadCat"
     __company__ = "FadSec Lab"
 
+# Collect all fastmcp data and binaries (CRITICAL for bundling MCP support)
+# This properly collects fastmcp, mcp, and all their dependencies
 datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
 
 # Bundle ADB for ALL Linux architectures
-project_root = Path(__file__).parent.parent
 platform_tools_dir = project_root / "build" / "platform-tools"
 
 linux_datas = []
 
-# Linux x86_64
+# Linux x86_64 - copy file to directory
 adb_x86_64 = platform_tools_dir / "linux_x86_64" / "adb"
 if adb_x86_64.exists():
-    linux_datas.append((str(adb_x86_64), 'platform-tools/linux_x86_64/adb'))
+    linux_datas.append((str(adb_x86_64), 'platform-tools/linux_x86_64/'))
     print("✓ Bundling ADB for Linux x86_64")
 else:
     print("✗ Missing: Linux x86_64 ADB")
 
-# Linux ARM64 (aarch64)
+# Linux ARM64 (aarch64) - copy file to directory
 adb_arm64 = platform_tools_dir / "linux_aarch64" / "adb"
 if adb_arm64.exists():
-    linux_datas.append((str(adb_arm64), 'platform-tools/linux_aarch64/adb'))
+    linux_datas.append((str(adb_arm64), 'platform-tools/linux_aarch64/'))
     print("✓ Bundling ADB for Linux ARM64")
 else:
     print("✗ Missing: Linux ARM64 ADB")
@@ -43,14 +47,15 @@ else:
 block_cipher = None
 
 a = Analysis(
-    ['../FadCat.py'],
+    [str(project_root / 'FadCat.py')],
     pathex=[],
     binaries=binaries_fastmcp,
     datas=[
-        ('../src', 'src'),
-        ('../fadcat_cli.py', '.'),
-        ('../FadCat.py', '.'),
-        ('../build/linux/uninstall.sh', 'build/linux'),
+        (str(project_root / 'src'), 'src'),
+        (str(project_root / 'fadcat_cli.py'), '.'),
+        (str(project_root / 'FadCat.py'), '.'),
+        (str(project_root / 'icon-assets'), 'icon-assets'),
+        (str(project_root / 'build/linux/uninstall.sh'), 'build/linux'),
     ] + linux_datas + datas_fastmcp,
     hiddenimports=[
         'PyQt6',
@@ -62,28 +67,16 @@ a = Analysis(
         'rapidfuzz',
         'rapidfuzz.fuzz',
         'colorama',
+        # FastMCP and MCP (collected via collect_all)
         'fastmcp',
         'mcp',
         'mcp.server',
         'mcp.server.stdio',
         'mcp.types',
-        'authlib',
-        'cyclopts',
-        'exceptiongroup',
-        'httpx',
-        'httpx_sse',
-        'jsonschema',
-        'jsonref',
-        'jsonschema_path',
-        'openapi_pydantic',
-        'opentelemetry',
-        'packaging',
-        'platformdirs',
+        # Additional dependencies
         'pydantic',
         'pydantic_core',
         'pydantic_settings',
-        'pyperclip',
-        'python_dotenv',
         'pyyaml',
         'rich',
         'starlette',
@@ -92,11 +85,23 @@ a = Analysis(
         'watchfiles',
         'websockets',
         'anyio',
+        'httpx',
+        'httpx_sse',
+        'jsonschema',
+        'packaging',
+        'platformdirs',
+        'python_dotenv',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=[],
+    excludedimports=[
+        'PyQt5',
+        'PyQt5.QtCore',
+        'PyQt5.QtGui',
+        'PyQt5.QtWidgets',
+        'PyQt5.sip',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -121,10 +126,10 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='../icon-assets/fadcat.ico',
+    icon=str(project_root / 'icon-assets/fadcat.ico'),
 )
 
-coll = Collection(
+coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,

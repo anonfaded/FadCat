@@ -1,0 +1,15 @@
+#!/bin/bash
+# FadCat wrapper script
+# This script runs the bundled FadCat application
+
+FADCAT_BIN="/opt/fadcat/fadcat"
+
+# Check if running with --mcp flag
+if [ "$1" = "--mcp" ]; then
+    # For MCP mode, we need to use the bundled Python with bundled fastmcp
+    # Run the FadCat binary directly with the --mcp flag
+    exec "$FADCAT_BIN" --mcp "${@:2}"
+else
+    # Normal mode - just run the app
+    exec "$FADCAT_BIN" "$@"
+fi

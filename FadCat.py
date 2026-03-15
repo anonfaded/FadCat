@@ -37,6 +37,7 @@ def launch_gui():
     splash_delay_ms = 1500
     try:
         # Try multiple possible icon paths for bundled/dev environments
+        # Use fadcat-logo.png for splash screen
         logo_path = Path(__file__).parent / "src" / "icons" / "fadcat-logo.png"
         if not logo_path.exists():
             # Try relative to Resources in bundled app

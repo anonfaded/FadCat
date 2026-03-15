@@ -127,5 +127,5 @@ def icon_memory() -> QIcon:
 
 def app_icon() -> QIcon:
     """Load the main app icon from PNG."""
-    path = Path(__file__).parent.parent / "icons" / "fadcat-scanlines.png"
+    path = Path(__file__).parent.parent.parent / "icon-assets" / "fadcat.png"
     return QIcon(str(path))
