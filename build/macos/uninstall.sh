@@ -19,10 +19,15 @@ if [ -d "/Applications/FadCat.app" ]; then
     echo "✓ Removed /Applications/FadCat.app"
 fi
 
-# Remove command
-if [ -f "/usr/local/bin/fadcat" ]; then
-    rm -f /usr/local/bin/fadcat
-    echo "✓ Removed /usr/local/bin/fadcat"
+# Remove command-line launcher
+if [ -f "$HOME/.local/bin/fadcat" ]; then
+    rm -f "$HOME/.local/bin/fadcat"
+    echo "✓ Removed $HOME/.local/bin/fadcat"
+fi
+
+# Inform about other possible locations
+if [ -f "/usr/local/bin/fadcat" ] || [ -f "/opt/homebrew/bin/fadcat" ]; then
+    echo "⚠️  Found fadcat in /usr/local/bin or /opt/homebrew/bin. Remove manually if needed."
 fi
 
 # Remove settings (optional)

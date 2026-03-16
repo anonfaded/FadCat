@@ -8,6 +8,8 @@ cd "$(dirname "$0")/../.."
 VERSION=$(python3 -c "from src.version import __version__; print(__version__)" 2>/dev/null || echo "1.0.0")
 
 echo "🔨 Building FadCat v${VERSION}..."
+export PYINSTALLER_CONFIG_DIR="$(pwd)/dist/.pyinstaller"
+rm -rf "$PYINSTALLER_CONFIG_DIR" 2>/dev/null
 pyinstaller -y build/FadCat-macOS.spec
 
 if [ ! -d "dist/FadCat.app" ]; then
@@ -19,28 +21,33 @@ echo "📦 Creating professional DMG with create-dmg..."
 cd dist
 
 # Use create-dmg to create a beautiful DMG (skip code signing for faster build)
-# create-dmg uses version from app's CFBundleShortVersionString
-npx create-dmg FadCat.app --overwrite --no-code-sign 2>&1 || true
+TMPDIR=/tmp create-dmg "FadCat.app" --overwrite --no-code-sign 2>&1 || true
 
 # Rename the created DMG to our standard name with version and platform
-DMG_FILE=$(ls -t FadCat*.dmg 2>/dev/null | head -1)
+DMG_FILE=$(ls -t *.dmg 2>/dev/null | head -1)
 if [ -n "$DMG_FILE" ]; then
     mv "$DMG_FILE" "FadCat-v${VERSION}-macOS.dmg"
     SIZE=$(du -h "FadCat-v${VERSION}-macOS.dmg" | awk '{print $1}')
-    
+
     # Clean up: remove the app since it's now packaged in the DMG
     rm -rf FadCat.app 2>/dev/null
-    
+
     echo ""
     echo "✅ Professional FadCat installer created!"
     echo "   📁 FadCat-v${VERSION}-macOS.dmg ($SIZE)"
     echo "   📦 Version: ${VERSION}"
     echo ""
-    echo "Features:"
-    echo "   • Beautiful drag-and-drop interface"
-    echo "   • Professional icon and branding"
-    echo "   • macOS standard appearance"
-    echo "   • Ready to distribute"
+    echo "Installation:"
+    echo "   open ${DMG_FILE}"
+    echo "   # Drag FadCat.app to /Applications/"
+    echo "   # (Optional) Run Install CLI Command.command for CLI without launching"
+    echo ""
+    echo "Uninstallation:"
+    echo "   rm -rf /Applications/FadCat.app"
+    echo ""
+    echo "Architecture Support:"
+    echo "   ✓ macOS x86_64 (Intel)"
+    echo "   ✓ macOS ARM64 (Apple Silicon)"
 else
     echo "❌ Error: DMG creation failed"
     exit 1

@@ -2,6 +2,50 @@
 FadCat entry point
 """
 import sys
+import os
+
+# Auto-install CLI wrapper on macOS (first launch only)
+def _install_cli():
+    if sys.platform != 'darwin':
+        return
+    try:
+        cli_dir = os.path.expanduser('~/.local/bin')
+        cli_dst = os.path.join(cli_dir, 'fadcat')
+
+        app_bin = '/Applications/FadCat.app/Contents/MacOS/FadCat'
+        if not os.path.exists(app_bin):
+            return
+        desired = f'#!/bin/bash\nexec "{app_bin}" "$@"\n'
+
+        if os.path.exists(cli_dst):
+            try:
+                with open(cli_dst, 'r', encoding='utf-8') as f:
+                    if f.read() == desired:
+                        return
+            except Exception:
+                pass
+
+        os.makedirs(cli_dir, exist_ok=True)
+        with open(cli_dst, 'w', encoding='utf-8') as f:
+            f.write(desired)
+        os.chmod(cli_dst, 0o755)
+
+        # Add to PATH for login shells
+        for rc in ['.zprofile', '.bash_profile']:
+            rc_path = os.path.expanduser(f'~/{rc}')
+            try:
+                if os.path.exists(rc_path):
+                    with open(rc_path, 'r+', encoding='utf-8') as f:
+                        content = f.read()
+                        if '$HOME/.local/bin' not in content and '.local/bin' not in content:
+                            f.write('\nexport PATH="$HOME/.local/bin:$PATH"\n')
+            except Exception:
+                pass
+    except Exception:
+        # Silently fail - CLI install is optional
+        pass
+
+_install_cli()
 
 from src.core.pidcat_runner import run_pidcat_child
 
