@@ -27,7 +27,6 @@ class SettingsDialog(QDialog):
         self.setModal(True)
         self.resize(520, 500)
         self._settings = Settings()
-        self.mcp_process = None  # Initialize MCP server process
         self._build_ui()
         self._populate()
 
@@ -227,7 +226,10 @@ class SettingsDialog(QDialog):
 
         self.tabs.addTab(disp_tab, "Display")
 
-        # ── Tab 4: About ──────────────────────────────────────────────────────
+        # ── Tab 4: MCP ────────────────────────────────────────────────────────
+        self._build_mcp_tab()
+
+        # ── Tab 5: About ──────────────────────────────────────────────────────
         about_tab = QWidget()
         about_tab_layout = QVBoxLayout(about_tab)
         about_tab_layout.setContentsMargins(0, 0, 0, 0)
@@ -557,11 +559,8 @@ class SettingsDialog(QDialog):
         # Add scroll widget to scroll area
         scroll_area.setWidget(scroll_widget)
         about_tab_layout.addWidget(scroll_area)
-        
-        self.tabs.addTab(about_tab, "About")
 
-        # ── Tab 5: MCP ────────────────────────────────────────────────────────
-        self._build_mcp_tab()
+        self.tabs.addTab(about_tab, "About")
 
         # Dialog buttons
         btns = QDialogButtonBox(
@@ -750,201 +749,315 @@ class SettingsDialog(QDialog):
         QDesktopServices.openUrl(QUrl(url))
 
     def _build_mcp_tab(self):
-        """Build the MCP (Model Context Protocol) tab."""
-        from src.mcp.config import generate_mcp_config
-        from src.version import __version__, __author__
-        
+        """Build the MCP (Model Context Protocol) tab - compact and user-friendly."""
+        from src.version import __version__
+
         mcp_tab = QWidget()
         mcp_lay = QVBoxLayout(mcp_tab)
-        mcp_lay.setSpacing(8)
+        mcp_lay.setSpacing(10)
         mcp_lay.setContentsMargins(12, 12, 12, 12)
-        
-        # Server Control Group
-        control_grp = QGroupBox("Server Control")
-        control_grp_lay = QVBoxLayout(control_grp)
-        control_grp_lay.setSpacing(6)
-        
-        # Server control buttons and status
-        control_lay = QHBoxLayout()
-        self.btn_toggle_server = QPushButton("Start Server")
-        self.btn_toggle_server.setProperty("role", "primary")
-        self.btn_toggle_server.setFixedHeight(32)
-        self.btn_toggle_server.clicked.connect(self._toggle_mcp_server)
-        control_lay.addWidget(self.btn_toggle_server)
-        control_lay.addStretch()
-        control_lay.addWidget(QLabel("Status:"))
-        self.mcp_status_label = QLabel("● Idle")
-        self.mcp_status_label.setFont(QFont("monospace", 10))
-        self.mcp_status_label.setFixedWidth(120)
-        control_lay.addWidget(self.mcp_status_label)
-        control_lay.addWidget(QLabel("Port:"))
-        self.mcp_port_label = QLabel("stdio")
-        self.mcp_port_label.setFont(QFont("monospace", 10))
-        self.mcp_port_label.setFixedWidth(80)
-        control_lay.addWidget(self.mcp_port_label)
-        control_lay.addStretch()
-        
-        control_grp_lay.addLayout(control_lay)
-        mcp_lay.addWidget(control_grp)
-        
-        # Scroll area for config and info
+
+        # ── Scrollable content ────────────────────────────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; }")
-        
-        # Container for scrollable content
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; }")
+
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
-        scroll_layout.setSpacing(8)
+        scroll_layout.setSpacing(10)
         scroll_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Info Group
-        info_grp = QGroupBox("Available")
-        info_lay = QVBoxLayout(info_grp)
-        info_lay.setSpacing(4)
-        
-        self.mcp_info_text = QTextEdit()
-        self.mcp_info_text.setReadOnly(True)
-        self.mcp_info_text.setMaximumHeight(100)
-        self.mcp_info_text.setFont(QFont("monospace", 9))
-        self.mcp_info_text.setPlainText(
-            "Tools: 13 • Resources: 4 • Prompts: 4"
+
+        # ── Header ────────────────────────────────────────────────────────────
+        header_grp = QGroupBox("🤖 MCP Integration")
+        header_lay = QVBoxLayout(header_grp)
+        header_lay.setSpacing(6)
+
+        intro_text = QLabel(
+            "<b>MCP</b> lets AI assistants access your Android device via ADB. "
+            "Connect FadCat to AI tools like OpenCode, Cursor, or Claude Code."
         )
-        info_lay.addWidget(self.mcp_info_text)
-        scroll_layout.addWidget(info_grp)
-        
-        # Config Group
-        config_grp = QGroupBox("Configuration")
-        config_lay = QVBoxLayout(config_grp)
-        config_lay.setSpacing(4)
-        
-        self.mcp_config_text = QTextEdit()
-        self.mcp_config_text.setReadOnly(True)
-        self.mcp_config_text.setFont(QFont("monospace", 8))
-        
-        try:
-            config = generate_mcp_config()
-            config_text = json.dumps(config, indent=2)
-        except Exception as e:
-            config_text = f"Error: {e}\n\nCommand: fadcat --mcp"
-        
-        self.mcp_config_text.setPlainText(config_text)
-        config_lay.addWidget(self.mcp_config_text)
-        
+        intro_text.setWordWrap(True)
+        intro_text.setStyleSheet("color: #888; font-size: 11px;")
+        header_lay.addWidget(intro_text)
+        scroll_layout.addWidget(header_grp)
+
+        # ── Recommended: OpenCode ─────────────────────────────────────────────
+        opencode_grp = QGroupBox("⭐ Recommended: OpenCode (Free)")
+        opencode_lay = QVBoxLayout(opencode_grp)
+        opencode_lay.setSpacing(6)
+
+        opencode_info = QLabel(
+            "<b>OpenCode</b> is free with instant access to free AI models."
+        )
+        opencode_info.setWordWrap(True)
+        opencode_info.setStyleSheet("color: #4CAF50; font-size: 10px; font-weight: bold;")
+        opencode_lay.addWidget(opencode_info)
+
+        step2 = QLabel("2. <b>Add FadCat:</b> Run <code>opencode mcp add</code> and follow prompts:")
+        step2.setWordWrap(True)
+        step2.setStyleSheet("color: #ccc; font-size: 10px;")
+        opencode_lay.addWidget(step2)
+
+        cmd_box = QTextEdit()
+        cmd_box.setPlainText("opencode mcp add")
+        cmd_box.setReadOnly(True)
+        cmd_box.setMaximumHeight(30)
+        cmd_box.setFont(QFont("monospace", 10))
+        cmd_box.setStyleSheet(
+            "QTextEdit { background: #1a1a2e; color: #4CAF50; border: 1px solid #333; "
+            "border-radius: 3px; padding: 4px 8px; }"
+        )
+        opencode_lay.addWidget(cmd_box)
+
+        step3 = QLabel(
+            "• Name: <code>fadcat</code> • Type: <code>local</code> • Command: <code>fadcat</code> • Args: <code>--mcp</code>"
+        )
+        step3.setWordWrap(True)
+        step3.setStyleSheet("color: #888; font-size: 10px;")
+        opencode_lay.addWidget(step3)
+
+        scroll_layout.addWidget(opencode_grp)
+
+        # ── Manual Configuration ──────────────────────────────────────────────
+        manual_grp = QGroupBox("📝 Manual Config (Other AI Tools)")
+        manual_lay = QVBoxLayout(manual_grp)
+        manual_lay.setSpacing(6)
+
+        manual_info = QLabel(
+            "For Cursor, Claude Code, Windsurf: Add config to their MCP settings file."
+        )
+        manual_info.setWordWrap(True)
+        manual_info.setStyleSheet("color: #888; font-size: 10px;")
+        manual_lay.addWidget(manual_info)
+
+        # Config tabs
+        config_tabs = QTabWidget()
+        config_tabs.setStyleSheet(
+            "QTabWidget::pane { border: 1px solid #333; border-radius: 3px; background: #1a1a2e; }"
+            "QTabBar::tab { background: #2a2a3e; color: #888; padding: 6px 12px; border-radius: 3px 3px 0 0; font-size: 10px; }"
+            "QTabBar::tab:selected { background: #3a3a4e; color: #fff; }"
+        )
+
+        # Get project path
+        import os
+        project_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        python_path = "/opt/homebrew/bin/python3"
+
+        # Tab 1: Installed
+        installed_tab = QWidget()
+        installed_lay = QVBoxLayout(installed_tab)
+        installed_lay.setContentsMargins(8, 8, 8, 8)
+        installed_lay.setSpacing(6)
+
+        installed_desc = QLabel("<b>Use when:</b> FadCat is installed (fadcat command available)")
+        installed_desc.setWordWrap(True)
+        installed_desc.setStyleSheet("color: #888; font-size: 10px;")
+        installed_lay.addWidget(installed_desc)
+
+        installed_json = self._create_colorized_json({
+            "fadcat": {
+                "type": "stdio",
+                "command": "fadcat",
+                "args": ["--mcp"],
+                "env": {"PYTHONUNBUFFERED": "1"}
+            }
+        }, "installed")
+        installed_lay.addWidget(installed_json)
+
+        installed_explain = self._create_config_explanation("installed")
+        installed_lay.addWidget(installed_explain)
+        config_tabs.addTab(installed_tab, "📦 Installed")
+
+        # Tab 2: Local
+        local_tab = QWidget()
+        local_lay = QVBoxLayout(local_tab)
+        local_lay.setContentsMargins(8, 8, 8, 8)
+        local_lay.setSpacing(6)
+
+        local_desc = QLabel(f"<b>Use when:</b> Running from source (update paths for your system)")
+        local_desc.setWordWrap(True)
+        local_desc.setStyleSheet("color: #888; font-size: 10px;")
+        local_lay.addWidget(local_desc)
+
+        local_json = self._create_colorized_json({
+            "fadcat": {
+                "type": "stdio",
+                "command": python_path,
+                "args": ["-m", "src.mcp"],
+                "env": {
+                    "PYTHONUNBUFFERED": "1",
+                    "PYTHONPATH": project_path
+                }
+            }
+        }, "local")
+        local_lay.addWidget(local_json)
+
+        local_explain = self._create_config_explanation("local", project_path, python_path)
+        local_lay.addWidget(local_explain)
+        config_tabs.addTab(local_tab, "💻 Local")
+
+        manual_lay.addWidget(config_tabs)
+
         # Copy button
-        btn_copy = QPushButton("Copy Config")
-        btn_copy.setFixedHeight(28)
-        btn_copy.clicked.connect(self._copy_mcp_config)
-        config_lay.addWidget(btn_copy)
-        
-        scroll_layout.addWidget(config_grp)
-        
-        # Quick Start Group
-        quickstart_grp = QGroupBox("Quick Start")
-        quickstart_lay = QVBoxLayout(quickstart_grp)
-        quickstart_lay.setSpacing(4)
-        
-        quick_text = QTextEdit()
-        quick_text.setReadOnly(True)
-        quick_text.setFont(QFont("sans-serif", 9))
-        quick_text.setPlainText(
-            "1. Copy config above\n"
-            "2. Open VSCode settings.json\n"
-            "3. Paste under 'mcpServers'\n"
-            "4. Restart VSCode\n\n"
-            "Supported: VSCode, Cursor, Windsurf, Claude Code, Cline"
+        copy_btn = QPushButton("📋 Copy Config")
+        copy_btn.setFixedHeight(30)
+        copy_btn.setStyleSheet(
+            "QPushButton { background: #2a2a3e; color: #fff; border: 1px solid #444; "
+            "border-radius: 3px; font-size: 10px; }"
+            "QPushButton:hover { background: #3a3a4e; }"
         )
-        quick_text.setMaximumHeight(120)
-        quickstart_lay.addWidget(quick_text)
-        scroll_layout.addWidget(quickstart_grp)
-        
+        copy_btn.clicked.connect(lambda: self._copy_mcp_config(config_tabs))
+        manual_lay.addWidget(copy_btn)
+
+        scroll_layout.addWidget(manual_grp)
+
+        # ── Available Tools & Prompts ─────────────────────────────────────────
+        tools_grp = QGroupBox("🛠️ Available MCP Features")
+        tools_lay = QVBoxLayout(tools_grp)
+        tools_lay.setSpacing(6)
+
+        tools_text = QLabel(
+            "• <b>22 Tools:</b> Pull media, list recordings, browse files, system info, network traces<br>"
+            "• <b>6 Prompts:</b> Pre-built AI workflows for common tasks"
+        )
+        tools_text.setWordWrap(True)
+        tools_text.setStyleSheet("color: #888; font-size: 10px;")
+        tools_lay.addWidget(tools_text)
+
+        # Prompts list
+        prompts_label = QLabel("<b>Available Prompts (use in your AI assistant):</b>")
+        prompts_label.setStyleSheet("color: #64B5F6; font-size: 10px; font-weight: bold; margin-top: 6px;")
+        tools_lay.addWidget(prompts_label)
+
+        prompts_list = QLabel(
+            "• <code>debug-crash-analyzer</code> – Analyze app crashes and exceptions<br>"
+            "• <code>logcat-summarizer</code> – Summarize logcat output<br>"
+            "• <code>performance-monitor</code> – Find performance bottlenecks<br>"
+            "• <code>network-debugger</code> – Debug network issues<br>"
+            "• <code>fadcat-about</code> – Learn about FadCat & FadCam workflows<br>"
+            "• <code>fadcam-media-helper</code> – Browse and pull FadCam media"
+        )
+        prompts_list.setWordWrap(True)
+        prompts_list.setStyleSheet("color: #888; font-size: 9px;")
+        tools_lay.addWidget(prompts_list)
+
+        # Usage examples
+        examples_label = QLabel("<b>Example Usage:</b>")
+        examples_label.setStyleSheet("color: #64B5F6; font-size: 10px; font-weight: bold; margin-top: 6px;")
+        tools_lay.addWidget(examples_label)
+
+        examples_text = QLabel(
+            "• <i>\"Browse my FadCam media and show me a summary by location\"</i><br>"
+            "• <i>\"Analyze app crash logs and suggest the root cause\"</i><br>"
+            "• <i>\"Summarize the latest logcat warnings and errors\"</i><br>"
+            "• <i>\"Trace recent network calls for my app\"</i><br>"
+            "• <i>\"Show running processes and find high memory usage\"</i>"
+        )
+        examples_text.setWordWrap(True)
+        examples_text.setStyleSheet("color: #888; font-size: 9px; font-style: italic;")
+        tools_lay.addWidget(examples_text)
+
+        scroll_layout.addWidget(tools_grp)
+
         scroll_layout.addStretch()
         scroll.setWidget(scroll_widget)
         mcp_lay.addWidget(scroll)
-        
+
         self.tabs.addTab(mcp_tab, "MCP")
-    
-    def _copy_mcp_config(self):
-        """Copy MCP config to clipboard."""
-        from PyQt6.QtWidgets import QApplication
-        clipboard = QApplication.clipboard()
-        clipboard.setText(self.mcp_config_text.toPlainText())
-        QMessageBox.information(self, "Copied", "MCP config copied to clipboard!")
 
-    def _toggle_mcp_server(self):
-        """Toggle MCP server on/off."""
-        if hasattr(self, 'mcp_process') and self.mcp_process and self.mcp_process.poll() is None:
-            # Server is running, stop it
-            self._stop_mcp_server()
-        else:
-            # Server is not running, start it
-            self._start_mcp_server()
-
-    def _start_mcp_server(self):
-        """Start the MCP server using fadcat command."""
-        import subprocess
+    def _create_colorized_json(self, data: dict, config_type: str) -> QTextEdit:
+        """Create a colorized JSON display widget."""
+        import json
         
-        try:
-            # Only use fadcat command, no fallbacks
-            self.mcp_process = subprocess.Popen(
-                ["fadcat", "--mcp"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            self.btn_toggle_server.setText("Stop Server")
-            self.btn_toggle_server.setProperty("role", "danger")
-            self.style().polish(self.btn_toggle_server)
-            self.mcp_status_label.setText("● Running")
-            self.mcp_port_label.setText("stdio")
-            self.mcp_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
-            QMessageBox.information(self, "Success", "MCP server started: fadcat --mcp")
-        except FileNotFoundError:
-            # fadcat command not found - ask user for help
-            QMessageBox.critical(
-                self, 
-                "fadcat Not Found", 
-                "The 'fadcat' command is not available.\n\n"
-                "Please ensure FadCat is properly installed:\n\n"
-                "1. cd /path/to/FadCat\n"
-                "2. pip install -e .\n\n"
-                "Then the 'fadcat' command will be available."
-            )
-            self.mcp_status_label.setText("● Error")
-            self.mcp_port_label.setText("-")
-            self.mcp_status_label.setStyleSheet("color: #F44336;")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to start server:\n{e}")
-            self.mcp_status_label.setText("● Error")
-            self.mcp_port_label.setText("-")
-            self.mcp_status_label.setStyleSheet("color: #F44336;")
-    
-    def _stop_mcp_server(self):
-        """Stop the MCP server."""
-        try:
-            if hasattr(self, 'mcp_process') and self.mcp_process:
-                self.mcp_process.terminate()
-                try:
-                    self.mcp_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.mcp_process.kill()
-                
-                self.btn_toggle_server.setText("Start Server")
-                self.btn_toggle_server.setProperty("role", "primary")
-                self.style().polish(self.btn_toggle_server)
-                self.mcp_status_label.setText("● Stopped")
-                self.mcp_port_label.setText("-")
-                self.mcp_status_label.setStyleSheet("color: #FF9800;")
-                QMessageBox.information(self, "Success", "MCP server stopped")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to stop server:\n{e}")
-    
+        json_widget = QTextEdit()
+        json_widget.setReadOnly(True)
+        json_widget.setFont(QFont("monospace", 9))
+        json_widget.setMaximumHeight(160)
+        
+        # Syntax highlighting via HTML
+        json_str = json.dumps(data, indent=8)
+        
+        # Simple colorization
+        html = json_str
+        html = html.replace('"type"', '<span style="color: #9CDCFE;">"type"</span>')
+        html = html.replace('"stdio"', '<span style="color: #CE9178;">"stdio"</span>')
+        html = html.replace('"command"', '<span style="color: #9CDCFE;">"command"</span>')
+        html = html.replace('"fadcat"', '<span style="color: #CE9178;">"fadcat"</span>')
+        html = html.replace('"args"', '<span style="color: #9CDCFE;">"args"</span>')
+        html = html.replace('"--mcp"', '<span style="color: #CE9178;">"--mcp"</span>')
+        html = html.replace('"env"', '<span style="color: #9CDCFE;">"env"</span>')
+        html = html.replace('"PYTHONUNBUFFERED"', '<span style="color: #9CDCFE;">"PYTHONUNBUFFERED"</span>')
+        html = html.replace('"1"', '<span style="color: #B5CEA8;">"1"</span>')
+        html = html.replace('"python"', '<span style="color: #CE9178;">"python"</span>')
+        html = html.replace('"/opt/homebrew/bin/python3"', '<span style="color: #CE9178;">"/opt/homebrew/bin/python3"</span>')
+        html = html.replace('"-m"', '<span style="color: #CE9178;">"-m"</span>')
+        html = html.replace('"src.mcp"', '<span style="color: #CE9178;">"src.mcp"</span>')
+        html = html.replace('"PYTHONPATH"', '<span style="color: #9CDCFE;">"PYTHONPATH"</span>')
+        
+        json_widget.setHtml(f'<pre style="color: #D4D4D4; background: #1a1a2e; padding: 8px; border-radius: 3px;">{html}</pre>')
+        return json_widget
+
+    def _create_config_explanation(self, config_type: str, project_path: str = "", python_path: str = "") -> QWidget:
+        """Create explanation widget for config options."""
+        explain_widget = QWidget()
+        explain_lay = QVBoxLayout(explain_widget)
+        explain_lay.setContentsMargins(0, 6, 0, 0)
+        explain_lay.setSpacing(4)
+
+        if config_type == "installed":
+            explanations = [
+                ("<code>command: fadcat</code>", "Runs installed FadCat CLI"),
+                ("<code>args: --mcp</code>", "Starts MCP server mode"),
+                ("<code>env</code>", "Ensures clean output (no buffering)"),
+            ]
+        else:
+            explanations = [
+                ("<code>command: python</code>", "Runs Python interpreter"),
+                ("<code>args: -m src.mcp</code>", "Executes MCP module"),
+                ("<code>PYTHONPATH</code>", f"Points to your FadCat folder"),
+                ("<code>env</code>", "Clean output + module path"),
+            ]
+
+        title = QLabel("<b>Config Explained:</b>")
+        title.setStyleSheet("color: #64B5F6; font-size: 10px; font-weight: bold;")
+        explain_lay.addWidget(title)
+
+        for term, desc in explanations:
+            item_lay = QHBoxLayout()
+            item_lay.setSpacing(6)
+            term_label = QLabel(term)
+            term_label.setStyleSheet("color: #aaa; font-size: 10px;")
+            desc_label = QLabel(desc)
+            desc_label.setWordWrap(True)
+            desc_label.setStyleSheet("color: #888; font-size: 10px;")
+            item_lay.addWidget(term_label)
+            item_lay.addWidget(desc_label)
+            item_lay.addStretch()
+            explain_lay.addLayout(item_lay)
+
+        if config_type == "local":
+            hint = QLabel(f"💡 <b>Tip:</b> Update Python path and project folder for your system")
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color: #FF9800; font-size: 10px; margin-top: 4px;")
+            explain_lay.addWidget(hint)
+
+        return explain_widget
+
+    def _copy_mcp_config(self, config_tabs: QTabWidget):
+        """Copy selected MCP config to clipboard."""
+        from PyQt6.QtWidgets import QApplication
+        
+        current_tab = config_tabs.currentWidget()
+        json_widgets = current_tab.findChildren(QTextEdit)
+        if json_widgets:
+            # Extract plain text from colorized JSON
+            config_text = json_widgets[0].toPlainText()
+            clipboard = QApplication.clipboard()
+            clipboard.setText(config_text)
+            QMessageBox.information(self, "Copied", "MCP config copied to clipboard!")
+
     def closeEvent(self, event):
-        """Stop MCP server when dialog closes."""
-        if hasattr(self, 'mcp_process') and self.mcp_process:
-            try:
-                self.mcp_process.terminate()
-            except:
-                pass
+        """Clean up when dialog closes."""
         super().closeEvent(event)
 
