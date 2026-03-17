@@ -172,6 +172,8 @@ Recommended flow:
 3) If the user chooses files, use fadcam_pull_files or fadcam_pull_file with confirm=true.
 
 Examples:
+- "List metadata only for Back/Front recordings (no pull)."
+  -> browse with category="Camera" and camera filters, then summarize sizes.
 - "Show the latest FadShot image from internal storage."
   -> browse with storage_hint="internal", category="FadShot", limit=1
 - "Pull this exact file."

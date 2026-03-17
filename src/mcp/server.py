@@ -3,7 +3,7 @@
 import sys
 import logging
 from typing import Any, Optional, List
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 import json
 
 # Setup logging to stderr (MCP requirement - stdout is reserved for protocol)
@@ -23,25 +23,42 @@ server = FastMCP(__app_name__, __version__)
 _server_start_time = None
 _active_connections = 0
 
+
+async def _ctx_info(ctx: Context, message: str) -> None:
+    try:
+        await ctx.info(message)
+    except Exception:
+        pass
+
+
+async def _ctx_warning(ctx: Context, message: str) -> None:
+    try:
+        await ctx.warning(message)
+    except Exception:
+        pass
+
 # ============================================================================
 # TOOLS - Android Debugging Operations
 # ============================================================================
 
 @server.tool()
-async def get_devices() -> str:
+async def get_devices(ctx: Context) -> str:
     """Get list of connected Android devices"""
+    await _ctx_info(ctx, "Tool called: get_devices")
     logger.info("Tool called: get_devices")
     try:
         from src.mcp import tools
-        result = await tools.impl_get_devices()
+        result = await tools.impl_get_devices(ctx)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in get_devices")
+        await _ctx_warning(ctx, f"Error in get_devices: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
 async def get_logcat_stream(
+    ctx: Context,
     device: str,
     package: Optional[str] = None,
     level: str = "I",
@@ -55,18 +72,21 @@ async def get_logcat_stream(
         level: Minimum log level (V/D/I/W/E/F)
         lines: Number of lines to retrieve
     """
+    await _ctx_info(ctx, f"Tool called: get_logcat_stream for device {device}")
     logger.info(f"Tool called: get_logcat_stream for device {device}")
     try:
         from src.mcp import tools
-        result = await tools.impl_get_logcat_stream(device, package, level, lines)
+        result = await tools.impl_get_logcat_stream(ctx, device, package, level, lines)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in get_logcat_stream")
+        await _ctx_warning(ctx, f"Error in get_logcat_stream: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
 async def search_logs(
+    ctx: Context,
     query: str,
     tag_filter: Optional[str] = None,
     level_filter: Optional[str] = None,
@@ -80,105 +100,117 @@ async def search_logs(
         level_filter: Optional log level filter
         limit: Maximum number of results
     """
+    await _ctx_info(ctx, f"Tool called: search_logs with query '{query}'")
     logger.info(f"Tool called: search_logs with query '{query}'")
     try:
         from src.mcp import tools
-        result = await tools.impl_search_logs(query, tag_filter, level_filter, limit)
+        result = await tools.impl_search_logs(ctx, query, tag_filter, level_filter, limit)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in search_logs")
+        await _ctx_warning(ctx, f"Error in search_logs: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
-async def filter_by_level(device: str, level: str) -> str:
+async def filter_by_level(ctx: Context, device: str, level: str) -> str:
     """Filter current logcat by severity level
     
     Args:
         device: Device serial number
         level: Log level (V/D/I/W/E/F)
     """
+    await _ctx_info(ctx, f"Tool called: filter_by_level for device {device} with level {level}")
     logger.info(f"Tool called: filter_by_level for device {device} with level {level}")
     try:
         from src.mcp import tools
-        result = await tools.impl_filter_by_level(device, level)
+        result = await tools.impl_filter_by_level(ctx, device, level)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in filter_by_level")
+        await _ctx_warning(ctx, f"Error in filter_by_level: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
-async def get_app_processes(device: str, package: str) -> str:
+async def get_app_processes(ctx: Context, device: str, package: str) -> str:
     """Get running processes for an app
     
     Args:
         device: Device serial number
         package: Package name
     """
+    await _ctx_info(ctx, f"Tool called: get_app_processes for {package} on {device}")
     logger.info(f"Tool called: get_app_processes for {package} on {device}")
     try:
         from src.mcp import tools
-        result = await tools.impl_get_app_processes(device, package)
+        result = await tools.impl_get_app_processes(ctx, device, package)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in get_app_processes")
+        await _ctx_warning(ctx, f"Error in get_app_processes: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def get_connected_packages(device: str) -> str:
+async def get_connected_packages(ctx: Context, device: str) -> str:
     """Get all packages connected to ADB on device
     
     Args:
         device: Device serial number
     """
+    await _ctx_info(ctx, f"Tool called: get_connected_packages for device {device}")
     logger.info(f"Tool called: get_connected_packages for device {device}")
     try:
         from src.mcp import tools
-        result = await tools.impl_get_connected_packages(device)
+        result = await tools.impl_get_connected_packages(ctx, device)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in get_connected_packages")
+        await _ctx_warning(ctx, f"Error in get_connected_packages: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
-async def parse_stacktrace(stacktrace: str) -> str:
+async def parse_stacktrace(ctx: Context, stacktrace: str) -> str:
     """Parse Android stacktrace and identify issues
     
     Args:
         stacktrace: The stack trace to parse
     """
+    await _ctx_info(ctx, "Tool called: parse_stacktrace")
     logger.info("Tool called: parse_stacktrace")
     try:
         from src.mcp import tools
-        result = await tools.impl_parse_stacktrace(stacktrace)
+        result = await tools.impl_parse_stacktrace(ctx, stacktrace)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in parse_stacktrace")
+        await _ctx_warning(ctx, f"Error in parse_stacktrace: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
-async def detect_error_type(logs: str) -> str:
+async def detect_error_type(ctx: Context, logs: str) -> str:
     """Detect error types from logs
     
     Args:
         logs: Log content to analyze
     """
+    await _ctx_info(ctx, "Tool called: detect_error_type")
     logger.info("Tool called: detect_error_type")
     try:
         from src.mcp import tools
-        result = await tools.impl_detect_error_type(logs)
+        result = await tools.impl_detect_error_type(ctx, logs)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in detect_error_type")
+        await _ctx_warning(ctx, f"Error in detect_error_type: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
-async def analyze_performance(device: str, package: str, duration: int = 10) -> str:
+async def analyze_performance(ctx: Context, device: str, package: str, duration: int = 10) -> str:
     """Analyze app performance metrics
     
     Args:
@@ -186,71 +218,79 @@ async def analyze_performance(device: str, package: str, duration: int = 10) -> 
         package: Package name
         duration: Duration to monitor in seconds
     """
+    await _ctx_info(ctx, f"Tool called: analyze_performance for {package} on {device} for {duration}s")
     logger.info(f"Tool called: analyze_performance for {package} on {device} for {duration}s")
     try:
         from src.mcp import tools
-        result = await tools.impl_analyze_performance(device, package, duration)
+        result = await tools.impl_analyze_performance(ctx, device, package, duration)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in analyze_performance")
+        await _ctx_warning(ctx, f"Error in analyze_performance: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def trace_network_calls(device: str, package: str) -> str:
+async def trace_network_calls(ctx: Context, device: str, package: str) -> str:
     """Trace network calls from an app
     
     Args:
         device: Device serial number
         package: Package name
     """
+    await _ctx_info(ctx, f"Tool called: trace_network_calls for {package} on {device}")
     logger.info(f"Tool called: trace_network_calls for {package} on {device}")
     try:
         from src.mcp import tools
-        result = await tools.impl_trace_network_calls(device, package)
+        result = await tools.impl_trace_network_calls(ctx, device, package)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in trace_network_calls")
+        await _ctx_warning(ctx, f"Error in trace_network_calls: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def analyze_memory_leak(device: str, package: str) -> str:
+async def analyze_memory_leak(ctx: Context, device: str, package: str) -> str:
     """Analyze memory leaks in an app
     
     Args:
         device: Device serial number
         package: Package name
     """
+    await _ctx_info(ctx, f"Tool called: analyze_memory_leak for {package} on {device}")
     logger.info(f"Tool called: analyze_memory_leak for {package} on {device}")
     try:
         from src.mcp import tools
-        result = await tools.impl_analyze_memory_leak(device, package)
+        result = await tools.impl_analyze_memory_leak(ctx, device, package)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in analyze_memory_leak")
+        await _ctx_warning(ctx, f"Error in analyze_memory_leak: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def clear_logcat(device: str) -> str:
+async def clear_logcat(ctx: Context, device: str) -> str:
     """Clear logcat buffer on device
     
     Args:
         device: Device serial number
     """
+    await _ctx_info(ctx, f"Tool called: clear_logcat for device {device}")
     logger.info(f"Tool called: clear_logcat for device {device}")
     try:
         from src.mcp import tools
-        result = await tools.impl_clear_logcat(device)
+        result = await tools.impl_clear_logcat(ctx, device)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in clear_logcat")
+        await _ctx_warning(ctx, f"Error in clear_logcat: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
-async def export_logs(device: str, format: str = "json", lines: int = 1000) -> str:
+async def export_logs(ctx: Context, device: str, format: str = "json", lines: int = 1000) -> str:
     """Export logcat to file
     
     Args:
@@ -258,35 +298,39 @@ async def export_logs(device: str, format: str = "json", lines: int = 1000) -> s
         format: Export format (json, csv, html)
         lines: Number of lines to export
     """
+    await _ctx_info(ctx, f"Tool called: export_logs for device {device} in {format} format")
     logger.info(f"Tool called: export_logs for device {device} in {format} format")
     try:
         from src.mcp import tools
-        result = await tools.impl_export_logs(device, format, lines)
+        result = await tools.impl_export_logs(ctx, device, format, lines)
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in export_logs")
+        await _ctx_warning(ctx, f"Error in export_logs: {e}")
         return f"Error: {str(e)}"
 
 
 @server.tool()
-async def get_system_info(device: str) -> str:
+async def get_system_info(ctx: Context, device: str) -> str:
     """Get comprehensive system information
     
     Args:
         device: Device serial number
     """
+    await _ctx_info(ctx, f"Tool called: get_system_info for device {device}")
     logger.info(f"Tool called: get_system_info for device {device}")
     try:
         from src.mcp import tools
-        result = await tools.impl_get_system_info(device)
+        result = await tools.impl_get_system_info(ctx, device)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in get_system_info")
+        await _ctx_warning(ctx, f"Error in get_system_info: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def pull_fadcam_media(device: str, package: str, media_type: str = "all",
+async def pull_fadcam_media(ctx: Context, device: str, package: str, media_type: str = "all",
                            output_dir: str = "./fadcam_media", limit: Optional[int] = None,
                            base_path: Optional[str] = None, confirm: bool = False,
                            storage_hint: Optional[str] = None) -> str:
@@ -306,102 +350,114 @@ async def pull_fadcam_media(device: str, package: str, media_type: str = "all",
         confirm: Set true to perform the pull. If false, returns a preview.
         storage_hint: Optional hint like "internal", "download", "dcim", "sd_download", "custom"
     """
+    await _ctx_info(ctx, f"Tool called: pull_fadcam_media for device {device}, package {package}")
     logger.info(f"Tool called: pull_fadcam_media for device {device}, package {package}")
     try:
         from src.mcp import tools
         result = await tools.impl_pull_fadcam_media(
-            device, package, media_type, output_dir, limit, base_path, confirm, storage_hint
+            ctx, device, package, media_type, output_dir, limit, base_path, confirm, storage_hint
         )
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in pull_fadcam_media")
+        await _ctx_warning(ctx, f"Error in pull_fadcam_media: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def fadcam_list_packages(device: str) -> str:
+async def fadcam_list_packages(ctx: Context, device: str) -> str:
     """List all FadCam packages installed on a device"""
+    await _ctx_info(ctx, f"Tool called: fadcam_list_packages for device {device}")
     logger.info(f"Tool called: fadcam_list_packages for device {device}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_list_packages(device)
+        result = await tools.impl_fadcam_list_packages(ctx, device)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_list_packages")
+        await _ctx_warning(ctx, f"Error in fadcam_list_packages: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def fadcam_detect_storage(device: str, package: str, include_counts: bool = False) -> str:
+async def fadcam_detect_storage(ctx: Context, device: str, package: str, include_counts: bool = False) -> str:
     """Detect FadCam storage configuration for a package
 
     include_counts: When true, performs file counting (slower).
     """
+    await _ctx_info(ctx, f"Tool called: fadcam_detect_storage for device {device}, package {package}")
     logger.info(
         f"Tool called: fadcam_detect_storage for device {device}, package {package}, "
         f"include_counts={include_counts}"
     )
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_detect_storage(device, package, include_counts)
+        result = await tools.impl_fadcam_detect_storage(ctx, device, package, include_counts)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_detect_storage")
+        await _ctx_warning(ctx, f"Error in fadcam_detect_storage: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def fadcam_list_structure(device: str, package: str, include_counts: bool = False) -> str:
+async def fadcam_list_structure(ctx: Context, device: str, package: str, include_counts: bool = False) -> str:
     """List FadCam directory structure and file counts
 
     include_counts: When true, performs file counting (slower).
     """
+    await _ctx_info(ctx, f"Tool called: fadcam_list_structure for device {device}, package {package}")
     logger.info(
         f"Tool called: fadcam_list_structure for device {device}, package {package}, "
         f"include_counts={include_counts}"
     )
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_list_structure(device, package, include_counts)
+        result = await tools.impl_fadcam_list_structure(ctx, device, package, include_counts)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_list_structure")
+        await _ctx_warning(ctx, f"Error in fadcam_list_structure: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def fadcam_get_metadata(device: str, package: str, file_path: str) -> str:
+async def fadcam_get_metadata(ctx: Context, device: str, package: str, file_path: str) -> str:
     """Get metadata for a specific FadCam video file"""
+    await _ctx_info(ctx, f"Tool called: fadcam_get_metadata for device {device}, package {package}, path {file_path}")
     logger.info(f"Tool called: fadcam_get_metadata for device {device}, package {package}, path {file_path}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_get_metadata(device, package, file_path)
+        result = await tools.impl_fadcam_get_metadata(ctx, device, package, file_path)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_get_metadata")
+        await _ctx_warning(ctx, f"Error in fadcam_get_metadata: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def fadcam_pull_file(device: str, package: str, file_path: str,
+async def fadcam_pull_file(ctx: Context, device: str, package: str, file_path: str,
                           output_dir: str = "./fadcam_files",
                           confirm: bool = False) -> str:
     """Pull a specific FadCam file by exact path
 
     confirm: Set true to perform the pull. If false, returns a preview.
     """
+    await _ctx_info(ctx, f"Tool called: fadcam_pull_file for device {device}, package {package}, path {file_path}")
     logger.info(f"Tool called: fadcam_pull_file for device {device}, package {package}, path {file_path}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_pull_file(device, package, file_path, output_dir, confirm)
+        result = await tools.impl_fadcam_pull_file(ctx, device, package, file_path, output_dir, confirm)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_pull_file")
+        await _ctx_warning(ctx, f"Error in fadcam_pull_file: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def fadcam_pull_files(device: str, package: str, output_dir: str = "./fadcam_files",
+async def fadcam_pull_files(ctx: Context, device: str, package: str, output_dir: str = "./fadcam_files",
                            category: Optional[str] = None, camera: Optional[str] = None,
                            limit: Optional[int] = None, date_from: Optional[str] = None,
                            date_to: Optional[str] = None, base_path: Optional[str] = None,
@@ -412,20 +468,22 @@ async def fadcam_pull_files(device: str, package: str, output_dir: str = "./fadc
     confirm: Set true to perform the pull. If false, returns a preview.
     storage_hint: Optional hint like "internal", "download", "dcim", "sd_download", "custom"
     """
+    await _ctx_info(ctx, f"Tool called: fadcam_pull_files for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_pull_files for device {device}, package {package}")
     try:
         from src.mcp import tools
         result = await tools.impl_fadcam_pull_files(
-            device, package, output_dir, category, camera, limit, date_from, date_to, base_path, confirm, storage_hint
+            ctx, device, package, output_dir, category, camera, limit, date_from, date_to, base_path, confirm, storage_hint
         )
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_pull_files")
+        await _ctx_warning(ctx, f"Error in fadcam_pull_files: {e}")
         return json.dumps({"error": str(e)})
 
 
 @server.tool()
-async def fadcam_browse_files(device: str, package: str, category: Optional[str] = None,
+async def fadcam_browse_files(ctx: Context, device: str, package: str, category: Optional[str] = None,
                              camera: Optional[str] = None, limit: int = 50,
                              base_path: Optional[str] = None, storage_hint: Optional[str] = None) -> str:
     """Browse FadCam files without downloading - returns metadata only
@@ -433,13 +491,15 @@ async def fadcam_browse_files(device: str, package: str, category: Optional[str]
     base_path is required to avoid scanning all locations.
     storage_hint can be used to resolve a base_path (e.g., "internal", "download", "dcim", "sd_download", "custom").
     """
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_files for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_files for device {device}, package {package}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_browse_files(device, package, category, camera, limit, base_path, storage_hint)
+        result = await tools.impl_fadcam_browse_files(ctx, device, package, category, camera, limit, base_path, storage_hint)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_browse_files")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_files: {e}")
         return json.dumps({"error": str(e)})
 
 

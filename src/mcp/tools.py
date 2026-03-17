@@ -15,7 +15,7 @@ import shlex
 import urllib.parse
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from fastmcp.server.dependencies import get_context
+from fastmcp import Context
 
 from src.utils.adb_utils import get_adb_devices
 from src.utils.adb_path import get_adb_path
@@ -57,10 +57,26 @@ def _run_adb_command(device: str, cmd: List[str]) -> str:
         return f"Error: {str(e)}"
 
 
-async def _maybe_ctx_info(message: str) -> None:
+async def _ctx_info(ctx: Optional[Context], message: str) -> None:
     try:
-        ctx = get_context()
-        await ctx.info(message)
+        if ctx:
+            await ctx.info(message)
+    except Exception:
+        pass
+
+
+async def _ctx_warning(ctx: Optional[Context], message: str) -> None:
+    try:
+        if ctx:
+            await ctx.warning(message)
+    except Exception:
+        pass
+
+
+async def _ctx_error(ctx: Optional[Context], message: str) -> None:
+    try:
+        if ctx:
+            await ctx.error(message)
     except Exception:
         pass
 
@@ -448,11 +464,69 @@ def _resolve_base_path_from_hint(storage_info: Dict[str, Any],
         return {"base_path": matches[0], "matches": matches}
     return {"base_path": None, "matches": matches}
 
+
+async def _resolve_or_elicit_base_path(
+    ctx: Optional[Context],
+    storage_info: Dict[str, Any],
+    storage_hint: Optional[str],
+    base_path: Optional[str],
+    prompt_prefix: str
+) -> Dict[str, Any]:
+    if base_path:
+        return {"base_path": base_path, "response": None}
+
+    if storage_hint:
+        resolved = _resolve_base_path_from_hint(storage_info, storage_hint)
+        if resolved["base_path"]:
+            return {"base_path": resolved["base_path"], "response": None}
+        if resolved["matches"]:
+            if ctx and hasattr(ctx, "elicit"):
+                try:
+                    choice = await ctx.elicit(
+                        f"{prompt_prefix} Multiple locations match '{storage_hint}'. Choose one base_path.",
+                        response_type=resolved["matches"]
+                    )
+                    if getattr(choice, "action", None) == "accept":
+                        return {"base_path": choice.data, "response": None}
+                except Exception:
+                    pass
+            await _ctx_warning(ctx, "Multiple locations match storage_hint. Asking user to choose.")
+            return {
+                "base_path": None,
+                "response": {
+                    "message": "Multiple locations match storage_hint. Choose one base_path.",
+                    "storage_hint": storage_hint,
+                    "available_base_paths": resolved["matches"],
+                    "requires_selection": True
+                }
+            }
+
+    return {"base_path": None, "response": None}
+
+
+async def _elicit_base_path(
+    ctx: Optional[Context],
+    base_paths: List[str],
+    prompt_prefix: str
+) -> Optional[str]:
+    if not (ctx and hasattr(ctx, "elicit") and base_paths):
+        return None
+    try:
+        choice = await ctx.elicit(
+            f"{prompt_prefix} Select a base_path to continue.",
+            response_type=base_paths
+        )
+        if getattr(choice, "action", None) == "accept":
+            return choice.data
+    except Exception:
+        return None
+    return None
+
 # ============================================================================
 # Tool Implementations - All 13 Tools
 # ============================================================================
 
-async def impl_get_devices() -> str:
+async def impl_get_devices(ctx: Optional[Context]) -> str:
     """
     Get list of connected Android devices with intelligent selection.
     
@@ -536,7 +610,7 @@ async def impl_get_devices() -> str:
         return json.dumps({"error": str(e), "devices": []})
 
 
-async def impl_get_logcat_stream(device: str, package: Optional[str] = None, 
+async def impl_get_logcat_stream(ctx: Optional[Context], device: str, package: Optional[str] = None, 
                                   level: str = "I", lines: int = 100) -> str:
     """
     Get logcat stream from a device with optional filters.
@@ -577,7 +651,7 @@ async def impl_get_logcat_stream(device: str, package: Optional[str] = None,
         return json.dumps({"error": str(e), "logs": []})
 
 
-async def impl_search_logs(query: str, tag_filter: Optional[str] = None,
+async def impl_search_logs(ctx: Optional[Context], query: str, tag_filter: Optional[str] = None,
                            level_filter: Optional[str] = None, limit: int = 50) -> str:
     """
     Search in logcat history across all devices.
@@ -624,7 +698,7 @@ async def impl_search_logs(query: str, tag_filter: Optional[str] = None,
         return json.dumps({"error": str(e), "results": []})
 
 
-async def impl_filter_by_level(device: str, level: str) -> str:
+async def impl_filter_by_level(ctx: Optional[Context], device: str, level: str) -> str:
     """
     Filter current logcat by severity level.
     
@@ -662,7 +736,7 @@ async def impl_filter_by_level(device: str, level: str) -> str:
         return json.dumps({"error": str(e), "logs": []})
 
 
-async def impl_get_app_processes(device: str, package: str) -> str:
+async def impl_get_app_processes(ctx: Optional[Context], device: str, package: str) -> str:
     """
     Get running processes for an app.
     
@@ -715,7 +789,7 @@ async def impl_get_app_processes(device: str, package: str) -> str:
         return json.dumps({"error": str(e), "processes": []})
 
 
-async def impl_get_connected_packages(device: str) -> str:
+async def impl_get_connected_packages(ctx: Optional[Context], device: str) -> str:
     """
     Get list of installed packages on a device.
     Returns only third-party packages (user-installed).
@@ -751,7 +825,7 @@ async def impl_get_connected_packages(device: str) -> str:
         return json.dumps({"error": str(e), "packages": []})
 
 
-async def impl_parse_stacktrace(trace: str) -> str:
+async def impl_parse_stacktrace(ctx: Optional[Context], trace: str) -> str:
     """
     Parse Java/Kotlin stack trace and extract key information.
     
@@ -817,7 +891,7 @@ async def impl_parse_stacktrace(trace: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_detect_error_type(logcat: str) -> str:
+async def impl_detect_error_type(ctx: Optional[Context], logcat: str) -> str:
     """
     Detect error type from logcat output (Crash, ANR, OOM, etc).
     
@@ -884,7 +958,7 @@ async def impl_detect_error_type(logcat: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_analyze_performance(device: str, package: str, duration: int = 10) -> str:
+async def impl_analyze_performance(ctx: Optional[Context], device: str, package: str, duration: int = 10) -> str:
     """
     Analyze app performance (CPU, memory, FPS) for specific package.
     
@@ -940,7 +1014,7 @@ async def impl_analyze_performance(device: str, package: str, duration: int = 10
         return json.dumps({"error": str(e)})
 
 
-async def impl_analyze_memory_leak(device: str, package: str) -> str:
+async def impl_analyze_memory_leak(ctx: Optional[Context], device: str, package: str) -> str:
     """
     Analyze potential memory leaks from logcat for a package.
     
@@ -986,7 +1060,7 @@ async def impl_analyze_memory_leak(device: str, package: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_trace_network_calls(device: str, package: str) -> str:
+async def impl_trace_network_calls(ctx: Optional[Context], device: str, package: str) -> str:
     """
     Trace network calls from logcat for a package.
     
@@ -1040,7 +1114,7 @@ async def impl_trace_network_calls(device: str, package: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_clear_logcat(device: str) -> str:
+async def impl_clear_logcat(ctx: Optional[Context], device: str) -> str:
     """
     Clear logcat on a device.
     
@@ -1065,7 +1139,7 @@ async def impl_clear_logcat(device: str) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
-async def impl_export_logs(device: str, format: str = "json", lines: int = 1000) -> str:
+async def impl_export_logs(ctx: Optional[Context], device: str, format: str = "json", lines: int = 1000) -> str:
     """
     Export logcat to file (JSON, CSV, HTML).
     
@@ -1126,7 +1200,7 @@ async def impl_export_logs(device: str, format: str = "json", lines: int = 1000)
         return json.dumps({"success": False, "error": str(e)})
 
 
-async def impl_get_system_info(device: str) -> str:
+async def impl_get_system_info(ctx: Optional[Context], device: str) -> str:
     """
     Get comprehensive system information from device.
     
@@ -1323,7 +1397,7 @@ async def impl_get_system_info(device: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_pull_fadcam_media(device: str, package: str, media_type: str = "all",
+async def impl_pull_fadcam_media(ctx: Optional[Context], device: str, package: str, media_type: str = "all",
                                 output_dir: str = "./fadcam_media", limit: Optional[int] = None,
                                 base_path: Optional[str] = None, confirm: bool = False,
                                 storage_hint: Optional[str] = None) -> str:
@@ -1386,48 +1460,59 @@ async def impl_pull_fadcam_media(device: str, package: str, media_type: str = "a
         errors = []
         total_size = 0
         if not base_path and storage_hint:
-            storage_result = await impl_fadcam_detect_storage(device, package, include_counts=False)
+            storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
             storage_info = json.loads(storage_result)
             if "error" in storage_info:
                 return storage_result
-            resolved = _resolve_base_path_from_hint(storage_info, storage_hint)
-            if resolved["base_path"]:
-                base_path = resolved["base_path"]
-            elif resolved["matches"]:
-                await _maybe_ctx_info("Multiple locations match storage_hint. Asking user to choose a base_path.")
+            resolved = await _resolve_or_elicit_base_path(
+                ctx,
+                storage_info,
+                storage_hint,
+                base_path,
+                "Pull requires base_path."
+            )
+            if resolved.get("response"):
                 return json.dumps({
                     "device": device,
                     "package": package,
-                    "message": "Multiple locations match storage_hint. Choose one base_path.",
-                    "storage_hint": storage_hint,
-                    "available_base_paths": resolved["matches"],
-                    "requires_selection": True
+                    **resolved["response"]
                 })
+            base_path = resolved.get("base_path")
 
         if not base_path:
-            await _maybe_ctx_info("Need a base_path (or storage_hint) before pulling. Returning available locations.")
-            storage_result = await impl_fadcam_detect_storage(device, package, include_counts=False)
+            await _ctx_info(ctx, "Need a base_path (or storage_hint) before pulling. Returning available locations.")
+            storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
             storage_info = json.loads(storage_result)
             if "error" in storage_info:
                 return storage_result
-            return json.dumps({
-                "device": device,
-                "package": package,
-                "message": "Pull requires an explicit base_path. Choose one from available locations.",
-                "available_locations": [
-                    {
-                        "package": pkg_info.get("package"),
-                        "base_path": entry.get("base_path"),
-                        "storage_type": entry.get("type"),
-                        "storage_root": entry.get("storage_root"),
-                        "custom_storage_uri": entry.get("custom_storage_uri"),
-                    }
-                    for pkg_info in storage_info.get("packages", [])
-                    for entry in pkg_info.get("storage_entries", [])
-                    if entry.get("base_path")
-                ],
-                "requires_selection": True
-            })
+            base_paths = [
+                entry.get("base_path")
+                for pkg_info in storage_info.get("packages", [])
+                for entry in pkg_info.get("storage_entries", [])
+                if entry.get("base_path")
+            ]
+            chosen = await _elicit_base_path(ctx, base_paths, "Pull requires base_path.")
+            if chosen:
+                base_path = chosen
+            else:
+                return json.dumps({
+                    "device": device,
+                    "package": package,
+                    "message": "Pull requires an explicit base_path. Choose one from available locations.",
+                    "available_locations": [
+                        {
+                            "package": pkg_info.get("package"),
+                            "base_path": entry.get("base_path"),
+                            "storage_type": entry.get("type"),
+                            "storage_root": entry.get("storage_root"),
+                            "custom_storage_uri": entry.get("custom_storage_uri"),
+                        }
+                        for pkg_info in storage_info.get("packages", [])
+                        for entry in pkg_info.get("storage_entries", [])
+                        if entry.get("base_path")
+                    ],
+                    "requires_selection": True
+                })
 
         internal_base = base_path
         if package in {"", "all", "*", "auto"}:
@@ -1450,7 +1535,7 @@ async def impl_pull_fadcam_media(device: str, package: str, media_type: str = "a
             elif media_type == "screenshots":
                 files = [f for f in files if f.endswith(".jpg")]
             if not confirm:
-                await _maybe_ctx_info("Preview only. Set confirm=true to pull.")
+                await _ctx_info(ctx, "Preview only. Set confirm=true to pull.")
                 return json.dumps({
                     "device": device,
                     "package": package,
@@ -1469,7 +1554,7 @@ async def impl_pull_fadcam_media(device: str, package: str, media_type: str = "a
                 if "error" in pull_cmd.lower() and "1 file pulled" not in pull_cmd:
                     errors.append(f"Failed to pull {filename}: {pull_cmd}")
                     continue
-                metadata_result = await impl_fadcam_get_metadata(device, package, file_path)
+                metadata_result = await impl_fadcam_get_metadata(ctx, device, package, file_path)
                 metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                 files_pulled.append(MediaFile(
                     filename=filename,
@@ -1529,7 +1614,7 @@ async def impl_pull_fadcam_media(device: str, package: str, media_type: str = "a
         # Process each media source
         # If not confirmed, return a preview list without pulling.
         if not confirm:
-            await _maybe_ctx_info("Preview only. Set confirm=true to pull.")
+            await _ctx_info(ctx, "Preview only. Set confirm=true to pull.")
             preview = []
             remaining = limit or 20
             for media_type_name, camera_type, pattern in media_sources:
@@ -1668,7 +1753,7 @@ async def impl_pull_fadcam_media(device: str, package: str, media_type: str = "a
                         if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
                             errors.append(f"Failed to pull {filename}: {pull_output}")
                             continue
-                        metadata_result = await impl_fadcam_get_metadata(device, package, remote_path)
+                        metadata_result = await impl_fadcam_get_metadata(ctx, device, package, remote_path)
                         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                         files_pulled.append(MediaFile(
                             filename=filename,
@@ -1702,7 +1787,7 @@ async def impl_pull_fadcam_media(device: str, package: str, media_type: str = "a
         return json.dumps({"error": str(e)})
 
 
-async def impl_fadcam_list_packages(device: str) -> str:
+async def impl_fadcam_list_packages(ctx: Optional[Context], device: str) -> str:
     """List all FadCam packages installed on a device"""
     try:
         # Check device connection
@@ -1731,7 +1816,7 @@ async def impl_fadcam_list_packages(device: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-async def impl_fadcam_detect_storage(device: str, package: str,
+async def impl_fadcam_detect_storage(ctx: Optional[Context], device: str, package: str,
                                      include_counts: bool = False) -> str:
     """Detect FadCam storage configuration for a package"""
     try:
@@ -1870,12 +1955,12 @@ async def impl_fadcam_detect_storage(device: str, package: str,
         return json.dumps({"error": str(e)})
 
 
-async def impl_fadcam_list_structure(device: str, package: str,
+async def impl_fadcam_list_structure(ctx: Optional[Context], device: str, package: str,
                                      include_counts: bool = True) -> str:
     """List FadCam directory structure and file counts"""
     try:
         # Get storage info first
-        storage_result = await impl_fadcam_detect_storage(device, package, include_counts=False)
+        storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
         storage_info = json.loads(storage_result)
 
         if "error" in storage_info:
@@ -2001,7 +2086,7 @@ async def impl_fadcam_list_structure(device: str, package: str,
         return json.dumps({"error": str(e)})
 
 
-async def impl_fadcam_get_metadata(device: str, package: str, file_path: str) -> str:
+async def impl_fadcam_get_metadata(ctx: Optional[Context], device: str, package: str, file_path: str) -> str:
     """Get metadata for a specific FadCam video file"""
     try:
         # Check if file exists and get basic info
@@ -2095,7 +2180,7 @@ async def impl_fadcam_get_metadata(device: str, package: str, file_path: str) ->
         return json.dumps({"error": str(e)})
 
 
-async def impl_fadcam_pull_file(device: str, package: str, file_path: str,
+async def impl_fadcam_pull_file(ctx: Optional[Context], device: str, package: str, file_path: str,
                                output_dir: str = "./fadcam_files",
                                confirm: bool = False) -> str:
     """Pull a specific FadCam file by exact path."""
@@ -2103,9 +2188,9 @@ async def impl_fadcam_pull_file(device: str, package: str, file_path: str,
         from pathlib import Path
 
         if not confirm:
-            metadata_result = await impl_fadcam_get_metadata(device, package, file_path)
+            metadata_result = await impl_fadcam_get_metadata(ctx, device, package, file_path)
             metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-            await _maybe_ctx_info("Preview only. Set confirm=true to pull.")
+            await _ctx_info(ctx, "Preview only. Set confirm=true to pull.")
             return json.dumps({
                 "device": device,
                 "package": package,
@@ -2124,7 +2209,7 @@ async def impl_fadcam_pull_file(device: str, package: str, file_path: str,
         if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
             return json.dumps({"error": f"Failed to pull {filename}: {pull_output}"})
 
-        metadata_result = await impl_fadcam_get_metadata(device, package, file_path)
+        metadata_result = await impl_fadcam_get_metadata(ctx, device, package, file_path)
         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
         return json.dumps({
             "device": device,
@@ -2137,7 +2222,7 @@ async def impl_fadcam_pull_file(device: str, package: str, file_path: str,
         return json.dumps({"error": str(e)})
 
 
-async def impl_fadcam_pull_files(device: str, package: str, output_dir: str = "./fadcam_files",
+async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: str, output_dir: str = "./fadcam_files",
                                 category: Optional[str] = None, camera: Optional[str] = None,
                                 limit: Optional[int] = None, date_from: Optional[str] = None,
                                 date_to: Optional[str] = None, base_path: Optional[str] = None,
@@ -2150,44 +2235,50 @@ async def impl_fadcam_pull_files(device: str, package: str, output_dir: str = ".
         from datetime import datetime
 
         # Get structure first
-        structure_result = await impl_fadcam_list_structure(device, package, include_counts=False)
+        structure_result = await impl_fadcam_list_structure(ctx, device, package, include_counts=False)
         structure = json.loads(structure_result)
 
         if "error" in structure:
             return structure_result
 
         if not base_path and storage_hint:
-            storage_result = await impl_fadcam_detect_storage(device, package, include_counts=False)
+            storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
             storage_info = json.loads(storage_result)
             if "error" in storage_info:
                 return storage_result
-            resolved = _resolve_base_path_from_hint(storage_info, storage_hint)
-            if resolved["base_path"]:
-                base_path = resolved["base_path"]
-            elif resolved["matches"]:
-                await _maybe_ctx_info("Multiple locations match storage_hint. Asking user to choose a base_path.")
+            resolved = await _resolve_or_elicit_base_path(
+                ctx,
+                storage_info,
+                storage_hint,
+                base_path,
+                "Pull requires base_path."
+            )
+            if resolved.get("response"):
                 return json.dumps({
                     "device": device,
                     "package": package,
-                    "message": "Multiple locations match storage_hint. Choose one base_path.",
-                    "storage_hint": storage_hint,
-                    "available_base_paths": resolved["matches"],
+                    **resolved["response"]
+                })
+            base_path = resolved.get("base_path")
+
+        if not base_path:
+            await _ctx_info(ctx, "Need a base_path (or storage_hint) before pulling. Returning available locations.")
+            base_paths = [loc.get("base_path") for loc in structure.get("structures", []) if loc.get("base_path")]
+            chosen = await _elicit_base_path(ctx, base_paths, "Pull requires base_path.")
+            if chosen:
+                base_path = chosen
+            else:
+                return json.dumps({
+                    "device": device,
+                    "package": package,
+                    "message": "Browse-first: choose a base_path from available locations before pulling.",
+                    "available_locations": structure.get("structures", []),
                     "requires_selection": True
                 })
 
-        if not base_path:
-            await _maybe_ctx_info("Need a base_path (or storage_hint) before pulling. Returning available locations.")
-            return json.dumps({
-                "device": device,
-                "package": package,
-                "message": "Browse-first: choose a base_path from available locations before pulling.",
-                "available_locations": structure.get("structures", []),
-                "requires_selection": True
-            })
-
         matching = [s for s in structure.get("structures", []) if s.get("base_path") == base_path]
         if not matching:
-            await _maybe_ctx_info("base_path not found. Returning available base paths.")
+            await _ctx_warning(ctx, "base_path not found. Returning available base paths.")
             return json.dumps({
                 "error": f"base_path not found: {base_path}",
                 "available_base_paths": [s.get("base_path") for s in structure.get("structures", [])]
@@ -2246,6 +2337,7 @@ async def impl_fadcam_pull_files(device: str, package: str, output_dir: str = ".
         # If not confirmed, return a preview from the selected location.
         if not confirm:
             preview = await impl_fadcam_browse_files(
+                ctx,
                 device,
                 package,
                 category=category,
@@ -2256,7 +2348,7 @@ async def impl_fadcam_pull_files(device: str, package: str, output_dir: str = ".
             preview_obj = json.loads(preview) if isinstance(preview, str) else preview
             preview_obj["message"] = "Preview only. Re-run with confirm=true to pull."
             preview_obj["requires_confirmation"] = True
-            await _maybe_ctx_info("Preview only. Set confirm=true to pull.")
+            await _ctx_info(ctx, "Preview only. Set confirm=true to pull.")
             return json.dumps(preview_obj)
 
         # Process categories
@@ -2287,7 +2379,7 @@ async def impl_fadcam_pull_files(device: str, package: str, output_dir: str = ".
                     if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
                         errors.append(f"Failed to pull {filename}: {pull_output}")
                         continue
-                    metadata_result = await impl_fadcam_get_metadata(device, package, remote_path)
+                    metadata_result = await impl_fadcam_get_metadata(ctx, device, package, remote_path)
                     metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                     pulled_files.append({
                         "filename": filename,
@@ -2322,7 +2414,7 @@ async def impl_fadcam_pull_files(device: str, package: str, output_dir: str = ".
                     if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
                         errors.append(f"Failed to pull {filename}: {pull_output}")
                         continue
-                    metadata_result = await impl_fadcam_get_metadata(device, package, remote_path)
+                    metadata_result = await impl_fadcam_get_metadata(ctx, device, package, remote_path)
                     metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                     pulled_files.append({
                         "filename": filename,
@@ -2372,7 +2464,7 @@ async def impl_fadcam_pull_files(device: str, package: str, output_dir: str = ".
                             continue
 
                         # Get metadata
-                        metadata_result = await impl_fadcam_get_metadata(device, package, remote_path)
+                        metadata_result = await impl_fadcam_get_metadata(ctx, device, package, remote_path)
                         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
 
                         pulled_files.append({
@@ -2407,54 +2499,60 @@ async def impl_fadcam_pull_files(device: str, package: str, output_dir: str = ".
         return json.dumps({"error": str(e)})
 
 
-async def impl_fadcam_browse_files(device: str, package: str, category: Optional[str] = None,
+async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package: str, category: Optional[str] = None,
                                   camera: Optional[str] = None, limit: int = 50,
                                   base_path: Optional[str] = None,
                                   storage_hint: Optional[str] = None) -> str:
     """Browse FadCam files without downloading - returns metadata only"""
     try:
-        structure_result = await impl_fadcam_list_structure(device, package, include_counts=False)
+        structure_result = await impl_fadcam_list_structure(ctx, device, package, include_counts=False)
         structure = json.loads(structure_result)
 
         if "error" in structure:
             return structure_result
 
         if not base_path and storage_hint:
-            storage_result = await impl_fadcam_detect_storage(device, package, include_counts=False)
+            storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
             storage_info = json.loads(storage_result)
             if "error" in storage_info:
                 return storage_result
-            resolved = _resolve_base_path_from_hint(storage_info, storage_hint)
-            if resolved["base_path"]:
-                base_path = resolved["base_path"]
-            elif resolved["matches"]:
-                await _maybe_ctx_info("Multiple locations match storage_hint. Asking user to choose a base_path.")
+            resolved = await _resolve_or_elicit_base_path(
+                ctx,
+                storage_info,
+                storage_hint,
+                base_path,
+                "Browse requires base_path."
+            )
+            if resolved.get("response"):
                 return json.dumps({
                     "device": device,
                     "package": package,
-                    "message": "Multiple locations match storage_hint. Choose one base_path.",
-                    "storage_hint": storage_hint,
-                    "available_base_paths": resolved["matches"],
-                    "requires_selection": True
+                    **resolved["response"]
                 })
+            base_path = resolved.get("base_path")
 
         if not base_path:
-            await _maybe_ctx_info("Need a base_path (or storage_hint) to browse. Returning available locations.")
-            return json.dumps({
-                "device": device,
-                "package": package,
-                "message": "Browse requires an explicit base_path. Choose one from available_locations.",
-                "available_locations": [
-                    {
-                        "package": loc.get("package"),
-                        "base_path": loc.get("base_path"),
-                        "storage_type": loc.get("storage_type"),
-                        "layout": loc.get("layout"),
-                    }
-                    for loc in structure.get("structures", [])
-                ],
-                "requires_selection": True
-            })
+            await _ctx_info(ctx, "Need a base_path (or storage_hint) to browse. Returning available locations.")
+            base_paths = [loc.get("base_path") for loc in structure.get("structures", []) if loc.get("base_path")]
+            chosen = await _elicit_base_path(ctx, base_paths, "Browse requires base_path.")
+            if chosen:
+                base_path = chosen
+            else:
+                return json.dumps({
+                    "device": device,
+                    "package": package,
+                    "message": "Browse requires an explicit base_path. Choose one from available_locations.",
+                    "available_locations": [
+                        {
+                            "package": loc.get("package"),
+                            "base_path": loc.get("base_path"),
+                            "storage_type": loc.get("storage_type"),
+                            "layout": loc.get("layout"),
+                        }
+                        for loc in structure.get("structures", [])
+                    ],
+                    "requires_selection": True
+                })
 
         files_info = []
         total_count = 0
@@ -2481,7 +2579,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                         for remote_path in files:
                             if total_count >= limit:
                                 break
-                            metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                            metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                             metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                             if "error" not in metadata:
                                 files_info.append({
@@ -2508,7 +2606,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                     for remote_path in files:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                         if "error" not in metadata:
                             files_info.append({
@@ -2533,7 +2631,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                     for remote_path in files:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                         if "error" not in metadata:
                             files_info.append({
@@ -2557,7 +2655,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                     for remote_path in files:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                         if "error" not in metadata:
                             files_info.append({
@@ -2582,7 +2680,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                     for remote_path in files:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                         if "error" not in metadata:
                             files_info.append({
@@ -2615,7 +2713,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                         for remote_path in files:
                             if total_count >= limit:
                                 break
-                            metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                            metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                             metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                             if "error" not in metadata:
                                 files_info.append({
@@ -2644,7 +2742,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                     for remote_path in files:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                         if "error" not in metadata:
                             files_info.append({
@@ -2682,7 +2780,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                         for remote_path in files:
                             if total_count >= limit:
                                 break
-                            metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                            metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                             metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                             if "error" not in metadata:
                                 files_info.append({
@@ -2712,7 +2810,7 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                         filename = remote_path.split('/')[-1]
                         if is_custom_root and not _is_fadcam_filename(filename):
                             continue
-                        metadata_result = await impl_fadcam_get_metadata(device, pkg, remote_path)
+                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
                         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                         if "error" not in metadata:
                             files_info.append({
@@ -2727,11 +2825,17 @@ async def impl_fadcam_browse_files(device: str, package: str, category: Optional
                             total_count += 1
 
         if base_path and not seen_any_location:
-            await _maybe_ctx_info("base_path not found. Returning available base paths.")
+            await _ctx_warning(ctx, "base_path not found. Returning available base paths.")
             return json.dumps({
                 "error": f"base_path not found: {base_path}",
                 "available_base_paths": [loc.get("base_path") for loc in structure.get("structures", [])]
             })
+
+        if total_count == 0:
+            await _ctx_info(
+                ctx,
+                "No files found for the requested filters. Try a different base_path or category."
+            )
 
         return json.dumps({
             "device": device,
