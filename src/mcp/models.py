@@ -1,6 +1,6 @@
 """MCP Data Models - Pydantic models for FadCat MCP features."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
@@ -25,8 +25,7 @@ class LogLine(BaseModel):
     message: str
     raw: Optional[str] = None
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class DeviceInfo(BaseModel):
