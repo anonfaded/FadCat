@@ -439,16 +439,28 @@ async def fadcam_get_metadata(ctx: Context, device: str, package: str, file_path
 @server.tool()
 async def fadcam_pull_file(ctx: Context, device: str, package: str, file_path: str,
                           output_dir: str = "./fadcam_files",
-                          confirm: bool = False) -> str:
-    """Pull a specific FadCam file by exact path
+                          confirm: bool = False,
+                          base_path: Optional[str] = None,
+                          storage_hint: Optional[str] = None) -> str:
+    """Pull a specific FadCam file by exact path or filename.
 
     confirm: Set true to perform the pull. If false, returns a preview.
+    base_path/storage_hint: Used to resolve filename-only requests.
     """
     await _ctx_info(ctx, f"Tool called: fadcam_pull_file for device {device}, package {package}, path {file_path}")
     logger.info(f"Tool called: fadcam_pull_file for device {device}, package {package}, path {file_path}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_pull_file(ctx, device, package, file_path, output_dir, confirm)
+        result = await tools.impl_fadcam_pull_file(
+            ctx,
+            device,
+            package,
+            file_path,
+            output_dir,
+            confirm,
+            base_path,
+            storage_hint
+        )
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_pull_file")

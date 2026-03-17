@@ -163,7 +163,7 @@ async def get_fadcam_media_helper_prompt() -> str:
 Rules:
 - Always browse or preview before any pull.
 - Require a specific location: ask for base_path or a storage_hint (internal, download, dcim, sd_download, sd_dcim, custom).
-- If the user wants a specific file, use the exact file_path.
+- If the user provides a filename only, resolve it within the chosen base_path before pulling.
 - Only pull after explicit confirmation (confirm=true).
 
 Recommended flow:
@@ -177,7 +177,7 @@ Examples:
 - "Show the latest FadShot image from internal storage."
   -> browse with storage_hint="internal", category="FadShot", limit=1
 - "Pull this exact file."
-  -> fadcam_pull_file with file_path and confirm=true
+  -> fadcam_pull_file with file_path (or filename + base_path) and confirm=true
 - "Only videos from Feb 11."
   -> browse with base_path + date range, then confirm pull
 """

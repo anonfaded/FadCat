@@ -328,6 +328,120 @@ def _list_media_files_from_ls(device: str, path: str) -> List[str]:
     return files
 
 
+def _list_media_entries_from_ls(device: str, path: str,
+                                fadcam_only: bool = False) -> List[Dict[str, Optional[object]]]:
+    ls_cmd = _run_adb_command(device, ['shell', 'ls', '-l', path])
+    if "No such file" in ls_cmd or "Permission denied" in ls_cmd:
+        return []
+    entries: List[Dict[str, Optional[object]]] = []
+    for line in ls_cmd.split('\n'):
+        line = line.strip()
+        if not line or line.startswith('total') or line.startswith('d'):
+            continue
+        parts = line.split()
+        if len(parts) < 7:
+            continue
+        filename = parts[-1]
+        if not (filename.endswith('.mp4') or filename.endswith('.jpg')):
+            continue
+        if fadcam_only and not _is_fadcam_filename(filename):
+            continue
+        size_bytes = None
+        if len(parts) >= 5 and parts[4].isdigit():
+            try:
+                size_bytes = int(parts[4])
+            except Exception:
+                size_bytes = None
+        entries.append({
+            "filename": filename,
+            "path": f"{path.rstrip('/')}/{filename}",
+            "size_bytes": size_bytes
+        })
+    return entries
+
+
+def _build_metadata_from_filename(file_path: str, size_bytes: Optional[int]) -> Dict[str, object]:
+    filename = file_path.split('/')[-1]
+    metadata = {
+        "file_path": file_path,
+        "filename": filename,
+        "size_bytes": size_bytes or 0,
+        "modified_timestamp": 0,
+        "created_date": None,
+        "file_type": "unknown"
+    }
+    if filename.endswith('.mp4'):
+        metadata["file_type"] = "video"
+    elif filename.endswith('.jpg'):
+        metadata["file_type"] = "image"
+
+    if filename.startswith('FadCam_') and len(filename) >= 19:
+        date_str = filename[7:7+15]  # YYYYMMDD_HHMMSS
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(date_str, '%Y%m%d_%H%M%S')
+            metadata["created_date"] = dt.isoformat()
+        except Exception:
+            pass
+    elif filename.startswith('FadShot_') and len(filename) >= 23:
+        date_str = filename[14:14+15]  # YYYYMMDD_HHMMSS
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(date_str, '%Y%m%d_%H%M%S')
+            metadata["created_date"] = dt.isoformat()
+        except Exception:
+            pass
+    elif "/Forensics/Snapshots/" in file_path and filename.endswith(".jpg"):
+        metadata.update(_parse_forensics_filename(file_path))
+
+    return metadata
+
+
+def _find_fadcam_file_matches(device: str, base_path: str, filename: str) -> List[str]:
+    candidates = [
+        f"{base_path}/Camera/Back",
+        f"{base_path}/Camera/Front",
+        f"{base_path}/Camera/Dual",
+        f"{base_path}/Dual",
+        f"{base_path}/Screen",
+        f"{base_path}/Stream",
+        f"{base_path}/Faditor/Converted",
+        f"{base_path}/Faditor/Merge",
+        f"{base_path}/FadShot/Back",
+        f"{base_path}/FadShot/Selfie",
+        f"{base_path}/FadShot/FadRec",
+        base_path
+    ]
+    matches: List[str] = []
+    for directory in candidates:
+        if not _path_exists(device, directory):
+            continue
+        candidate = f"{directory.rstrip('/')}/{filename}"
+        if _path_exists(device, candidate):
+            matches.append(candidate)
+
+    if not matches and filename.endswith(".jpg"):
+        forensics_root = f"{base_path}/Forensics/Snapshots"
+        if _path_exists(device, forensics_root):
+            qpath = _shell_quote(forensics_root)
+            qname = _shell_quote(filename)
+            find_cmd = f"find {qpath} -maxdepth 4 -type f -name {qname} | head -n 5"
+            output = _run_adb_shell(device, find_cmd)
+            if "No such file" not in output and "Permission denied" not in output:
+                matches.extend([line.strip() for line in output.split('\n') if line.strip()])
+
+    return matches
+
+
+def _resolve_output_dir(path_str: str) -> str:
+    from pathlib import Path
+    raw = Path(path_str)
+    if raw.is_absolute():
+        return str(raw)
+    repo_root = Path(__file__).resolve().parents[2]
+    return str((repo_root / raw).resolve())
+
+
 def _find_media_files_limited(device: str, path: str, limit: int,
                               fadcam_only: bool = False,
                               maxdepth: Optional[int] = None) -> List[str]:
@@ -1453,7 +1567,10 @@ async def impl_pull_fadcam_media(ctx: Optional[Context], device: str, package: s
                 })
 
         # Create output directory
-        output_path = Path(output_dir)
+        resolved_output_dir = _resolve_output_dir(output_dir)
+        if resolved_output_dir != output_dir:
+            await _ctx_info(ctx, f"Resolved output_dir to {resolved_output_dir}")
+        output_path = Path(resolved_output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
         files_pulled = []
@@ -2100,9 +2217,6 @@ async def impl_fadcam_get_metadata(ctx: Optional[Context], device: str, package:
             "size_bytes": 0,
             "modified_timestamp": 0,
             "created_date": None,
-            "duration_seconds": 0,
-            "resolution": None,
-            "bitrate": 0,
             "file_type": "unknown"
         }
 
@@ -2141,39 +2255,6 @@ async def impl_fadcam_get_metadata(ctx: Optional[Context], device: str, package:
         elif "/Forensics/Snapshots/" in file_path and filename.endswith(".jpg"):
             metadata.update(_parse_forensics_filename(file_path))
 
-        # Try to get video metadata using ffprobe if available
-        if metadata["file_type"] == "video":
-            probe_cmd = _run_adb_command(device, [
-                'shell', 'ffprobe', '-v', 'quiet', '-print_format', 'json',
-                '-show_format', '-show_streams', file_path
-            ])
-
-            if "ffprobe" not in probe_cmd and "not found" not in probe_cmd:
-                try:
-                    import json as json_lib
-                    probe_data = json_lib.loads(probe_cmd)
-
-                    if 'format' in probe_data:
-                        fmt = probe_data['format']
-                        if 'duration' in fmt:
-                            metadata['duration_seconds'] = float(fmt['duration'])
-                        if 'bit_rate' in fmt:
-                            try:
-                                metadata['bitrate'] = int(fmt['bit_rate'])
-                            except:
-                                pass
-
-                    if 'streams' in probe_data:
-                        for stream in probe_data['streams']:
-                            if stream.get('codec_type') == 'video':
-                                width = stream.get('width')
-                                height = stream.get('height')
-                                if width and height:
-                                    metadata['resolution'] = f"{width}x{height}"
-                                break
-                except:
-                    pass
-
         return json.dumps(metadata)
 
     except Exception as e:
@@ -2182,10 +2263,78 @@ async def impl_fadcam_get_metadata(ctx: Optional[Context], device: str, package:
 
 async def impl_fadcam_pull_file(ctx: Optional[Context], device: str, package: str, file_path: str,
                                output_dir: str = "./fadcam_files",
-                               confirm: bool = False) -> str:
-    """Pull a specific FadCam file by exact path."""
+                               confirm: bool = False,
+                               base_path: Optional[str] = None,
+                               storage_hint: Optional[str] = None) -> str:
+    """Pull a specific FadCam file by exact path or filename."""
     try:
         from pathlib import Path
+        if "/" not in file_path:
+            filename = file_path
+            if not base_path and storage_hint:
+                storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
+                storage_info = json.loads(storage_result)
+                if "error" in storage_info:
+                    return storage_result
+                resolved = await _resolve_or_elicit_base_path(
+                    ctx,
+                    storage_info,
+                    storage_hint,
+                    base_path,
+                    "Pull by filename requires base_path."
+                )
+                if resolved.get("response"):
+                    return json.dumps({
+                        "device": device,
+                        "package": package,
+                        **resolved["response"]
+                    })
+                base_path = resolved.get("base_path")
+
+            if not base_path:
+                await _ctx_info(ctx, "Need a base_path (or storage_hint) to resolve filename.")
+                storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
+                storage_info = json.loads(storage_result)
+                if "error" in storage_info:
+                    return storage_result
+                base_paths = [
+                    entry.get("base_path")
+                    for pkg_info in storage_info.get("packages", [])
+                    for entry in pkg_info.get("storage_entries", [])
+                    if entry.get("base_path")
+                ]
+                chosen = await _elicit_base_path(ctx, base_paths, "Select base_path to resolve filename.")
+                if chosen:
+                    base_path = chosen
+                else:
+                    return json.dumps({
+                        "device": device,
+                        "package": package,
+                        "message": "Filename needs a base_path. Choose one from available locations.",
+                        "available_locations": base_paths,
+                        "requires_selection": True
+                    })
+
+            matches = _find_fadcam_file_matches(device, base_path, filename)
+            if not matches:
+                return json.dumps({
+                    "error": f"No match for filename: {filename}",
+                    "base_path": base_path
+                })
+            if len(matches) > 1:
+                chosen = await _elicit_base_path(ctx, matches, "Multiple matches. Choose one file to pull.")
+                if chosen:
+                    file_path = chosen
+                else:
+                    return json.dumps({
+                        "device": device,
+                        "package": package,
+                        "message": "Multiple matches found. Choose a file.",
+                        "available_matches": matches,
+                        "requires_selection": True
+                    })
+            else:
+                file_path = matches[0]
 
         if not confirm:
             metadata_result = await impl_fadcam_get_metadata(ctx, device, package, file_path)
@@ -2195,12 +2344,16 @@ async def impl_fadcam_pull_file(ctx: Optional[Context], device: str, package: st
                 "device": device,
                 "package": package,
                 "file_path": file_path,
+                "output_dir": _resolve_output_dir(output_dir),
                 "message": "Preview only. Re-run with confirm=true to pull.",
                 "metadata": metadata,
                 "requires_confirmation": True
             })
 
-        output_path = Path(output_dir)
+        resolved_output_dir = _resolve_output_dir(output_dir)
+        if resolved_output_dir != output_dir:
+            await _ctx_info(ctx, f"Resolved output_dir to {resolved_output_dir}")
+        output_path = Path(resolved_output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         filename = file_path.split('/')[-1]
         local_path = output_path / filename
@@ -2216,6 +2369,7 @@ async def impl_fadcam_pull_file(ctx: Optional[Context], device: str, package: st
             "package": package,
             "file_path": file_path,
             "local_path": str(local_path),
+            "output_dir": str(output_path),
             "metadata": metadata
         })
     except Exception as e:
@@ -2288,7 +2442,10 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
             package = location.get("package") or package
 
         # Create output directory
-        output_path = Path(output_dir)
+        resolved_output_dir = _resolve_output_dir(output_dir)
+        if resolved_output_dir != output_dir:
+            await _ctx_info(ctx, f"Resolved output_dir to {resolved_output_dir}")
+        output_path = Path(resolved_output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Parse date filters
@@ -2571,54 +2728,56 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
             if category and category.lower() == "fadshot":
                 fadshot_root = f"{base}/FadShot"
                 if _path_exists(device, fadshot_root):
-                    for sub_name in ("Back", "Selfie", "FadRec"):
+                    subdirs = ("Back", "Selfie", "FadRec")
+                    if camera:
+                        subdirs = tuple(s for s in subdirs if s.lower() == camera.lower())
+                    for sub_name in subdirs:
                         sub_path = f"{fadshot_root}/{sub_name}"
                         if not _path_exists(device, sub_path):
                             continue
-                        files = _list_media_files_from_ls(device, sub_path)
-                        for remote_path in files:
+                        entries = _list_media_entries_from_ls(device, sub_path)
+                        for entry in entries:
                             if total_count >= limit:
                                 break
-                            metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                            metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                            if "error" not in metadata:
-                                files_info.append({
-                                    "filename": metadata["filename"],
-                                    "category": "FadShot",
-                                    "subcategory": sub_name,
-                                    "remote_path": remote_path,
-                                    "base_path": base,
-                                    "storage_type": storage_type,
-                                    "metadata": metadata
-                                })
-                                total_count += 1
-                        if total_count >= limit:
-                            break
-                continue
-
-            if category and category.lower() == "camera":
-                for sub_name in ("Back", "Front", "Dual"):
-                    sub_path = f"{base}/Camera/{sub_name}"
-                    if not _path_exists(device, sub_path):
-                        continue
-                    files = _list_media_files_from_ls(device, sub_path)
-                    files = [f for f in files if f.endswith(".mp4")]
-                    for remote_path in files:
-                        if total_count >= limit:
-                            break
-                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                        metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                        if "error" not in metadata:
+                            metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                             files_info.append({
                                 "filename": metadata["filename"],
-                                "category": "Camera",
+                                "category": "FadShot",
                                 "subcategory": sub_name,
-                                "remote_path": remote_path,
+                                "remote_path": entry["path"],
                                 "base_path": base,
                                 "storage_type": storage_type,
                                 "metadata": metadata
                             })
                             total_count += 1
+                        if total_count >= limit:
+                            break
+                continue
+
+            if category and category.lower() == "camera":
+                subdirs = ("Back", "Front", "Dual")
+                if camera:
+                    subdirs = tuple(s for s in subdirs if s.lower() == camera.lower())
+                for sub_name in subdirs:
+                    sub_path = f"{base}/Camera/{sub_name}"
+                    if not _path_exists(device, sub_path):
+                        continue
+                    entries = _list_media_entries_from_ls(device, sub_path)
+                    entries = [e for e in entries if e["path"].endswith(".mp4")]
+                    for entry in entries:
+                        if total_count >= limit:
+                            break
+                        metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
+                        files_info.append({
+                            "filename": metadata["filename"],
+                            "category": "Camera",
+                            "subcategory": sub_name,
+                            "remote_path": entry["path"],
+                            "base_path": base,
+                            "storage_type": storage_type,
+                            "metadata": metadata
+                        })
+                        total_count += 1
                     if total_count >= limit:
                         break
                 continue
@@ -2626,48 +2785,44 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
             if category and category.lower() == "dual":
                 dual_path = f"{base}/Dual"
                 if _path_exists(device, dual_path):
-                    files = _list_media_files_from_ls(device, dual_path)
-                    files = [f for f in files if f.endswith(".mp4")]
-                    for remote_path in files:
+                    entries = _list_media_entries_from_ls(device, dual_path)
+                    entries = [e for e in entries if e["path"].endswith(".mp4")]
+                    for entry in entries:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                        metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                        if "error" not in metadata:
-                            files_info.append({
-                                "filename": metadata["filename"],
-                                "category": "Dual",
-                                "subcategory": None,
-                                "remote_path": remote_path,
-                                "base_path": base,
-                                "storage_type": storage_type,
-                                "metadata": metadata
-                            })
-                            total_count += 1
+                        metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
+                        files_info.append({
+                            "filename": metadata["filename"],
+                            "category": "Dual",
+                            "subcategory": None,
+                            "remote_path": entry["path"],
+                            "base_path": base,
+                            "storage_type": storage_type,
+                            "metadata": metadata
+                        })
+                        total_count += 1
                 continue
 
             if category and category.lower() in {"screen", "stream"}:
                 cat_dir = "Screen" if category.lower() == "screen" else "Stream"
                 cat_path = f"{base}/{cat_dir}"
                 if _path_exists(device, cat_path):
-                    files = _list_media_files_from_ls(device, cat_path)
-                    files = [f for f in files if f.endswith(".mp4")]
-                    for remote_path in files:
+                    entries = _list_media_entries_from_ls(device, cat_path)
+                    entries = [e for e in entries if e["path"].endswith(".mp4")]
+                    for entry in entries:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                        metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                        if "error" not in metadata:
-                            files_info.append({
-                                "filename": metadata["filename"],
-                                "category": cat_dir,
-                                "subcategory": None,
-                                "remote_path": remote_path,
-                                "base_path": base,
-                                "storage_type": storage_type,
-                                "metadata": metadata
-                            })
-                            total_count += 1
+                        metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
+                        files_info.append({
+                            "filename": metadata["filename"],
+                            "category": cat_dir,
+                            "subcategory": None,
+                            "remote_path": entry["path"],
+                            "base_path": base,
+                            "storage_type": storage_type,
+                            "metadata": metadata
+                        })
+                        total_count += 1
                 continue
 
             if category and category.lower() == "faditor":
@@ -2675,24 +2830,22 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                     sub_path = f"{base}/Faditor/{sub_name}"
                     if not _path_exists(device, sub_path):
                         continue
-                    files = _list_media_files_from_ls(device, sub_path)
-                    files = [f for f in files if f.endswith(".mp4")]
-                    for remote_path in files:
+                    entries = _list_media_entries_from_ls(device, sub_path)
+                    entries = [e for e in entries if e["path"].endswith(".mp4")]
+                    for entry in entries:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                        metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                        if "error" not in metadata:
-                            files_info.append({
-                                "filename": metadata["filename"],
-                                "category": "Faditor",
-                                "subcategory": sub_name,
-                                "remote_path": remote_path,
-                                "base_path": base,
-                                "storage_type": storage_type,
-                                "metadata": metadata
-                            })
-                            total_count += 1
+                        metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
+                        files_info.append({
+                            "filename": metadata["filename"],
+                            "category": "Faditor",
+                            "subcategory": sub_name,
+                            "remote_path": entry["path"],
+                            "base_path": base,
+                            "storage_type": storage_type,
+                            "metadata": metadata
+                        })
+                        total_count += 1
                     if total_count >= limit:
                         break
                 continue
@@ -2704,28 +2857,21 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                         sub_path = f"{fadshot_root}/{sub_name}"
                         if not _path_exists(device, sub_path):
                             continue
-                        files = _find_media_files_limited(
-                            device,
-                            sub_path,
-                            limit - total_count,
-                            maxdepth=1
-                        )
-                        for remote_path in files:
+                        entries = _list_media_entries_from_ls(device, sub_path)
+                        for entry in entries:
                             if total_count >= limit:
                                 break
-                            metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                            metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                            if "error" not in metadata:
-                                files_info.append({
-                                    "filename": metadata["filename"],
-                                    "category": "FadShot",
-                                    "subcategory": sub_name,
-                                    "remote_path": remote_path,
-                                    "base_path": base,
-                                    "storage_type": storage_type,
-                                    "metadata": metadata
-                                })
-                                total_count += 1
+                            metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
+                            files_info.append({
+                                "filename": metadata["filename"],
+                                "category": "FadShot",
+                                "subcategory": sub_name,
+                                "remote_path": entry["path"],
+                                "base_path": base,
+                                "storage_type": storage_type,
+                                "metadata": metadata
+                            })
+                            total_count += 1
                         if total_count >= limit:
                             break
 
@@ -2742,19 +2888,17 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                     for remote_path in files:
                         if total_count >= limit:
                             break
-                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                        metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                        if "error" not in metadata:
-                            files_info.append({
-                                "filename": metadata["filename"],
-                                "category": "Forensics",
-                                "subcategory": "Snapshots",
-                                "remote_path": remote_path,
-                                "base_path": base,
-                                "storage_type": storage_type,
-                                "metadata": metadata
-                            })
-                            total_count += 1
+                        metadata = _build_metadata_from_filename(remote_path, None)
+                        files_info.append({
+                            "filename": metadata["filename"],
+                            "category": "Forensics",
+                            "subcategory": "Snapshots",
+                            "remote_path": remote_path,
+                            "base_path": base,
+                            "storage_type": storage_type,
+                            "metadata": metadata
+                        })
+                        total_count += 1
                     continue
 
                 subdirs = cat_info.get("subdirs", {})
@@ -2771,58 +2915,44 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                         remaining = limit - total_count
                         if remaining <= 0:
                             break
-                        files = _find_media_files_limited(
-                            device,
-                            sub_info["path"],
-                            remaining,
-                            maxdepth=1
-                        )
-                        for remote_path in files:
+                        entries = _list_media_entries_from_ls(device, sub_info["path"])
+                        for entry in entries:
                             if total_count >= limit:
                                 break
-                            metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                            metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                            if "error" not in metadata:
-                                files_info.append({
-                                    "filename": metadata["filename"],
-                                    "category": cat_name,
-                                    "subcategory": sub_name,
-                                    "remote_path": remote_path,
-                                    "base_path": base,
-                                    "storage_type": storage_type,
-                                    "metadata": metadata
-                                })
-                                total_count += 1
-                else:
-                    remaining = limit - total_count
-                    if remaining <= 0:
-                        break
-                    files = _find_media_files_limited(
-                        device,
-                        cat_info["path"],
-                        remaining,
-                        fadcam_only=is_custom_root or is_root_media,
-                        maxdepth=1
-                    )
-                    for remote_path in files:
-                        if total_count >= limit:
-                            break
-                        filename = remote_path.split('/')[-1]
-                        if is_custom_root and not _is_fadcam_filename(filename):
-                            continue
-                        metadata_result = await impl_fadcam_get_metadata(ctx, device, pkg, remote_path)
-                        metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
-                        if "error" not in metadata:
+                            metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                             files_info.append({
                                 "filename": metadata["filename"],
                                 "category": cat_name,
-                                "subcategory": None,
-                                "remote_path": remote_path,
+                                "subcategory": sub_name,
+                                "remote_path": entry["path"],
                                 "base_path": base,
                                 "storage_type": storage_type,
                                 "metadata": metadata
                             })
                             total_count += 1
+                else:
+                    remaining = limit - total_count
+                    if remaining <= 0:
+                        break
+                    entries = _list_media_entries_from_ls(
+                        device,
+                        cat_info["path"],
+                        fadcam_only=is_custom_root or is_root_media
+                    )
+                    for entry in entries:
+                        if total_count >= limit:
+                            break
+                        metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
+                        files_info.append({
+                            "filename": metadata["filename"],
+                            "category": cat_name,
+                            "subcategory": None,
+                            "remote_path": entry["path"],
+                            "base_path": base,
+                            "storage_type": storage_type,
+                            "metadata": metadata
+                        })
+                        total_count += 1
 
         if base_path and not seen_any_location:
             await _ctx_warning(ctx, "base_path not found. Returning available base paths.")
