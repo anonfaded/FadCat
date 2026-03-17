@@ -442,6 +442,23 @@ def _resolve_output_dir(path_str: str) -> str:
     return str((repo_root / raw).resolve())
 
 
+def _resolve_preserved_local_path(output_dir: str,
+                                  file_path: str,
+                                  base_path: Optional[str]) -> str:
+    from pathlib import Path
+    output_root = Path(output_dir)
+    rel_path: Optional[str] = None
+    if base_path and file_path.startswith(base_path.rstrip('/') + '/'):
+        rel_path = file_path[len(base_path.rstrip('/') + '/'):]
+    else:
+        marker = "/FadCam/"
+        if marker in file_path:
+            rel_path = file_path.split(marker, 1)[1]
+    if not rel_path:
+        rel_path = file_path.split('/')[-1]
+    return str((output_root / rel_path).resolve())
+
+
 def _find_media_files_limited(device: str, path: str, limit: int,
                               fadcam_only: bool = False,
                               maxdepth: Optional[int] = None) -> List[str]:
@@ -1665,20 +1682,22 @@ async def impl_pull_fadcam_media(ctx: Optional[Context], device: str, package: s
             for file_path in files:
                 if limit and len(files_pulled) >= limit:
                     break
-                filename = Path(file_path).name
-                local_path = output_path / filename
+                local_path = Path(
+                    _resolve_preserved_local_path(str(output_path), file_path, internal_base)
+                )
+                local_path.parent.mkdir(parents=True, exist_ok=True)
                 pull_cmd = _run_adb_command(device, ['pull', file_path, str(local_path)])
                 if "error" in pull_cmd.lower() and "1 file pulled" not in pull_cmd:
-                    errors.append(f"Failed to pull {filename}: {pull_cmd}")
+                    errors.append(f"Failed to pull {local_path.name}: {pull_cmd}")
                     continue
                 metadata_result = await impl_fadcam_get_metadata(ctx, device, package, file_path)
                 metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
                 files_pulled.append(MediaFile(
-                    filename=filename,
+                    filename=Path(file_path).name,
                     size_bytes=metadata.get("size_bytes", 0),
                     timestamp=metadata.get("created_date") or metadata.get("modified_timestamp", "unknown"),
                     local_path=str(local_path),
-                    media_type="video" if filename.endswith(".mp4") else "screenshot",
+                    media_type="video" if file_path.endswith(".mp4") else "screenshot",
                     camera_type=None
                 ))
                 total_size += metadata.get("size_bytes", 0)
@@ -1819,13 +1838,12 @@ async def impl_pull_fadcam_media(ctx: Optional[Context], device: str, package: s
                     elif filename.startswith('FadShot_') and len(filename) >= 23:
                         timestamp = filename[14:14+15]  # YYYYMMDD_HHMMSS
 
-                    # Create local filename with package prefix to avoid conflicts
-                    package_short = package.split('.')[-1]  # "fadcam", "beta", "pro", etc.
-                    local_filename = f"{package_short}_{filename}"
-                    local_path = output_path / local_filename
-
                     # Pull file from device
                     device_file_path = f"{dir_path}/{filename}"
+                    local_path = Path(
+                        _resolve_preserved_local_path(str(output_path), device_file_path, internal_base)
+                    )
+                    local_path.parent.mkdir(parents=True, exist_ok=True)
                     pull_cmd = ['pull', device_file_path, str(local_path)]
                     pull_output = _run_adb_command(device, pull_cmd)
 
@@ -1862,9 +1880,10 @@ async def impl_pull_fadcam_media(ctx: Optional[Context], device: str, package: s
                         if limit and len(files_pulled) >= limit:
                             break
                         filename = remote_path.split('/')[-1]
-                        package_short = package.split('.')[-1]
-                        local_filename = f"{package_short}_{filename}"
-                        local_path = output_path / local_filename
+                        local_path = Path(
+                            _resolve_preserved_local_path(str(output_path), remote_path, internal_base)
+                        )
+                        local_path.parent.mkdir(parents=True, exist_ok=True)
                         pull_cmd = ['pull', remote_path, str(local_path)]
                         pull_output = _run_adb_command(device, pull_cmd)
                         if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
@@ -2355,12 +2374,12 @@ async def impl_fadcam_pull_file(ctx: Optional[Context], device: str, package: st
             await _ctx_info(ctx, f"Resolved output_dir to {resolved_output_dir}")
         output_path = Path(resolved_output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        filename = file_path.split('/')[-1]
-        local_path = output_path / filename
+        local_path = Path(_resolve_preserved_local_path(str(output_path), file_path, base_path))
+        local_path.parent.mkdir(parents=True, exist_ok=True)
 
         pull_output = _run_adb_command(device, ['pull', file_path, str(local_path)])
         if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
-            return json.dumps({"error": f"Failed to pull {filename}: {pull_output}"})
+            return json.dumps({"error": f"Failed to pull {local_path.name}: {pull_output}"})
 
         metadata_result = await impl_fadcam_get_metadata(ctx, device, package, file_path)
         metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
@@ -2530,7 +2549,10 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
                     if limit and len(pulled_files) >= limit:
                         break
                     filename = remote_path.split('/')[-1]
-                    local_path = output_path / filename
+                    local_path = Path(
+                        _resolve_preserved_local_path(str(output_path), remote_path, base_path)
+                    )
+                    local_path.parent.mkdir(parents=True, exist_ok=True)
                     pull_cmd = ['pull', remote_path, str(local_path)]
                     pull_output = _run_adb_command(device, pull_cmd)
                     if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
@@ -2565,7 +2587,10 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
                     filename = remote_path.split('/')[-1]
                     if is_custom_root and not _is_fadcam_filename(filename):
                         continue
-                    local_path = output_path / filename
+                    local_path = Path(
+                        _resolve_preserved_local_path(str(output_path), remote_path, base_path)
+                    )
+                    local_path.parent.mkdir(parents=True, exist_ok=True)
                     pull_cmd = ['pull', remote_path, str(local_path)]
                     pull_output = _run_adb_command(device, pull_cmd)
                     if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
@@ -2608,10 +2633,10 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
                     filename = remote_path.split('/')[-1]
 
                     if should_pull_file(filename):
-                        # Create local path
-                        package_short = package.split('.')[-1]
-                        local_filename = f"{package_short}_{cat_name}_{sub_name}_{filename}"
-                        local_path = output_path / local_filename
+                        local_path = Path(
+                            _resolve_preserved_local_path(str(output_path), remote_path, base_path)
+                        )
+                        local_path.parent.mkdir(parents=True, exist_ok=True)
 
                         # Pull file
                         pull_cmd = _run_adb_command(device, ['pull', remote_path, str(local_path)])
