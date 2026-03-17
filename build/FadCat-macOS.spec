@@ -26,12 +26,12 @@ datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
 # Bundle ADB for ALL macOS architectures
 platform_tools_dir = project_root / "build" / "platform-tools"
 
-macos_datas = []
+macos_binaries = []
 
 # macOS x86_64 (Intel)
 adb_x86_64 = platform_tools_dir / "macos_x86_64" / "adb"
 if adb_x86_64.exists():
-    macos_datas.append((str(adb_x86_64), 'platform-tools/macos_x86_64/'))
+    macos_binaries.append((str(adb_x86_64), 'platform-tools/macos_x86_64/'))
     print("✓ Bundling ADB for macOS x86_64 (Intel)")
 else:
     print("✗ Missing: macOS x86_64 ADB")
@@ -39,7 +39,7 @@ else:
 # macOS ARM64 (Apple Silicon)
 adb_arm64 = platform_tools_dir / "macos_arm64" / "adb"
 if adb_arm64.exists():
-    macos_datas.append((str(adb_arm64), 'platform-tools/macos_arm64/'))
+    macos_binaries.append((str(adb_arm64), 'platform-tools/macos_arm64/'))
     print("✓ Bundling ADB for macOS ARM64 (Apple Silicon)")
 else:
     print("✗ Missing: macOS ARM64 ADB")
@@ -49,14 +49,14 @@ block_cipher = None
 a = Analysis(
     [str(project_root / 'FadCat.py')],
     pathex=[],
-    binaries=binaries_fastmcp,
+    binaries=binaries_fastmcp + macos_binaries,
     datas=[
         (str(project_root / 'src'), 'src'),
         (str(project_root / 'fadcat_cli.py'), '.'),
         (str(project_root / 'FadCat.py'), '.'),
         (str(project_root / 'icon-assets'), 'icon-assets'),
         (str(project_root / 'build/macos/uninstall.sh'), 'build/macos'),
-    ] + macos_datas + datas_fastmcp,
+    ] + datas_fastmcp,
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',

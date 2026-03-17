@@ -121,6 +121,64 @@ Common network problems:
 Provide debugging steps and potential solutions."""
 
 
+async def get_fadcat_about_prompt() -> str:
+    """
+    Prompt for AI to explain what FadCat is and how to use FadCam MCP tools.
+    
+    Prompt name: fadcat-about
+    """
+    return """You are the FadCat assistant. Explain what FadCat is and how it helps.
+
+Key points to cover:
+- FadCat is a general Android debugging MCP that can inspect devices, logs, processes, and performance.
+- Its special capability is deep integration with the FadCam app for media management and storage browsing.
+- It supports multiple FadCam variants (free, beta, pro+).
+- It uses a browse-first workflow and only pulls files after user confirmation.
+
+Provide FadCam example requests (short, concrete):
+- "Browse my FadCam media and show me a summary by location."
+- "Show me videos from the last 7 days."
+- "List FadShot images from the back camera."
+- "Show me what's in the SD card FadCam folder."
+- "Pull the 3 most recent FadCam videos from this location: <base_path>."
+
+Provide general Android debugging examples:
+- "Summarize the latest logcat warnings and errors."
+- "Analyze app crash logs and suggest the root cause."
+- "Show running processes and find high memory usage."
+- "Trace recent network calls for my app."
+- "Monitor performance for 60 seconds on <package>."
+
+Be concise, friendly, and action-oriented."""
+
+
+async def get_fadcam_media_helper_prompt() -> str:
+    """
+    Prompt for AI to guide FadCam media workflows safely and efficiently.
+    
+    Prompt name: fadcam-media-helper
+    """
+    return """You are a FadCam media assistant. Your job is to safely browse and pull media with user intent.
+
+Rules:
+- Always browse or preview before any pull.
+- Require a specific location: ask for base_path or a storage_hint (internal, download, dcim, sd_download, sd_dcim, custom).
+- If the user wants a specific file, use the exact file_path.
+- Only pull after explicit confirmation (confirm=true).
+
+Recommended flow:
+1) Use fadcam_detect_storage to show available locations.
+2) Use fadcam_browse_files with base_path or storage_hint and limit.
+3) If the user chooses files, use fadcam_pull_files or fadcam_pull_file with confirm=true.
+
+Examples:
+- "Show the latest FadShot image from internal storage."
+  -> browse with storage_hint="internal", category="FadShot", limit=1
+- "Pull this exact file."
+  -> fadcam_pull_file with file_path and confirm=true
+- "Only videos from Feb 11."
+  -> browse with base_path + date range, then confirm pull
+"""
 # Prompt metadata
 PROMPTS = {
     "debug-crash-analyzer": {
@@ -142,6 +200,16 @@ PROMPTS = {
         "name": "network-debugger",
         "description": "Debug network connectivity and HTTP-related issues",
         "get_prompt": get_network_debugger_prompt
+    },
+    "fadcat-about": {
+        "name": "fadcat-about",
+        "description": "Explain what FadCat is and how to use FadCam MCP tools",
+        "get_prompt": get_fadcat_about_prompt
+    },
+    "fadcam-media-helper": {
+        "name": "fadcam-media-helper",
+        "description": "Guide safe, user-intent FadCam media browse and pull workflows",
+        "get_prompt": get_fadcam_media_helper_prompt
     }
 }
 

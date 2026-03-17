@@ -287,11 +287,14 @@ async def get_system_info(device: str) -> str:
 
 @server.tool()
 async def pull_fadcam_media(device: str, package: str, media_type: str = "all",
-                           output_dir: str = "./fadcam_media", limit: Optional[int] = None) -> str:
+                           output_dir: str = "./fadcam_media", limit: Optional[int] = None,
+                           base_path: Optional[str] = None, confirm: bool = False,
+                           storage_hint: Optional[str] = None) -> str:
     """Pull FadCam media files from device
     
-    Pulls videos and screenshots from FadCam apps (com.fadcam, com.fadcam.beta, etc.).
-    Supports all storage modes and app variants automatically.
+    Coarse pull by media type (videos/screenshots/all).
+    Requires base_path to avoid scanning all locations.
+    For precise filters (FadShot only, camera filter, date range), use fadcam_pull_files.
     
     Args:
         device: Device serial number
@@ -299,11 +302,16 @@ async def pull_fadcam_media(device: str, package: str, media_type: str = "all",
         media_type: Type of media to pull ("videos", "screenshots", or "all")
         output_dir: Local directory to save files
         limit: Maximum number of files to pull (optional)
+        base_path: Specific base path to pull from (required)
+        confirm: Set true to perform the pull. If false, returns a preview.
+        storage_hint: Optional hint like "internal", "download", "dcim", "sd_download", "custom"
     """
     logger.info(f"Tool called: pull_fadcam_media for device {device}, package {package}")
     try:
         from src.mcp import tools
-        result = await tools.impl_pull_fadcam_media(device, package, media_type, output_dir, limit)
+        result = await tools.impl_pull_fadcam_media(
+            device, package, media_type, output_dir, limit, base_path, confirm, storage_hint
+        )
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in pull_fadcam_media")
@@ -324,12 +332,18 @@ async def fadcam_list_packages(device: str) -> str:
 
 
 @server.tool()
-async def fadcam_detect_storage(device: str, package: str) -> str:
-    """Detect FadCam storage configuration for a package"""
-    logger.info(f"Tool called: fadcam_detect_storage for device {device}, package {package}")
+async def fadcam_detect_storage(device: str, package: str, include_counts: bool = False) -> str:
+    """Detect FadCam storage configuration for a package
+
+    include_counts: When true, performs file counting (slower).
+    """
+    logger.info(
+        f"Tool called: fadcam_detect_storage for device {device}, package {package}, "
+        f"include_counts={include_counts}"
+    )
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_detect_storage(device, package)
+        result = await tools.impl_fadcam_detect_storage(device, package, include_counts)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_detect_storage")
@@ -337,12 +351,18 @@ async def fadcam_detect_storage(device: str, package: str) -> str:
 
 
 @server.tool()
-async def fadcam_list_structure(device: str, package: str) -> str:
-    """List FadCam directory structure and file counts"""
-    logger.info(f"Tool called: fadcam_list_structure for device {device}, package {package}")
+async def fadcam_list_structure(device: str, package: str, include_counts: bool = False) -> str:
+    """List FadCam directory structure and file counts
+
+    include_counts: When true, performs file counting (slower).
+    """
+    logger.info(
+        f"Tool called: fadcam_list_structure for device {device}, package {package}, "
+        f"include_counts={include_counts}"
+    )
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_list_structure(device, package)
+        result = await tools.impl_fadcam_list_structure(device, package, include_counts)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_list_structure")
@@ -363,15 +383,41 @@ async def fadcam_get_metadata(device: str, package: str, file_path: str) -> str:
 
 
 @server.tool()
+async def fadcam_pull_file(device: str, package: str, file_path: str,
+                          output_dir: str = "./fadcam_files",
+                          confirm: bool = False) -> str:
+    """Pull a specific FadCam file by exact path
+
+    confirm: Set true to perform the pull. If false, returns a preview.
+    """
+    logger.info(f"Tool called: fadcam_pull_file for device {device}, package {package}, path {file_path}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_pull_file(device, package, file_path, output_dir, confirm)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_pull_file")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool()
 async def fadcam_pull_files(device: str, package: str, output_dir: str = "./fadcam_files",
                            category: Optional[str] = None, camera: Optional[str] = None,
                            limit: Optional[int] = None, date_from: Optional[str] = None,
-                           date_to: Optional[str] = None) -> str:
-    """Pull FadCam files with advanced filtering options"""
+                           date_to: Optional[str] = None, base_path: Optional[str] = None,
+                           confirm: bool = False, storage_hint: Optional[str] = None) -> str:
+    """Pull FadCam files with advanced filtering options
+
+    Requires base_path to ensure the pull happens only in the user-selected location.
+    confirm: Set true to perform the pull. If false, returns a preview.
+    storage_hint: Optional hint like "internal", "download", "dcim", "sd_download", "custom"
+    """
     logger.info(f"Tool called: fadcam_pull_files for device {device}, package {package}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_pull_files(device, package, output_dir, category, camera, limit, date_from, date_to)
+        result = await tools.impl_fadcam_pull_files(
+            device, package, output_dir, category, camera, limit, date_from, date_to, base_path, confirm, storage_hint
+        )
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_pull_files")
@@ -380,12 +426,17 @@ async def fadcam_pull_files(device: str, package: str, output_dir: str = "./fadc
 
 @server.tool()
 async def fadcam_browse_files(device: str, package: str, category: Optional[str] = None,
-                             camera: Optional[str] = None, limit: int = 50) -> str:
-    """Browse FadCam files without downloading - returns metadata only"""
+                             camera: Optional[str] = None, limit: int = 50,
+                             base_path: Optional[str] = None, storage_hint: Optional[str] = None) -> str:
+    """Browse FadCam files without downloading - returns metadata only
+
+    base_path is required to avoid scanning all locations.
+    storage_hint can be used to resolve a base_path (e.g., "internal", "download", "dcim", "sd_download", "custom").
+    """
     logger.info(f"Tool called: fadcam_browse_files for device {device}, package {package}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_browse_files(device, package, category, camera, limit)
+        result = await tools.impl_fadcam_browse_files(device, package, category, camera, limit, base_path, storage_hint)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_browse_files")
@@ -509,6 +560,36 @@ async def network_debugger() -> str:
         return await prompts.get_prompt("network-debugger")
     except Exception as e:
         logger.exception("Error getting network debugger prompt")
+        return f"Error: {str(e)}"
+
+
+@server.prompt()
+async def fadcat_about() -> str:
+    """About FadCat
+
+    Explain what FadCat is and show example prompts for FadCam media workflows.
+    """
+    logger.info("Prompt accessed: fadcat-about")
+    try:
+        from src.mcp import prompts
+        return await prompts.get_prompt("fadcat-about")
+    except Exception as e:
+        logger.exception("Error getting FadCat about prompt")
+        return f"Error: {str(e)}"
+
+
+@server.prompt()
+async def fadcam_media_helper() -> str:
+    """FadCam Media Helper
+
+    Guide browse-first and confirm-before-pull workflows.
+    """
+    logger.info("Prompt accessed: fadcam-media-helper")
+    try:
+        from src.mcp import prompts
+        return await prompts.get_prompt("fadcam-media-helper")
+    except Exception as e:
+        logger.exception("Error getting FadCam media helper prompt")
         return f"Error: {str(e)}"
 
 

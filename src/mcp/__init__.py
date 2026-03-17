@@ -2,6 +2,7 @@
 
 from src.version import __version__, __author__
 
+from src.mcp import tools as tools
 from src.mcp.models import (
     LogLevel,
     LogLine,
@@ -20,6 +21,7 @@ from src.mcp.models import (
 )
 
 __all__ = [
+    "tools",
     "LogLevel",
     "LogLine",
     "DeviceInfo",

@@ -24,12 +24,12 @@ datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
 project_root = Path(__file__).parent.parent
 platform_tools_dir = project_root / "build" / "platform-tools"
 
-windows_datas = []
+windows_binaries = []
 
 # Windows x86_64 - copy file to directory
 adb_x86_64 = platform_tools_dir / "windows_x86_64" / "adb.exe"
 if adb_x86_64.exists():
-    windows_datas.append((str(adb_x86_64), 'platform-tools/windows_x86_64/'))
+    windows_binaries.append((str(adb_x86_64), 'platform-tools/windows_x86_64/'))
     print("✓ Bundling ADB for Windows x86_64")
 else:
     print("✗ Missing: Windows x86_64 ADB")
@@ -37,7 +37,7 @@ else:
 # Windows ARM64 - copy file to directory
 adb_arm64 = platform_tools_dir / "windows_arm64" / "adb.exe"
 if adb_arm64.exists():
-    windows_datas.append((str(adb_arm64), 'platform-tools/windows_arm64/'))
+    windows_binaries.append((str(adb_arm64), 'platform-tools/windows_arm64/'))
     print("✓ Bundling ADB for Windows ARM64")
 else:
     print("✗ Missing: Windows ARM64 ADB")
@@ -47,13 +47,13 @@ block_cipher = None
 a = Analysis(
     ['../FadCat.py'],
     pathex=[],
-    binaries=binaries_fastmcp,
+    binaries=binaries_fastmcp + windows_binaries,
     datas=[
         ('../src', 'src'),
         ('../fadcat_cli.py', '.'),
         ('../FadCat.py', '.'),
         ('../build/windows/uninstall.bat', 'build/windows'),
-    ] + windows_datas + datas_fastmcp,
+    ] + datas_fastmcp,
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',

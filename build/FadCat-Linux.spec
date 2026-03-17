@@ -26,12 +26,12 @@ datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
 # Bundle ADB for ALL Linux architectures
 platform_tools_dir = project_root / "build" / "platform-tools"
 
-linux_datas = []
+linux_binaries = []
 
 # Linux x86_64 - copy file to directory
 adb_x86_64 = platform_tools_dir / "linux_x86_64" / "adb"
 if adb_x86_64.exists():
-    linux_datas.append((str(adb_x86_64), 'platform-tools/linux_x86_64/'))
+    linux_binaries.append((str(adb_x86_64), 'platform-tools/linux_x86_64/'))
     print("✓ Bundling ADB for Linux x86_64")
 else:
     print("✗ Missing: Linux x86_64 ADB")
@@ -39,7 +39,7 @@ else:
 # Linux ARM64 (aarch64) - copy file to directory
 adb_arm64 = platform_tools_dir / "linux_aarch64" / "adb"
 if adb_arm64.exists():
-    linux_datas.append((str(adb_arm64), 'platform-tools/linux_aarch64/'))
+    linux_binaries.append((str(adb_arm64), 'platform-tools/linux_aarch64/'))
     print("✓ Bundling ADB for Linux ARM64")
 else:
     print("✗ Missing: Linux ARM64 ADB")
@@ -49,14 +49,14 @@ block_cipher = None
 a = Analysis(
     [str(project_root / 'FadCat.py')],
     pathex=[],
-    binaries=binaries_fastmcp,
+    binaries=binaries_fastmcp + linux_binaries,
     datas=[
         (str(project_root / 'src'), 'src'),
         (str(project_root / 'fadcat_cli.py'), '.'),
         (str(project_root / 'FadCat.py'), '.'),
         (str(project_root / 'icon-assets'), 'icon-assets'),
         (str(project_root / 'build/linux/uninstall.sh'), 'build/linux'),
-    ] + linux_datas + datas_fastmcp,
+    ] + datas_fastmcp,
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',
