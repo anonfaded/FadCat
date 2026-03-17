@@ -29,8 +29,17 @@ def get_settings_path() -> Path:
 SETTINGS_FILE = get_settings_path()
 
 # Default configuration - safe defaults for a clean start
+DEFAULT_PACKAGES = [
+    "com.fadcam",           # Free version
+    "com.fadcam.beta",      # Beta version
+    "com.fadcam.proplus",   # Paid Pro+ version (with custom app naming)
+    "com.fadcam.notes",     # Standalone Notes app (Paid Pro version)
+    "com.fadcam.calc",      # Standalone Calculator app (Paid Pro version)
+    "com.fadcam.weather",   # Standalone Weather app (Paid Pro version)
+]
+
 DEFAULT_SETTINGS = {
-    "packages": ["com.fadcam", "com.fadcam.beta"],
+    "packages": DEFAULT_PACKAGES.copy(),
     "default_package": "com.fadcam.beta",
     "theme": "dark",
     "ignored_tags": [
@@ -191,6 +200,11 @@ class Settings:
             self._data["tag_padding"] = max(4, int(value))
         except Exception:
             self._data["tag_padding"] = 16
-    
+
+    def reset_packages(self):
+        """Reset packages to default list."""
+        self._data["packages"] = DEFAULT_PACKAGES.copy()
+        self.save()
+
     def save(self):
         SettingsManager.save(self._data)

@@ -339,10 +339,16 @@ async def pull_fadcam_media(ctx: Context, device: str, package: str, media_type:
     Coarse pull by media type (videos/screenshots/all).
     Requires base_path to avoid scanning all locations.
     For precise filters (FadShot only, camera filter, date range), use fadcam_pull_files.
-    
+
     Args:
         device: Device serial number
-        package: App package (auto-detects all com.fadcam.* variants)
+        package: App package (auto-detects all com.fadcam.* variants):
+            - com.fadcam (Free version)
+            - com.fadcam.beta (Beta version)
+            - com.fadcam.proplus (Paid Pro+ version)
+            - com.fadcam.notes (Notes app)
+            - com.fadcam.calc (Calculator app)
+            - com.fadcam.weather (Weather app)
         media_type: Type of media to pull ("videos", "screenshots", or "all")
         output_dir: Local directory to save files
         limit: Maximum number of files to pull (optional)

@@ -69,7 +69,13 @@ class SettingsDialog(QDialog):
         self.btn_remove_pkg.setEnabled(False)
         self.btn_remove_pkg.clicked.connect(self._remove_selected_pkg)
         grp_pkg_lay.addWidget(self.btn_remove_pkg)
-        
+
+        # Reset to defaults button
+        btn_reset_pkg = QPushButton("Reset to Defaults")
+        btn_reset_pkg.setStyleSheet("color: #FF6B6B;")
+        btn_reset_pkg.clicked.connect(self._reset_packages_confirm)
+        grp_pkg_lay.addWidget(btn_reset_pkg)
+
         pkg_lay.addWidget(grp_pkg)
 
         def_row = QHBoxLayout()
@@ -646,6 +652,41 @@ class SettingsDialog(QDialog):
     def _remove_selected_pkg(self):
         for item in self.pkg_list.selectedItems():
             self.pkg_list.takeItem(self.pkg_list.row(item))
+        self._refresh_default_combo()
+
+    def _reset_packages_confirm(self):
+        """Show confirmation dialog before resetting packages to defaults."""
+        reply = QMessageBox.question(
+            self, "Reset Packages",
+            "Are you sure you want to reset the package list to defaults?\n\n"
+            "This will restore all default FadCam packages:\n"
+            "• com.fadcam (Free version)\n"
+            "• com.fadcam.beta (Beta version)\n"
+            "• com.fadcam.proplus (Paid Pro+ version)\n"
+            "• com.fadcam.notes (Notes app)\n"
+            "• com.fadcam.calc (Calculator app)\n"
+            "• com.fadcam.weather (Weather app)\n\n"
+            "Any custom packages you added will be preserved.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._reset_packages()
+
+    def _reset_packages(self):
+        """Reset package list to defaults, preserving custom packages."""
+        from src.core.settings import DEFAULT_PACKAGES
+        
+        # Get current packages
+        current_packages = set()
+        for i in range(self.pkg_list.count()):
+            current_packages.add(self.pkg_list.item(i).text())
+        
+        # Add any missing default packages
+        for pkg in DEFAULT_PACKAGES:
+            if pkg not in current_packages:
+                self.pkg_list.addItem(pkg)
+        
         self._refresh_default_combo()
 
     def _add_ignore(self):

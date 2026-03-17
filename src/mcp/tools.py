@@ -1534,9 +1534,14 @@ async def impl_pull_fadcam_media(ctx: Optional[Context], device: str, package: s
                                 storage_hint: Optional[str] = None) -> str:
     """
     Pull FadCam media files from device with comprehensive storage support.
-
+    
     Supports all FadCam storage modes and app variants:
-    - com.fadcam (stable), com.fadcam.beta, com.fadcam.pro, com.fadcam.proplus, com.fadcam.lab
+    - com.fadcam (Free version)
+    - com.fadcam.beta (Beta version)
+    - com.fadcam.proplus (Paid Pro+ version with custom app naming)
+    - com.fadcam.notes (Standalone Notes app - Paid Pro version)
+    - com.fadcam.calc (Standalone Calculator app - Paid Pro version)
+    - com.fadcam.weather (Standalone Weather app - Paid Pro version)
     - Internal storage: /storage/emulated/0/Android/data/{package}/files/FadCam/
     - Custom SAF storage: User-selected locations (SD card, custom folders)
 
