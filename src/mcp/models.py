@@ -85,11 +85,10 @@ class ErrorAnalysis(BaseModel):
 class PerformanceMetrics(BaseModel):
     """Performance metrics from a device."""
     timestamp: str
-    cpu_usage: float  # Percentage
-    memory_used: int  # MB
-    memory_total: int  # MB
+    memory_used: Optional[int] = None  # KB (PSS if available)
+    memory_total: Optional[int] = None  # KB (if available)
     fps: Optional[float] = None
-    jank_count: int = 0
+    jank_count: Optional[int] = None
 
 
 class PerformanceReport(BaseModel):
@@ -97,33 +96,11 @@ class PerformanceReport(BaseModel):
     device: str
     duration_seconds: int
     metrics: List[PerformanceMetrics] = Field(default_factory=list)
-    avg_cpu: float
-    peak_memory: int
+    peak_memory: Optional[int] = None
     min_fps: Optional[float] = None
     avg_fps: Optional[float] = None
-    jank_frames: int = 0
+    jank_frames: Optional[int] = None
     analysis: Optional[str] = None
-
-
-class NetworkCall(BaseModel):
-    """A single network call extracted from logs."""
-    timestamp: str
-    method: str  # GET, POST, etc.
-    url: str
-    status_code: Optional[int] = None
-    duration_ms: Optional[int] = None
-    size_bytes: Optional[int] = None
-    error: Optional[str] = None
-
-
-class NetworkTrace(BaseModel):
-    """Network activity trace for a package."""
-    package: str
-    device: str
-    calls: List[NetworkCall] = Field(default_factory=list)
-    total_bytes: int = 0
-    failed_count: int = 0
-    duration_seconds: int = 0
 
 
 class MemoryAllocation(BaseModel):
@@ -132,18 +109,6 @@ class MemoryAllocation(BaseModel):
     size_bytes: int
     allocation_type: str  # ALLOC_FREED, ALLOC_CLASS, etc.
     class_name: Optional[str] = None
-
-
-class MemoryAnalysis(BaseModel):
-    """Memory leak detection and analysis."""
-    device: str
-    package: str
-    suspected_leak: bool
-    leak_size_mb: Optional[float] = None
-    leak_type: Optional[str] = None  # ServiceConnection, Listener, etc.
-    affected_class: Optional[str] = None
-    allocations: List[MemoryAllocation] = Field(default_factory=list)
-    recommendation: Optional[str] = None
 
 
 class BatteryInfo(BaseModel):
@@ -174,10 +139,7 @@ class SystemInfo(BaseModel):
     memory: MemoryInfo
     volume_level: Optional[int] = None  # Media volume (0-15)
     screen_brightness: Optional[int] = None  # Screen brightness (0-255)
-    wifi_enabled: Optional[bool] = None
-    mobile_data_enabled: Optional[bool] = None
     airplane_mode: Optional[bool] = None
-    screen_on: Optional[bool] = None
     uptime_seconds: Optional[int] = None
     cpu_cores: Optional[int] = None
     cpu_frequency: Optional[int] = None  # MHz

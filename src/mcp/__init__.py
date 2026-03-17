@@ -13,10 +13,7 @@ from src.mcp.models import (
     ErrorAnalysis,
     PerformanceMetrics,
     PerformanceReport,
-    NetworkCall,
-    NetworkTrace,
     MemoryAllocation,
-    MemoryAnalysis,
     MCPServerStatus,
 )
 
@@ -31,9 +28,6 @@ __all__ = [
     "ErrorAnalysis",
     "PerformanceMetrics",
     "PerformanceReport",
-    "NetworkCall",
-    "NetworkTrace",
     "MemoryAllocation",
-    "MemoryAnalysis",
     "MCPServerStatus",
 ]

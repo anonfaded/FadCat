@@ -918,7 +918,7 @@ class SettingsDialog(QDialog):
         tools_lay.setSpacing(6)
 
         tools_text = QLabel(
-            "• <b>22 Tools:</b> Pull media, list recordings, browse files, system info, network traces<br>"
+            "• <b>20 Tools:</b> Pull media, browse files, logcat, system info, performance (memory only)<br>"
             "• <b>6 Prompts:</b> Pre-built AI workflows for common tasks"
         )
         tools_text.setWordWrap(True)
@@ -951,8 +951,8 @@ class SettingsDialog(QDialog):
             "• <i>\"Browse my FadCam media and show me a summary by location\"</i><br>"
             "• <i>\"Analyze app crash logs and suggest the root cause\"</i><br>"
             "• <i>\"Summarize the latest logcat warnings and errors\"</i><br>"
-            "• <i>\"Trace recent network calls for my app\"</i><br>"
-            "• <i>\"Show running processes and find high memory usage\"</i>"
+            "• <i>\"Show running processes and find high memory usage\"</i><br>"
+            "• <i>\"Get logcat warnings/errors for my app\"</i>"
         )
         examples_text.setWordWrap(True)
         examples_text.setStyleSheet("color: #888; font-size: 9px; font-style: italic;")
@@ -1060,4 +1060,3 @@ class SettingsDialog(QDialog):
     def closeEvent(self, event):
         """Clean up when dialog closes."""
         super().closeEvent(event)
-

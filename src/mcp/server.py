@@ -211,7 +211,7 @@ async def detect_error_type(ctx: Context, logs: str) -> str:
 
 @server.tool()
 async def analyze_performance(ctx: Context, device: str, package: str, duration: int = 10) -> str:
-    """Analyze app performance metrics
+    """Analyze app performance metrics (memory only)
     
     Args:
         device: Device serial number
@@ -227,46 +227,6 @@ async def analyze_performance(ctx: Context, device: str, package: str, duration:
     except Exception as e:
         logger.exception("Error in analyze_performance")
         await _ctx_warning(ctx, f"Error in analyze_performance: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@server.tool()
-async def trace_network_calls(ctx: Context, device: str, package: str) -> str:
-    """Trace network calls from an app
-    
-    Args:
-        device: Device serial number
-        package: Package name
-    """
-    await _ctx_info(ctx, f"Tool called: trace_network_calls for {package} on {device}")
-    logger.info(f"Tool called: trace_network_calls for {package} on {device}")
-    try:
-        from src.mcp import tools
-        result = await tools.impl_trace_network_calls(ctx, device, package)
-        return result if isinstance(result, str) else json.dumps(result)
-    except Exception as e:
-        logger.exception("Error in trace_network_calls")
-        await _ctx_warning(ctx, f"Error in trace_network_calls: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@server.tool()
-async def analyze_memory_leak(ctx: Context, device: str, package: str) -> str:
-    """Analyze memory leaks in an app
-    
-    Args:
-        device: Device serial number
-        package: Package name
-    """
-    await _ctx_info(ctx, f"Tool called: analyze_memory_leak for {package} on {device}")
-    logger.info(f"Tool called: analyze_memory_leak for {package} on {device}")
-    try:
-        from src.mcp import tools
-        result = await tools.impl_analyze_memory_leak(ctx, device, package)
-        return result if isinstance(result, str) else json.dumps(result)
-    except Exception as e:
-        logger.exception("Error in analyze_memory_leak")
-        await _ctx_warning(ctx, f"Error in analyze_memory_leak: {e}")
         return json.dumps({"error": str(e)})
 
 

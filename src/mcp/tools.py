@@ -1,5 +1,5 @@
 """
-FadCat MCP Tools - Implementation of all 13 MCP tools.
+FadCat MCP Tools - Implementation of all 20 MCP tools.
 
 These tools connect directly to Android Debug Bridge (ADB) and logcat to provide
 AI agents with real-time access to device debugging information.
@@ -22,8 +22,8 @@ from src.utils.adb_path import get_adb_path
 from src.mcp.models import (
     LogLine, DeviceInfo, ProcessInfo, PackageInfo,
     ErrorAnalysis, StackTraceInfo, PerformanceReport,
-    PerformanceMetrics, NetworkCall, NetworkTrace,
-    MemoryAllocation, MemoryAnalysis
+    PerformanceMetrics,
+    MemoryAllocation
 )
 
 
@@ -1091,7 +1091,7 @@ async def impl_detect_error_type(ctx: Optional[Context], logcat: str) -> str:
 
 async def impl_analyze_performance(ctx: Optional[Context], device: str, package: str, duration: int = 10) -> str:
     """
-    Analyze app performance (CPU, memory, FPS) for specific package.
+    Analyze app performance (memory only) for specific package.
     
     Args:
         device: Device serial
@@ -1102,148 +1102,50 @@ async def impl_analyze_performance(ctx: Optional[Context], device: str, package:
         JSON with PerformanceReport object
     """
     try:
-        # Get memory info for the package
         dumpsys_output = _run_adb_command(device, ['shell', 'dumpsys', 'meminfo', package])
-        
-        native_heap = 0
-        dart_heap = 0
-        total_mem = 0
-        
+
+        total_pss_kb = None
         for line in dumpsys_output.split('\n'):
-            if 'TOTAL' in line:
+            if line.strip().startswith("TOTAL"):
                 parts = line.split()
-                if len(parts) > 1:
+                if len(parts) >= 2:
                     try:
-                        total_mem = int(parts[-1])
-                    except:
+                        total_pss_kb = int(parts[1])
+                    except Exception:
                         pass
-        
-        # Create single metric snapshot
+                break
+
         metric = PerformanceMetrics(
             timestamp="",
-            cpu_usage=0,  # Would need pidstat or similar
-            memory_used=total_mem,
-            memory_total=0,
+            memory_used=total_pss_kb,
+            memory_total=None,
             fps=None,
-            jank_count=0
+            jank_count=None
         )
-        
+
+        total_pss_mb = None
+        if total_pss_kb is not None:
+            total_pss_mb = round(total_pss_kb / 1024.0, 2)
+
         report = PerformanceReport(
             device=device,
             duration_seconds=duration,
             metrics=[metric],
-            avg_cpu=0,
-            peak_memory=total_mem,
+            peak_memory=total_pss_kb,
             min_fps=None,
             avg_fps=None,
-            jank_frames=0,
-            analysis=f"Profiled {package} for {duration}s. Memory usage: {total_mem}MB"
+            jank_frames=None,
+            analysis=(
+                f"Profiled {package} for {duration}s using dumpsys meminfo. "
+                f"TOTAL PSS: {total_pss_kb} KB"
+                + (f" ({total_pss_mb} MB)" if total_pss_mb is not None else "")
+                + ". CPU/FPS are not available via adb in this mode."
+            )
         )
         
         return json.dumps(report.model_dump())
     except Exception as e:
         return json.dumps({"error": str(e)})
-
-
-async def impl_analyze_memory_leak(ctx: Optional[Context], device: str, package: str) -> str:
-    """
-    Analyze potential memory leaks from logcat for a package.
-    
-    Args:
-        device: Device serial
-        package: Package name to analyze
-    
-    Returns:
-        JSON with MemoryAnalysis object
-    """
-    try:
-        logcat_output = _run_adb_command(device, ['logcat', '-d', '-v', 'threadtime'])
-        
-        memory_allocs = []
-        gc_events = []
-        suspected_leak = False
-        
-        for line in logcat_output.split('\n'):
-            if package in line:
-                if 'GC_EXPLICIT' in line or 'GC_CONCURRENT' in line:
-                    gc_events.append(line.strip())
-                elif 'OutOfMemory' in line or 'Memory pressure' in line:
-                    suspected_leak = True
-                    alloc = MemoryAllocation(
-                        timestamp="",
-                        size_bytes=0,
-                        allocation_type="OutOfMemory"
-                    )
-                    memory_allocs.append(alloc.model_dump())
-        
-        analysis = MemoryAnalysis(
-            device=device,
-            package=package,
-            suspected_leak=suspected_leak or len(gc_events) > 15,
-            leak_size_mb=None,
-            leak_type="Possible memory leak" if suspected_leak else None,
-            allocations=memory_allocs,
-            recommendation="Review object lifecycle and check for circular references" if suspected_leak else "Memory usage appears normal"
-        )
-        
-        return json.dumps(analysis.model_dump())
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
-
-async def impl_trace_network_calls(ctx: Optional[Context], device: str, package: str) -> str:
-    """
-    Trace network calls from logcat for a package.
-    
-    Args:
-        device: Device serial
-        package: Package name to trace
-    
-    Returns:
-        JSON with NetworkTrace object
-    """
-    try:
-        logcat_output = _run_adb_command(device, ['logcat', '-d', '-v', 'threadtime'])
-        
-        calls = []
-        total_errors = 0
-        
-        # Simple pattern matching for common network operations
-        for line in logcat_output.split('\n'):
-            if package not in line:
-                continue
-                
-            if any(keyword in line for keyword in ['http', 'HTTP', 'okhttp', 'retrofit', 'volley']):
-                # Check for errors
-                status_code = 200
-                if 'error' in line.lower() or '4' in line[:50] or '5' in line[:50]:
-                    status_code = 400
-                    total_errors += 1
-                    
-                call = NetworkCall(
-                    method="GET",
-                    url="[extracted from logs]",
-                    status_code=status_code,
-                    duration_ms=None,
-                    timestamp="",
-                    size_bytes=None,
-                    error=None if status_code == 200 else "See logs for details"
-                )
-                calls.append(call.model_dump())
-        
-        trace = NetworkTrace(
-            package=package,
-            device=device,
-            calls=calls[:50],
-            total_bytes=0,
-            failed_count=total_errors,
-            duration_seconds=0
-        )
-        
-        return json.dumps(trace.model_dump())
-    except Exception as e:
-        return json.dumps({"error": str(e)})
-
 
 async def impl_clear_logcat(ctx: Optional[Context], device: str) -> str:
     """
@@ -1428,10 +1330,7 @@ async def impl_get_system_info(ctx: Optional[Context], device: str) -> str:
         system_info = {
             "volume_level": None,
             "screen_brightness": None,
-            "wifi_enabled": None,
-            "mobile_data_enabled": None,
             "airplane_mode": None,
-            "screen_on": None,
             "uptime_seconds": None,
             "cpu_cores": None,
             "cpu_frequency": None
@@ -1453,20 +1352,6 @@ async def impl_get_system_info(ctx: Optional[Context], device: str) -> str:
         except:
             pass
         
-        # Try to get wifi state
-        try:
-            wifi_output = _run_adb_command(device, ['shell', 'settings', 'get', 'global', 'wifi_on'])
-            system_info["wifi_enabled"] = wifi_output.strip() == '1'
-        except:
-            pass
-        
-        # Try to get mobile data state
-        try:
-            mobile_output = _run_adb_command(device, ['shell', 'settings', 'get', 'global', 'mobile_data'])
-            system_info["mobile_data_enabled"] = mobile_output.strip() == '1'
-        except:
-            pass
-        
         # Try to get airplane mode
         try:
             airplane_output = _run_adb_command(device, ['shell', 'settings', 'get', 'global', 'airplane_mode_on'])
@@ -1474,12 +1359,7 @@ async def impl_get_system_info(ctx: Optional[Context], device: str) -> str:
         except:
             pass
         
-        # Try to get screen state
-        try:
-            screen_output = _run_adb_command(device, ['shell', 'dumpsys', 'power', '|', 'grep', 'mScreenOn'])
-            system_info["screen_on"] = 'true' in screen_output.lower()
-        except:
-            pass
+        # Screen state removed (inaccurate across OEMs); leave as None.
         
         # Try to get uptime
         try:
