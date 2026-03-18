@@ -608,7 +608,8 @@ async def fadcam_pull_files(ctx: Context, device: str, package: str, output_dir:
 })
 async def fadcam_browse_files(ctx: Context, device: str, package: str, category: Optional[str] = None,
                              camera: Optional[str] = None, limit: int = 50,
-                             base_path: Optional[str] = None, storage_hint: Optional[str] = None) -> str:
+                             base_path: Optional[str] = None, storage_hint: Optional[str] = None,
+                             full_scan: bool = True) -> str:
     """Browse FadCam files without downloading - returns metadata only
 
     base_path is required to avoid scanning all locations.
@@ -618,7 +619,17 @@ async def fadcam_browse_files(ctx: Context, device: str, package: str, category:
     logger.info(f"Tool called: fadcam_browse_files for device {device}, package {package}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_browse_files(ctx, device, package, category, camera, limit, base_path, storage_hint)
+        result = await tools.impl_fadcam_browse_files(
+            ctx,
+            device,
+            package,
+            category,
+            camera,
+            limit,
+            base_path,
+            storage_hint,
+            full_scan
+        )
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Error in fadcam_browse_files")

@@ -190,6 +190,7 @@ Rules:
 - Require a specific location: ask for base_path or a storage_hint (internal, download, dcim, sd_download, sd_dcim, custom).
 - If the user provides a filename only, resolve it within the chosen base_path before pulling.
 - Only pull after explicit confirmation (confirm=true).
+- Browse defaults to full_scan=true; set full_scan=false for a fast preview.
 
 Recommended flow:
 1) Use fadcam_detect_storage to show available locations.

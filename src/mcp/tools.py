@@ -365,7 +365,7 @@ def _build_metadata_from_filename(file_path: str, size_bytes: Optional[int]) -> 
     metadata = {
         "file_path": file_path,
         "filename": filename,
-        "size_bytes": size_bytes or 0,
+        "size_bytes": size_bytes,
         "modified_timestamp": 0,
         "created_date": None,
         "file_type": "unknown"
@@ -2583,7 +2583,8 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
 async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package: str, category: Optional[str] = None,
                                   camera: Optional[str] = None, limit: int = 50,
                                   base_path: Optional[str] = None,
-                                  storage_hint: Optional[str] = None) -> str:
+                                  storage_hint: Optional[str] = None,
+                                  full_scan: bool = True) -> str:
     """Browse FadCam files without downloading - returns metadata only"""
     try:
         structure_result = await impl_fadcam_list_structure(ctx, device, package, include_counts=False)
@@ -2637,6 +2638,8 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
 
         files_info = []
         total_count = 0
+        total_size = 0
+        effective_limit = None if full_scan else limit
         seen_any_location = False
 
         for location in structure.get("structures", []):
@@ -2661,7 +2664,7 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                             continue
                         entries = _list_media_entries_from_ls(device, sub_path)
                         for entry in entries:
-                            if total_count >= limit:
+                            if effective_limit is not None and total_count >= effective_limit:
                                 break
                             metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                             files_info.append({
@@ -2674,7 +2677,9 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                                 "metadata": metadata
                             })
                             total_count += 1
-                        if total_count >= limit:
+                            if metadata.get("size_bytes") is not None:
+                                total_size += metadata["size_bytes"]
+                        if effective_limit is not None and total_count >= effective_limit:
                             break
                 continue
 
@@ -2689,7 +2694,7 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                     entries = _list_media_entries_from_ls(device, sub_path)
                     entries = [e for e in entries if e["path"].endswith(".mp4")]
                     for entry in entries:
-                        if total_count >= limit:
+                        if effective_limit is not None and total_count >= effective_limit:
                             break
                         metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                         files_info.append({
@@ -2702,7 +2707,9 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                             "metadata": metadata
                         })
                         total_count += 1
-                    if total_count >= limit:
+                        if metadata.get("size_bytes") is not None:
+                            total_size += metadata["size_bytes"]
+                    if effective_limit is not None and total_count >= effective_limit:
                         break
                 continue
 
@@ -2712,7 +2719,7 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                     entries = _list_media_entries_from_ls(device, dual_path)
                     entries = [e for e in entries if e["path"].endswith(".mp4")]
                     for entry in entries:
-                        if total_count >= limit:
+                        if effective_limit is not None and total_count >= effective_limit:
                             break
                         metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                         files_info.append({
@@ -2725,6 +2732,8 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                             "metadata": metadata
                         })
                         total_count += 1
+                        if metadata.get("size_bytes") is not None:
+                            total_size += metadata["size_bytes"]
                 continue
 
             if category and category.lower() in {"screen", "stream"}:
@@ -2734,7 +2743,7 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                     entries = _list_media_entries_from_ls(device, cat_path)
                     entries = [e for e in entries if e["path"].endswith(".mp4")]
                     for entry in entries:
-                        if total_count >= limit:
+                        if effective_limit is not None and total_count >= effective_limit:
                             break
                         metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                         files_info.append({
@@ -2747,6 +2756,8 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                             "metadata": metadata
                         })
                         total_count += 1
+                        if metadata.get("size_bytes") is not None:
+                            total_size += metadata["size_bytes"]
                 continue
 
             if category and category.lower() == "faditor":
@@ -2757,7 +2768,7 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                     entries = _list_media_entries_from_ls(device, sub_path)
                     entries = [e for e in entries if e["path"].endswith(".mp4")]
                     for entry in entries:
-                        if total_count >= limit:
+                        if effective_limit is not None and total_count >= effective_limit:
                             break
                         metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                         files_info.append({
@@ -2770,7 +2781,9 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                             "metadata": metadata
                         })
                         total_count += 1
-                    if total_count >= limit:
+                        if metadata.get("size_bytes") is not None:
+                            total_size += metadata["size_bytes"]
+                    if effective_limit is not None and total_count >= effective_limit:
                         break
                 continue
 
@@ -2783,7 +2796,7 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                             continue
                         entries = _list_media_entries_from_ls(device, sub_path)
                         for entry in entries:
-                            if total_count >= limit:
+                            if effective_limit is not None and total_count >= effective_limit:
                                 break
                             metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                             files_info.append({
@@ -2796,7 +2809,9 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                                 "metadata": metadata
                             })
                             total_count += 1
-                        if total_count >= limit:
+                            if metadata.get("size_bytes") is not None:
+                                total_size += metadata["size_bytes"]
+                        if effective_limit is not None and total_count >= effective_limit:
                             break
 
             for cat_name, cat_info in location.get("categories", {}).items():
@@ -2810,7 +2825,7 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                 if cat_name == "Forensics":
                     files = [f for f in _find_media_files(device, cat_info["path"]) if f.endswith('.jpg')]
                     for remote_path in files:
-                        if total_count >= limit:
+                        if effective_limit is not None and total_count >= effective_limit:
                             break
                         metadata = _build_metadata_from_filename(remote_path, None)
                         files_info.append({
@@ -2836,12 +2851,12 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                             continue
                         if not sub_info.get("exists"):
                             continue
-                        remaining = limit - total_count
-                        if remaining <= 0:
+                        remaining = (effective_limit - total_count) if effective_limit is not None else None
+                        if remaining is not None and remaining <= 0:
                             break
                         entries = _list_media_entries_from_ls(device, sub_info["path"])
                         for entry in entries:
-                            if total_count >= limit:
+                            if effective_limit is not None and total_count >= effective_limit:
                                 break
                             metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                             files_info.append({
@@ -2854,9 +2869,11 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                                 "metadata": metadata
                             })
                             total_count += 1
+                            if metadata.get("size_bytes") is not None:
+                                total_size += metadata["size_bytes"]
                 else:
-                    remaining = limit - total_count
-                    if remaining <= 0:
+                    remaining = (effective_limit - total_count) if effective_limit is not None else None
+                    if remaining is not None and remaining <= 0:
                         break
                     entries = _list_media_entries_from_ls(
                         device,
@@ -2864,7 +2881,7 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                         fadcam_only=is_custom_root or is_root_media
                     )
                     for entry in entries:
-                        if total_count >= limit:
+                        if effective_limit is not None and total_count >= effective_limit:
                             break
                         metadata = _build_metadata_from_filename(entry["path"], entry.get("size_bytes"))
                         files_info.append({
@@ -2877,6 +2894,8 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                             "metadata": metadata
                         })
                         total_count += 1
+                        if metadata.get("size_bytes") is not None:
+                            total_size += metadata["size_bytes"]
 
         if base_path and not seen_any_location:
             await _ctx_warning(ctx, "base_path not found. Returning available base paths.")
@@ -2894,13 +2913,18 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
         return json.dumps({
             "device": device,
             "package": package,
-            "total_files": total_count,
+            "total_files": total_count if full_scan else None,
+            "total_files_returned": total_count if not full_scan else None,
+            "total_size_bytes": total_size if full_scan else None,
             "files": files_info,
-            "limit_applied": limit,
+            "limit_applied": None if full_scan else limit,
+            "truncated": False if full_scan else total_count >= limit,
+            "note": None if full_scan else "total_files_returned reflects the limited result set; it is not the full total.",
             "filters_applied": {
                 "category": category,
                 "camera": camera,
-                "base_path": base_path
+                "base_path": base_path,
+                "full_scan": full_scan
             }
         })
 
