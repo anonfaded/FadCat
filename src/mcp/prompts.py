@@ -16,6 +16,7 @@ async def get_debug_crash_analyzer_prompt() -> str:
 Tool rules:
 - Call get_devices only once per session; reuse the chosen device.
 - If device or package is missing, ask the user to pick instead of retrying tools.
+- If get_devices returns selected_device, use it directly and proceed.
 
 When analyzing a crash:
 1. Use get_logcat_stream to get the latest logs
@@ -44,6 +45,7 @@ async def get_logcat_summarizer_prompt() -> str:
 Tool rules:
 - Call get_devices only once per session; reuse the chosen device.
 - If device or package is missing, ask the user to pick instead of retrying tools.
+- If get_devices returns selected_device, use it directly and proceed.
 
 When summarizing logs:
 1. Use get_logcat_stream to get current device logs
@@ -77,6 +79,7 @@ async def get_performance_monitor_prompt() -> str:
 Tool rules:
 - Call get_devices only once per session; reuse the chosen device.
 - If device or package is missing, ask the user to pick instead of retrying tools.
+- If get_devices returns selected_device, use it directly and proceed.
 
 When analyzing performance:
 1. Use analyze_performance to get memory metrics (PSS)
@@ -108,6 +111,7 @@ async def get_network_debugger_prompt() -> str:
 Tool rules:
 - Call get_devices only once per session; reuse the chosen device.
 - If device or package is missing, ask the user to pick instead of retrying tools.
+- If get_devices returns selected_device, use it directly and proceed.
 
 When debugging network issues:
 1. Use get_logcat_stream to find network-related errors
@@ -144,6 +148,7 @@ async def get_fadcat_about_prompt() -> str:
 Tool rules:
 - Call get_devices only once per session; reuse the chosen device.
 - If device or package is missing, ask the user to pick instead of retrying tools.
+- If get_devices returns selected_device, use it directly and proceed.
 
 Key points to cover:
 - FadCat is a general Android debugging MCP that can inspect devices, logs, processes, and performance.
@@ -178,6 +183,7 @@ async def get_fadcam_media_helper_prompt() -> str:
 Tool rules:
 - Call get_devices only once per session; reuse the chosen device.
 - If device or package is missing, ask the user to pick instead of retrying tools.
+- If get_devices returns selected_device, use it directly and proceed.
 
 Rules:
 - Always browse or preview before any pull.

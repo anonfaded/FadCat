@@ -2,6 +2,7 @@
 
 import sys
 import logging
+import time
 from typing import Any, Optional, List
 from fastmcp import FastMCP, Context
 import json
@@ -22,6 +23,9 @@ server = FastMCP(__app_name__, __version__)
 # Module-level state
 _server_start_time = None
 _active_connections = 0
+_last_devices_cache: Optional[dict] = None
+_last_devices_at: float = 0.0
+_get_devices_repeat: int = 0
 
 
 async def _ctx_info(ctx: Context, message: str) -> None:
@@ -48,7 +52,42 @@ async def get_devices(ctx: Context) -> str:
     logger.info("Tool called: get_devices")
     try:
         from src.mcp import tools
+        global _last_devices_cache, _last_devices_at, _get_devices_repeat
+        now = time.monotonic()
+        if _last_devices_cache and (now - _last_devices_at) < 10:
+            _get_devices_repeat += 1
+            if _get_devices_repeat >= 2:
+                await _ctx_warning(ctx, "Repeated get_devices call; returning cached list. Reuse the last device selection.")
+                cached = dict(_last_devices_cache)
+                cached.update({
+                    "requires_selection": True,
+                    "message": "Device already listed. Choose one and do not call get_devices again.",
+                    "do_not_call_get_devices_again": True
+                })
+                if _get_devices_repeat >= 3:
+                    cached.update({
+                        "tool_loop_detected": True,
+                        "error": "Tool loop detected: stop calling get_devices and use selected_device."
+                    })
+                return json.dumps(cached)
+            return json.dumps(_last_devices_cache)
+
         result = await tools.impl_get_devices(ctx)
+        if isinstance(result, str):
+            try:
+                parsed = json.loads(result)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                _last_devices_cache = parsed
+            _last_devices_at = now
+            _get_devices_repeat = 0
+            return result
+
+        if isinstance(result, dict):
+            _last_devices_cache = result
+        _last_devices_at = now
+        _get_devices_repeat = 0
         return json.dumps(result) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in get_devices")

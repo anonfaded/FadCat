@@ -654,7 +654,7 @@ async def _elicit_base_path(
     return None
 
 # ============================================================================
-# Tool Implementations - All 13 Tools
+# Tool Implementations - All 20 Tools
 # ============================================================================
 
 async def impl_get_devices(ctx: Optional[Context]) -> str:
@@ -730,10 +730,24 @@ async def impl_get_devices(ctx: Optional[Context]) -> str:
         
         devices = ordered_devices
         
+        selected_device = devices[0]["serial"] if devices else None
+        if ctx and hasattr(ctx, "elicit") and len(devices) > 1:
+            try:
+                options = [d["serial"] for d in devices]
+                choice = await ctx.elicit(
+                    "Multiple devices detected. Select one device to use for this session.",
+                    response_type=options
+                )
+                if getattr(choice, "action", None) == "accept":
+                    selected_device = choice.data
+            except Exception:
+                pass
+
         return json.dumps({
             "devices": devices, 
             "count": len(devices),
             "primary_device": devices[0]["serial"] if devices else None,
+            "selected_device": selected_device,
             "has_real_devices": len(real_devices) > 0,
             "has_emulators": len(emulators) > 0
         })
