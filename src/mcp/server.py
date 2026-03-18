@@ -2,6 +2,7 @@
 
 import sys
 import logging
+import os
 import time
 from typing import Any, Optional, List
 from pathlib import Path
@@ -18,6 +19,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from src.version import __version__, __author__, __app_name__
+
+# Suppress FastMCP banner on stdio to avoid MCP parse errors
+os.environ.setdefault("FASTMCP_SHOW_SERVER_BANNER", "false")
 
 # Create MCP server with FastMCP
 server = FastMCP(__app_name__, __version__)
@@ -227,30 +231,6 @@ async def get_app_processes(ctx: Context, device: str, package: str) -> str:
 
 
 @server.tool(annotations={
-    "title": "List Installed Packages",
-    "readOnlyHint": True,
-    "idempotentHint": False,
-    "openWorldHint": True
-})
-async def get_connected_packages(ctx: Context, device: str) -> str:
-    """Get all packages connected to ADB on device
-    
-    Args:
-        device: Device serial number
-    """
-    await _ctx_info(ctx, f"Tool called: get_connected_packages for device {device}")
-    logger.info(f"Tool called: get_connected_packages for device {device}")
-    try:
-        from src.mcp import tools
-        result = await tools.impl_get_connected_packages(ctx, device)
-        return json.dumps(result) if isinstance(result, dict) else result
-    except Exception as e:
-        logger.exception("Error in get_connected_packages")
-        await _ctx_warning(ctx, f"Error in get_connected_packages: {e}")
-        return f"Error: {str(e)}"
-
-
-@server.tool(annotations={
     "title": "Parse Stacktrace",
     "readOnlyHint": True,
     "idempotentHint": True,
@@ -401,125 +381,6 @@ async def get_system_info(ctx: Context, device: str) -> str:
 
 
 @server.tool(annotations={
-    "title": "Pull FadCam Media (Batch)",
-    "readOnlyHint": False,
-    "destructiveHint": False,
-    "idempotentHint": False,
-    "openWorldHint": True
-})
-async def pull_fadcam_media(ctx: Context, device: str, package: str, media_type: str = "all",
-                           output_dir: str = "./fadcam_media", limit: Optional[int] = None,
-                           base_path: Optional[str] = None, confirm: bool = False,
-                           storage_hint: Optional[str] = None) -> str:
-    """Pull FadCam media files from device
-    
-    Coarse pull by media type (videos/screenshots/all).
-    Requires base_path to avoid scanning all locations.
-    For precise filters (FadShot only, camera filter, date range), use fadcam_pull_files.
-
-    Args:
-        device: Device serial number
-        package: App package (auto-detects all com.fadcam.* variants):
-            - com.fadcam (Free version)
-            - com.fadcam.beta (Beta version)
-            - com.fadcam.proplus (Paid Pro+ version)
-            - com.fadcam.notes (Notes app)
-            - com.fadcam.calc (Calculator app)
-            - com.fadcam.weather (Weather app)
-        media_type: Type of media to pull ("videos", "screenshots", or "all")
-        output_dir: Local directory to save files
-        limit: Maximum number of files to pull (optional)
-        base_path: Specific base path to pull from (required)
-        confirm: Set true to perform the pull. If false, returns a preview.
-        storage_hint: Optional hint like "internal", "download", "dcim", "sd_download", "custom"
-    """
-    await _ctx_info(ctx, f"Tool called: pull_fadcam_media for device {device}, package {package}")
-    logger.info(f"Tool called: pull_fadcam_media for device {device}, package {package}")
-    try:
-        from src.mcp import tools
-        result = await tools.impl_pull_fadcam_media(
-            ctx, device, package, media_type, output_dir, limit, base_path, confirm, storage_hint
-        )
-        return result if isinstance(result, str) else json.dumps(result)
-    except Exception as e:
-        logger.exception("Error in pull_fadcam_media")
-        await _ctx_warning(ctx, f"Error in pull_fadcam_media: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@server.tool(annotations={
-    "title": "List FadCam Packages",
-    "readOnlyHint": True,
-    "idempotentHint": False,
-    "openWorldHint": True
-})
-async def fadcam_list_packages(ctx: Context, device: str) -> str:
-    """List all FadCam packages installed on a device"""
-    await _ctx_info(ctx, f"Tool called: fadcam_list_packages for device {device}")
-    logger.info(f"Tool called: fadcam_list_packages for device {device}")
-    try:
-        from src.mcp import tools
-        result = await tools.impl_fadcam_list_packages(ctx, device)
-        return result if isinstance(result, str) else json.dumps(result)
-    except Exception as e:
-        logger.exception("Error in fadcam_list_packages")
-        await _ctx_warning(ctx, f"Error in fadcam_list_packages: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@server.tool(annotations={
-    "title": "Detect FadCam Storage",
-    "readOnlyHint": True,
-    "idempotentHint": False,
-    "openWorldHint": True
-})
-async def fadcam_detect_storage(ctx: Context, device: str, package: str, include_counts: bool = False) -> str:
-    """Detect FadCam storage configuration for a package
-
-    include_counts: When true, performs file counting (slower).
-    """
-    await _ctx_info(ctx, f"Tool called: fadcam_detect_storage for device {device}, package {package}")
-    logger.info(
-        f"Tool called: fadcam_detect_storage for device {device}, package {package}, "
-        f"include_counts={include_counts}"
-    )
-    try:
-        from src.mcp import tools
-        result = await tools.impl_fadcam_detect_storage(ctx, device, package, include_counts)
-        return result if isinstance(result, str) else json.dumps(result)
-    except Exception as e:
-        logger.exception("Error in fadcam_detect_storage")
-        await _ctx_warning(ctx, f"Error in fadcam_detect_storage: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@server.tool(annotations={
-    "title": "List FadCam Structure",
-    "readOnlyHint": True,
-    "idempotentHint": False,
-    "openWorldHint": True
-})
-async def fadcam_list_structure(ctx: Context, device: str, package: str, include_counts: bool = False) -> str:
-    """List FadCam directory structure and file counts
-
-    include_counts: When true, performs file counting (slower).
-    """
-    await _ctx_info(ctx, f"Tool called: fadcam_list_structure for device {device}, package {package}")
-    logger.info(
-        f"Tool called: fadcam_list_structure for device {device}, package {package}, "
-        f"include_counts={include_counts}"
-    )
-    try:
-        from src.mcp import tools
-        result = await tools.impl_fadcam_list_structure(ctx, device, package, include_counts)
-        return result if isinstance(result, str) else json.dumps(result)
-    except Exception as e:
-        logger.exception("Error in fadcam_list_structure")
-        await _ctx_warning(ctx, f"Error in fadcam_list_structure: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@server.tool(annotations={
     "title": "Get FadCam File Metadata",
     "readOnlyHint": True,
     "idempotentHint": False,
@@ -578,38 +439,6 @@ async def fadcam_pull_file(ctx: Context, device: str, package: str, file_path: s
 
 
 @server.tool(annotations={
-    "title": "Pull FadCam Files (Filtered)",
-    "readOnlyHint": False,
-    "destructiveHint": False,
-    "idempotentHint": False,
-    "openWorldHint": True
-})
-async def fadcam_pull_files(ctx: Context, device: str, package: str, output_dir: str = "./fadcam_files",
-                           category: Optional[str] = None, camera: Optional[str] = None,
-                           limit: Optional[int] = None, date_from: Optional[str] = None,
-                           date_to: Optional[str] = None, base_path: Optional[str] = None,
-                           confirm: bool = False, storage_hint: Optional[str] = None) -> str:
-    """Pull FadCam files with advanced filtering options
-
-    Requires base_path to ensure the pull happens only in the user-selected location.
-    confirm: Set true to perform the pull. If false, returns a preview.
-    storage_hint: Optional hint like "internal", "download", "dcim", "sd_download", "custom"
-    """
-    await _ctx_info(ctx, f"Tool called: fadcam_pull_files for device {device}, package {package}")
-    logger.info(f"Tool called: fadcam_pull_files for device {device}, package {package}")
-    try:
-        from src.mcp import tools
-        result = await tools.impl_fadcam_pull_files(
-            ctx, device, package, output_dir, category, camera, limit, date_from, date_to, base_path, confirm, storage_hint
-        )
-        return result if isinstance(result, str) else json.dumps(result)
-    except Exception as e:
-        logger.exception("Error in fadcam_pull_files")
-        await _ctx_warning(ctx, f"Error in fadcam_pull_files: {e}")
-        return json.dumps({"error": str(e)})
-
-
-@server.tool(annotations={
     "title": "Browse FadCam Camera",
     "readOnlyHint": True,
     "idempotentHint": False,
@@ -620,6 +449,7 @@ async def fadcam_browse_camera(ctx: Context, device: str, package: str,
                                base_path: Optional[str] = None,
                                storage_hint: Optional[str] = None,
                                full_scan: bool = True) -> str:
+    """Browse camera recordings (metadata only)."""
     await _ctx_info(ctx, f"Tool called: fadcam_browse_camera for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_camera for device {device}, package {package}")
     try:
@@ -645,6 +475,7 @@ async def fadcam_browse_fadshot(ctx: Context, device: str, package: str,
                                 base_path: Optional[str] = None,
                                 storage_hint: Optional[str] = None,
                                 full_scan: bool = True) -> str:
+    """Browse FadShot screenshots (metadata only)."""
     await _ctx_info(ctx, f"Tool called: fadcam_browse_fadshot for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_fadshot for device {device}, package {package}")
     try:
@@ -670,6 +501,7 @@ async def fadcam_browse_dual(ctx: Context, device: str, package: str,
                              base_path: Optional[str] = None,
                              storage_hint: Optional[str] = None,
                              full_scan: bool = True) -> str:
+    """Browse legacy Dual recordings (metadata only)."""
     await _ctx_info(ctx, f"Tool called: fadcam_browse_dual for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_dual for device {device}, package {package}")
     try:
@@ -695,6 +527,7 @@ async def fadcam_browse_screen(ctx: Context, device: str, package: str,
                                base_path: Optional[str] = None,
                                storage_hint: Optional[str] = None,
                                full_scan: bool = True) -> str:
+    """Browse screen recordings (metadata only)."""
     await _ctx_info(ctx, f"Tool called: fadcam_browse_screen for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_screen for device {device}, package {package}")
     try:
@@ -720,6 +553,7 @@ async def fadcam_browse_stream(ctx: Context, device: str, package: str,
                                base_path: Optional[str] = None,
                                storage_hint: Optional[str] = None,
                                full_scan: bool = True) -> str:
+    """Browse stream recordings (metadata only)."""
     await _ctx_info(ctx, f"Tool called: fadcam_browse_stream for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_stream for device {device}, package {package}")
     try:
@@ -745,6 +579,7 @@ async def fadcam_browse_faditor(ctx: Context, device: str, package: str,
                                 base_path: Optional[str] = None,
                                 storage_hint: Optional[str] = None,
                                 full_scan: bool = True) -> str:
+    """Browse Faditor output videos (metadata only)."""
     await _ctx_info(ctx, f"Tool called: fadcam_browse_faditor for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_faditor for device {device}, package {package}")
     try:
@@ -770,6 +605,7 @@ async def fadcam_browse_root(ctx: Context, device: str, package: str,
                              base_path: Optional[str] = None,
                              storage_hint: Optional[str] = None,
                              full_scan: bool = True) -> str:
+    """Browse root-level media files under the FadCam base path (metadata only)."""
     await _ctx_info(ctx, f"Tool called: fadcam_browse_root for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_root for device {device}, package {package}")
     try:
@@ -791,8 +627,12 @@ async def fadcam_browse_root(ctx: Context, device: str, package: str,
     "openWorldHint": True
 })
 async def fadcam_browse_forensics(ctx: Context, device: str, package: str,
-                                  limit: int = 200, full_scan: bool = True) -> str:
-    """Browse forensic snapshots only (metadata)."""
+                                  limit: int = 0, full_scan: bool = True) -> str:
+    """Browse forensic snapshots only (metadata).
+
+    Internal app storage only: /storage/emulated/0/Android/data/<pkg>/files/FadCam/Forensics/Snapshots
+    limit=0 returns counts only (no file listing).
+    """
     await _ctx_info(ctx, f"Tool called: fadcam_browse_forensics for device {device}, package {package}")
     logger.info(f"Tool called: fadcam_browse_forensics for device {device}, package {package}")
     try:
@@ -922,7 +762,7 @@ async def performance_monitor() -> str:
     """Performance Optimization
     
     Find performance bottlenecks and optimization opportunities.
-    Analyze CPU usage, memory, and frame rates.
+    Focus on memory usage (PSS) and GC behavior.
     """
     logger.info("Prompt accessed: performance-monitor")
     try:
@@ -930,22 +770,6 @@ async def performance_monitor() -> str:
         return await prompts.get_prompt("performance-monitor")
     except Exception as e:
         logger.exception("Error getting performance monitor prompt")
-        return f"Error: {str(e)}"
-
-
-@server.prompt()
-async def network_debugger() -> str:
-    """Network Debugging
-    
-    Trace and debug network calls and connectivity issues.
-    Analyze API responses and network errors.
-    """
-    logger.info("Prompt accessed: network-debugger")
-    try:
-        from src.mcp import prompts
-        return await prompts.get_prompt("network-debugger")
-    except Exception as e:
-        logger.exception("Error getting network debugger prompt")
         return f"Error: {str(e)}"
 
 
@@ -985,19 +809,9 @@ async def fadcam_media_helper() -> str:
 
 def main():
     """Run MCP server on stdio."""
-    # Print FadCat branding
-    print("\n" + "="*70)
-    print("┌" + "─"*68 + "┐")
-    print("│ " + " "*66 + " │")
-    print("│ " + "FadCat MCP Server".center(66) + " │")
-    print("│ " + f"v{__version__} - Android Debug Companion".center(66) + " │")
-    print("│ " + " "*66 + " │")
-    print("└" + "─"*68 + "┘")
-    print("="*70 + "\n")
-    
     logger.info(f"Starting FadCat MCP Server ({__app_name__} v{__version__})")
     try:
-        server.run()
+        server.run(show_banner=False)
     except KeyboardInterrupt:
         logger.info("MCP Server stopped by user")
     except Exception as e:

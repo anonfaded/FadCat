@@ -918,8 +918,8 @@ class SettingsDialog(QDialog):
         tools_lay.setSpacing(6)
 
         tools_text = QLabel(
-            "• <b>28 Tools:</b> Purpose-specific FadCam tools, logcat, system info, performance (memory only)<br>"
-            "• <b>6 Prompts:</b> Pre-built AI workflows for common tasks"
+            "• <b>22 Tools:</b> Purpose-specific FadCam tools, logcat, system info, performance (memory only)<br>"
+            "• <b>5 Prompts:</b> Pre-built AI workflows for common tasks"
         )
         tools_text.setWordWrap(True)
         tools_text.setStyleSheet("color: #888; font-size: 10px;")
@@ -934,7 +934,6 @@ class SettingsDialog(QDialog):
             "• <code>debug-crash-analyzer</code> – Analyze app crashes and exceptions<br>"
             "• <code>logcat-summarizer</code> – Summarize logcat output<br>"
             "• <code>performance-monitor</code> – Find performance bottlenecks<br>"
-            "• <code>network-debugger</code> – Debug network issues<br>"
             "• <code>fadcat-about</code> – Learn about FadCat & FadCam workflows<br>"
             "• <code>fadcam-media-helper</code> – Browse and pull FadCam media"
         )
@@ -948,8 +947,8 @@ class SettingsDialog(QDialog):
         tools_lay.addWidget(examples_label)
 
         examples_text = QLabel(
-            "• <i>\"Browse my FadCam media and show me a summary by location\"</i><br>"
             "• <i>\"Browse camera recordings (metadata only)\"</i><br>"
+            "• <i>\"Browse FadShot screenshots (metadata only)\"</i><br>"
             "• <i>\"Browse forensic snapshots (metadata only)\"</i><br>"
             "• <i>\"Analyze app crash logs and suggest the root cause\"</i><br>"
             "• <i>\"Summarize the latest logcat warnings and errors\"</i><br>"

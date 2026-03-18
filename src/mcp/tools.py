@@ -553,31 +553,35 @@ def _forensics_root(package: str) -> str:
 
 
 def _find_forensics_files(device: str, root: str, limit: Optional[int] = None) -> List[str]:
-    qpath = _shell_quote(root)
-    cmd = f"find {qpath} -type f -name '*.jpg'"
-    if limit is not None:
-        cmd += f" | head -n {int(limit)}"
-    output = _run_adb_shell(device, cmd)
+    output = _run_adb_command(device, [
+        'shell', 'find', root,
+        '-mindepth', '3', '-maxdepth', '3',
+        '-type', 'f', '-name', '*.jpg'
+    ])
     if "No such file" in output or "Permission denied" in output:
         return []
-    return [line.strip() for line in output.split('\n') if line.strip()]
+    files = [line.strip() for line in output.split('\n') if line.strip()]
+    if limit is not None and limit > 0:
+        return files[:limit]
+    return files
 
 
 def _count_forensics_files(device: str, root: str) -> int:
-    qpath = _shell_quote(root)
-    output = _run_adb_shell(device, f"find {qpath} -type f -name '*.jpg' | wc -l")
-    try:
-        return int(output.strip())
-    except Exception:
+    output = _run_adb_command(device, [
+        'shell', 'find', root,
+        '-mindepth', '3', '-maxdepth', '3',
+        '-type', 'f', '-name', '*.jpg'
+    ])
+    if "No such file" in output or "Permission denied" in output:
         return 0
+    return len([line for line in output.split('\n') if line.strip()])
 
 
 def _sum_forensics_sizes(device: str, root: str) -> Optional[int]:
-    qpath = _shell_quote(root)
-    cmd = f"find {qpath} -type f -name '*.jpg' -exec stat -c '%s' {{}} + | awk '{{sum += $1}} END {{print sum}}'"
-    output = _run_adb_shell(device, cmd)
+    output = _run_adb_command(device, ['shell', 'du', '-sk', root])
     try:
-        return int(output.strip())
+        size_kb = int(output.strip().split()[0])
+        return size_kb * 1024
     except Exception:
         return None
 
@@ -1805,6 +1809,7 @@ async def impl_pull_fadcam_media(ctx: Optional[Context], device: str, package: s
             try:
                 find_cmd = _run_adb_command(device, [
                     'shell', 'find', forensics_base,
+                    '-mindepth', '3', '-maxdepth', '3',
                     '-type', 'f', '-name', '*.jpg'
                 ])
                 if "No such file" not in find_cmd and "Permission denied" not in find_cmd:
@@ -2086,7 +2091,7 @@ async def impl_fadcam_list_structure(ctx: Optional[Context], device: str, packag
                         ls_cmd = _run_adb_command(device, ['shell', 'ls', '-la', cat_path])
                         if "No such file or directory" not in ls_cmd and "Permission denied" not in ls_cmd:
                             cat_info["exists"] = True
-                            cat_info["total_files"] = _count_media_files(device, cat_path) if include_counts else None
+                            cat_info["total_files"] = _count_forensics_files(device, cat_path) if include_counts else None
                             if include_counts and cat_info["total_files"] is not None:
                                 structure["total_files"] += cat_info["total_files"]
                             cat_info["subdirs"]["Snapshots"] = {
@@ -2340,6 +2345,71 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
         import os
         from datetime import datetime
 
+        if category and category.lower() == "forensics":
+            internal_base = f"/storage/emulated/0/Android/data/{package}/files/FadCam"
+            forensics_root = f"{internal_base}/Forensics/Snapshots"
+            if not _path_exists(device, forensics_root):
+                return json.dumps({
+                    "device": device,
+                    "package": package,
+                    "base_path": internal_base,
+                    "forensics_root": forensics_root,
+                    "message": "Forensics snapshots folder not found.",
+                    "files": []
+                })
+            if not confirm:
+                preview = await impl_fadcam_browse_forensics(ctx, device, package, limit=limit or 20, full_scan=False)
+                preview_obj = json.loads(preview) if isinstance(preview, str) else preview
+                preview_obj["message"] = "Preview only. Re-run with confirm=true to pull."
+                preview_obj["requires_confirmation"] = True
+                await _ctx_info(ctx, "Preview only. Set confirm=true to pull.")
+                return json.dumps(preview_obj)
+
+            resolved_output_dir = _resolve_output_dir(output_dir)
+            if resolved_output_dir != output_dir:
+                await _ctx_info(ctx, f"Resolved output_dir to {resolved_output_dir}")
+            output_path = Path(resolved_output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+
+            pulled_files = []
+            total_size = 0
+            errors = []
+            files = _find_forensics_files(device, forensics_root, limit)
+            for remote_path in files:
+                filename = remote_path.split('/')[-1]
+                local_path = Path(
+                    _resolve_preserved_local_path(str(output_path), remote_path, internal_base)
+                )
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                pull_cmd = ['pull', remote_path, str(local_path)]
+                pull_output = _run_adb_command(device, pull_cmd)
+                if "error" in pull_output.lower() and "1 file pulled" not in pull_output:
+                    errors.append(f"Failed to pull {filename}: {pull_output}")
+                    continue
+                metadata_result = await impl_fadcam_get_metadata(ctx, device, package, remote_path)
+                metadata = json.loads(metadata_result) if isinstance(metadata_result, str) else metadata_result
+                pulled_files.append({
+                    "filename": filename,
+                    "category": "Forensics",
+                    "subcategory": "Snapshots",
+                    "remote_path": remote_path,
+                    "local_path": str(local_path),
+                    "metadata": metadata
+                })
+                total_size += metadata.get("size_bytes", 0)
+
+            return json.dumps({
+                "device": device,
+                "package": package,
+                "base_path": internal_base,
+                "forensics_root": forensics_root,
+                "output_dir": str(output_path.absolute()),
+                "total_pulled": len(pulled_files),
+                "total_size_bytes": total_size,
+                "files": pulled_files,
+                "errors": errors
+            })
+
         # Get structure first
         structure_result = await impl_fadcam_list_structure(ctx, device, package, include_counts=False)
         structure = json.loads(structure_result)
@@ -2445,15 +2515,18 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
 
         # If not confirmed, return a preview from the selected location.
         if not confirm:
-            preview = await impl_fadcam_browse_files(
-                ctx,
-                device,
-                package,
-                category=category,
-                camera=camera,
-                limit=limit or 20,
-                base_path=base_path
-            )
+            if category and category.lower() == "forensics":
+                preview = await impl_fadcam_browse_forensics(ctx, device, package, limit=limit or 20, full_scan=False)
+            else:
+                preview = await impl_fadcam_browse_files(
+                    ctx,
+                    device,
+                    package,
+                    category=category,
+                    camera=camera,
+                    limit=limit or 20,
+                    base_path=base_path
+                )
             preview_obj = json.loads(preview) if isinstance(preview, str) else preview
             preview_obj["message"] = "Preview only. Re-run with confirm=true to pull."
             preview_obj["requires_confirmation"] = True
@@ -2475,11 +2548,11 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
                     continue
                 # Pull forensic snapshots (jpg only)
                 remaining = (limit - len(pulled_files)) if limit else None
-                files = [f for f in _find_media_files_limited(
+                files = _find_forensics_files(
                     device,
                     cat_info["path"],
-                    remaining or 10_000,
-                ) if f.endswith('.jpg')]
+                    remaining if remaining is not None else None
+                )
                 for remote_path in files:
                     if limit and len(pulled_files) >= limit:
                         break
@@ -2635,11 +2708,8 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
             base_path = f"/storage/emulated/0/Android/data/{package}/files/FadCam"
             storage_hint = None
 
-        structure_result = await impl_fadcam_list_structure(ctx, device, package, include_counts=False)
-        structure = json.loads(structure_result)
-
-        if "error" in structure:
-            return structure_result
+        internal_base = f"/storage/emulated/0/Android/data/{package}/files/FadCam"
+        storage_info = None
 
         if not base_path and storage_hint:
             storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
@@ -2662,27 +2732,38 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
             base_path = resolved.get("base_path")
 
         if not base_path:
-            await _ctx_info(ctx, "Need a base_path (or storage_hint) to browse. Returning available locations.")
-            base_paths = [loc.get("base_path") for loc in structure.get("structures", []) if loc.get("base_path")]
-            chosen = await _elicit_base_path(ctx, base_paths, "Browse requires base_path.")
-            if chosen:
-                base_path = chosen
-            else:
-                return json.dumps({
-                    "device": device,
-                    "package": package,
-                    "message": "Browse requires an explicit base_path. Choose one from available_locations.",
-                    "available_locations": [
-                        {
-                            "package": loc.get("package"),
-                            "base_path": loc.get("base_path"),
-                            "storage_type": loc.get("storage_type"),
-                            "layout": loc.get("layout"),
-                        }
-                        for loc in structure.get("structures", [])
-                    ],
-                    "requires_selection": True
-                })
+            base_path = internal_base
+
+        if not _path_exists(device, base_path):
+            available_base_paths = []
+            if storage_info:
+                for pkg_info in storage_info.get("packages", []):
+                    for entry in pkg_info.get("storage_entries", []):
+                        if entry.get("base_path"):
+                            available_base_paths.append(entry["base_path"])
+            return json.dumps({
+                "device": device,
+                "package": package,
+                "message": f"base_path not found: {base_path}",
+                "available_base_paths": available_base_paths
+            })
+
+        storage_type = "default_internal" if base_path == internal_base else "custom"
+        if storage_info:
+            for pkg_info in storage_info.get("packages", []):
+                for entry in pkg_info.get("storage_entries", []):
+                    if entry.get("base_path") == base_path and entry.get("type"):
+                        storage_type = entry.get("type")
+                        break
+
+        structure = {
+            "structures": [{
+                "package": package,
+                "base_path": base_path,
+                "storage_type": storage_type,
+                "layout": "fadcam" if _is_fadcam_layout(device, base_path) else "flat",
+            }]
+        }
 
         files_info = []
         total_count = 0
@@ -2983,11 +3064,12 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
 
 
 async def impl_fadcam_browse_forensics(ctx: Optional[Context], device: str, package: str,
-                                       limit: int = 200, full_scan: bool = True) -> str:
+                                       limit: int = 0, full_scan: bool = True) -> str:
     """Browse forensic snapshots only (metadata)."""
     try:
         base_path = f"/storage/emulated/0/Android/data/{package}/files/FadCam"
         root = _forensics_root(package)
+        tool_version = "forensics_v3_2026-03-18"
         if not _path_exists(device, root):
             return json.dumps({
                 "device": device,
@@ -2996,15 +3078,21 @@ async def impl_fadcam_browse_forensics(ctx: Optional[Context], device: str, pack
                 "forensics_root": root,
                 "total_files": 0,
                 "total_size_bytes": 0,
-                "files": []
+                "files": [],
+                "source": "internal_forensics_only",
+                "count_method": "find_count",
+                "size_method": "du_kb",
+                "tool_version": tool_version,
+                "summary": f"Forensics snapshots under {root}: 0 file(s)."
             })
 
         total_files = _count_forensics_files(device, root) if full_scan else None
         total_size = _sum_forensics_sizes(device, root) if full_scan else None
 
-        files = _find_forensics_files(device, root, None if full_scan else limit)
-        if full_scan and limit:
-            files = files[:limit]
+        files = []
+        if limit and limit > 0:
+            files = _find_forensics_files(device, root, limit)
+            files = [f for f in files if f.startswith(root)]
 
         files_info = []
         for remote_path in files:
@@ -3019,6 +3107,24 @@ async def impl_fadcam_browse_forensics(ctx: Optional[Context], device: str, pack
                 "metadata": metadata
             })
 
+        truncated = False
+        if limit and limit > 0:
+            if full_scan and total_files is not None:
+                truncated = total_files > limit
+            elif not full_scan:
+                truncated = len(files_info) >= limit
+
+        summary = None
+        if total_files is not None and total_size is not None:
+            summary = (
+                f"Forensics snapshots under {root}: "
+                f"{total_files} file(s), {total_size} bytes."
+            )
+        elif total_files is not None:
+            summary = f"Forensics snapshots under {root}: {total_files} file(s)."
+        elif not full_scan:
+            summary = "Preview only. Re-run with full_scan=true for full counts."
+
         return json.dumps({
             "device": device,
             "package": package,
@@ -3029,8 +3135,13 @@ async def impl_fadcam_browse_forensics(ctx: Optional[Context], device: str, pack
             "total_files_returned": None if full_scan else len(files_info),
             "files": files_info,
             "limit_applied": None if full_scan else limit,
-            "truncated": False if full_scan else len(files_info) >= limit,
-            "note": None if full_scan else "total_files_returned reflects the limited result set; it is not the full total."
+            "truncated": truncated,
+            "note": None if full_scan else "total_files_returned reflects the limited result set; it is not the full total.",
+            "summary": summary,
+            "source": "internal_forensics_only",
+            "count_method": "find_count",
+            "size_method": "du_kb",
+            "tool_version": tool_version
         })
     except Exception as e:
         return json.dumps({"error": str(e)})
