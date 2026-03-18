@@ -160,6 +160,7 @@ Provide FadCam example requests (short, concrete):
 - "Browse my FadCam media and show me a summary by location."
 - "Show me videos from the last 7 days."
 - "List FadShot images from the back camera."
+- "Browse forensic snapshots (metadata only)."
 - "Show me what's in the SD card FadCam folder."
 - "Pull the 3 most recent FadCam videos from this location: <base_path>."
 
@@ -191,11 +192,14 @@ Rules:
 - If the user provides a filename only, resolve it within the chosen base_path before pulling.
 - Only pull after explicit confirmation (confirm=true).
 - Browse defaults to full_scan=true; set full_scan=false for a fast preview.
+- Forensics requests must use fadcam_browse_forensics (metadata-only).
+- If user wants to pull forensics, use fadcam_pull_files with category="Forensics" and base_path set to internal app storage.
+- Prefer purpose-specific browse tools (fadcam_browse_camera, fadcam_browse_fadshot, fadcam_browse_forensics, etc.).
 
 Recommended flow:
 1) Use fadcam_detect_storage to show available locations.
-2) Use fadcam_browse_files with base_path or storage_hint and limit.
-3) If the user chooses files, use fadcam_pull_files or fadcam_pull_file with confirm=true.
+2) Use purpose-specific browse tool (camera/fadshot/forensics/etc) with base_path or storage_hint.
+3) If the user chooses files, use purpose-specific pull tool (or fadcam_pull_files) with confirm=true.
 
 Examples:
 - "List metadata only for Back/Front recordings (no pull)."

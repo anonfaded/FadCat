@@ -4,7 +4,9 @@ import sys
 import logging
 import time
 from typing import Any, Optional, List
+from pathlib import Path
 from fastmcp import FastMCP, Context
+from fastmcp.server import providers as mcp_providers
 import json
 
 # Setup logging to stderr (MCP requirement - stdout is reserved for protocol)
@@ -19,6 +21,14 @@ from src.version import __version__, __author__, __app_name__
 
 # Create MCP server with FastMCP
 server = FastMCP(__app_name__, __version__)
+
+# Skills Provider (discoverable skills)
+try:
+    skills_root = Path.home() / ".codex" / "skills"
+    if skills_root.exists():
+        server.add_provider(mcp_providers.SkillsProvider(roots=[skills_root], supporting_files="template"))
+except Exception:
+    pass
 
 # Module-level state
 _server_start_time = None
@@ -600,40 +610,222 @@ async def fadcam_pull_files(ctx: Context, device: str, package: str, output_dir:
 
 
 @server.tool(annotations={
-    "title": "Browse FadCam Files",
+    "title": "Browse FadCam Camera",
     "readOnlyHint": True,
     "idempotentHint": False,
-    "openWorldHint": True,
-    
+    "openWorldHint": True
 })
-async def fadcam_browse_files(ctx: Context, device: str, package: str, category: Optional[str] = None,
-                             camera: Optional[str] = None, limit: int = 50,
-                             base_path: Optional[str] = None, storage_hint: Optional[str] = None,
-                             full_scan: bool = True) -> str:
-    """Browse FadCam files without downloading - returns metadata only
-
-    base_path is required to avoid scanning all locations.
-    storage_hint can be used to resolve a base_path (e.g., "internal", "download", "dcim", "sd_download", "custom").
-    """
-    await _ctx_info(ctx, f"Tool called: fadcam_browse_files for device {device}, package {package}")
-    logger.info(f"Tool called: fadcam_browse_files for device {device}, package {package}")
+async def fadcam_browse_camera(ctx: Context, device: str, package: str,
+                               camera: Optional[str] = None, limit: int = 200,
+                               base_path: Optional[str] = None,
+                               storage_hint: Optional[str] = None,
+                               full_scan: bool = True) -> str:
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_camera for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_browse_camera for device {device}, package {package}")
     try:
         from src.mcp import tools
-        result = await tools.impl_fadcam_browse_files(
-            ctx,
-            device,
-            package,
-            category,
-            camera,
-            limit,
-            base_path,
-            storage_hint,
-            full_scan
+        result = await tools.impl_fadcam_browse_camera(
+            ctx, device, package, camera, limit, base_path, storage_hint, full_scan
         )
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
-        logger.exception("Error in fadcam_browse_files")
-        await _ctx_warning(ctx, f"Error in fadcam_browse_files: {e}")
+        logger.exception("Error in fadcam_browse_camera")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_camera: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool(annotations={
+    "title": "Browse FadCam FadShot",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
+async def fadcam_browse_fadshot(ctx: Context, device: str, package: str,
+                                camera: Optional[str] = None, limit: int = 200,
+                                base_path: Optional[str] = None,
+                                storage_hint: Optional[str] = None,
+                                full_scan: bool = True) -> str:
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_fadshot for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_browse_fadshot for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_browse_fadshot(
+            ctx, device, package, camera, limit, base_path, storage_hint, full_scan
+        )
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_browse_fadshot")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_fadshot: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool(annotations={
+    "title": "Browse FadCam Dual",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
+async def fadcam_browse_dual(ctx: Context, device: str, package: str,
+                             limit: int = 200,
+                             base_path: Optional[str] = None,
+                             storage_hint: Optional[str] = None,
+                             full_scan: bool = True) -> str:
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_dual for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_browse_dual for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_browse_dual(
+            ctx, device, package, limit, base_path, storage_hint, full_scan
+        )
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_browse_dual")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_dual: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool(annotations={
+    "title": "Browse FadCam Screen",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
+async def fadcam_browse_screen(ctx: Context, device: str, package: str,
+                               limit: int = 200,
+                               base_path: Optional[str] = None,
+                               storage_hint: Optional[str] = None,
+                               full_scan: bool = True) -> str:
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_screen for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_browse_screen for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_browse_screen(
+            ctx, device, package, limit, base_path, storage_hint, full_scan
+        )
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_browse_screen")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_screen: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool(annotations={
+    "title": "Browse FadCam Stream",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
+async def fadcam_browse_stream(ctx: Context, device: str, package: str,
+                               limit: int = 200,
+                               base_path: Optional[str] = None,
+                               storage_hint: Optional[str] = None,
+                               full_scan: bool = True) -> str:
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_stream for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_browse_stream for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_browse_stream(
+            ctx, device, package, limit, base_path, storage_hint, full_scan
+        )
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_browse_stream")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_stream: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool(annotations={
+    "title": "Browse FadCam Faditor",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
+async def fadcam_browse_faditor(ctx: Context, device: str, package: str,
+                                limit: int = 200,
+                                base_path: Optional[str] = None,
+                                storage_hint: Optional[str] = None,
+                                full_scan: bool = True) -> str:
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_faditor for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_browse_faditor for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_browse_faditor(
+            ctx, device, package, limit, base_path, storage_hint, full_scan
+        )
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_browse_faditor")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_faditor: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool(annotations={
+    "title": "Browse FadCam Root",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
+async def fadcam_browse_root(ctx: Context, device: str, package: str,
+                             limit: int = 200,
+                             base_path: Optional[str] = None,
+                             storage_hint: Optional[str] = None,
+                             full_scan: bool = True) -> str:
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_root for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_browse_root for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_browse_root(
+            ctx, device, package, limit, base_path, storage_hint, full_scan
+        )
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_browse_root")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_root: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool(annotations={
+    "title": "Browse FadCam Forensics",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
+async def fadcam_browse_forensics(ctx: Context, device: str, package: str,
+                                  limit: int = 200, full_scan: bool = True) -> str:
+    """Browse forensic snapshots only (metadata)."""
+    await _ctx_info(ctx, f"Tool called: fadcam_browse_forensics for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_browse_forensics for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_browse_forensics(ctx, device, package, limit, full_scan)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_browse_forensics")
+        await _ctx_warning(ctx, f"Error in fadcam_browse_forensics: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@server.tool(annotations={
+    "title": "Pull FadCam Forensics",
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
+async def fadcam_pull_forensics(ctx: Context, device: str, package: str,
+                                output_dir: str = "./fadcam_files",
+                                limit: Optional[int] = None,
+                                confirm: bool = False) -> str:
+    """Pull forensic snapshots only."""
+    await _ctx_info(ctx, f"Tool called: fadcam_pull_forensics for device {device}, package {package}")
+    logger.info(f"Tool called: fadcam_pull_forensics for device {device}, package {package}")
+    try:
+        from src.mcp import tools
+        result = await tools.impl_fadcam_pull_forensics(ctx, device, package, output_dir, limit, confirm)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Error in fadcam_pull_forensics")
+        await _ctx_warning(ctx, f"Error in fadcam_pull_forensics: {e}")
         return json.dumps({"error": str(e)})
 
 

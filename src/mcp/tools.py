@@ -1,5 +1,5 @@
 """
-FadCat MCP Tools - Implementation of all 20 MCP tools.
+FadCat MCP Tools - Implementation of all 28 MCP tools.
 
 These tools connect directly to Android Debug Bridge (ADB) and logcat to provide
 AI agents with real-time access to device debugging information.
@@ -546,6 +546,40 @@ def _parse_forensics_filename(path: str) -> Dict[str, Optional[str]]:
     except Exception:
         pass
     return result
+
+
+def _forensics_root(package: str) -> str:
+    return f"/storage/emulated/0/Android/data/{package}/files/FadCam/Forensics/Snapshots"
+
+
+def _find_forensics_files(device: str, root: str, limit: Optional[int] = None) -> List[str]:
+    qpath = _shell_quote(root)
+    cmd = f"find {qpath} -type f -name '*.jpg'"
+    if limit is not None:
+        cmd += f" | head -n {int(limit)}"
+    output = _run_adb_shell(device, cmd)
+    if "No such file" in output or "Permission denied" in output:
+        return []
+    return [line.strip() for line in output.split('\n') if line.strip()]
+
+
+def _count_forensics_files(device: str, root: str) -> int:
+    qpath = _shell_quote(root)
+    output = _run_adb_shell(device, f"find {qpath} -type f -name '*.jpg' | wc -l")
+    try:
+        return int(output.strip())
+    except Exception:
+        return 0
+
+
+def _sum_forensics_sizes(device: str, root: str) -> Optional[int]:
+    qpath = _shell_quote(root)
+    cmd = f"find {qpath} -type f -name '*.jpg' -exec stat -c '%s' {{}} + | awk '{{sum += $1}} END {{print sum}}'"
+    output = _run_adb_shell(device, cmd)
+    try:
+        return int(output.strip())
+    except Exception:
+        return None
 
 
 def _resolve_base_path_from_hint(storage_info: Dict[str, Any],
@@ -2437,6 +2471,8 @@ async def impl_fadcam_pull_files(ctx: Optional[Context], device: str, package: s
             is_custom_root = cat_name == "CustomRoot"
             is_root_media = cat_name == "Root"
             if cat_name == "Forensics":
+                if "/Android/data/" not in base_path or not base_path.endswith("/files/FadCam"):
+                    continue
                 # Pull forensic snapshots (jpg only)
                 remaining = (limit - len(pulled_files)) if limit else None
                 files = [f for f in _find_media_files_limited(
@@ -2587,6 +2623,18 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                                   full_scan: bool = True) -> str:
     """Browse FadCam files without downloading - returns metadata only"""
     try:
+        if storage_hint and storage_hint.lower().strip() in {"forensics", "forensic"}:
+            return json.dumps({
+                "device": device,
+                "package": package,
+                "message": "Use fadcam_browse_forensics for forensics-only metadata.",
+                "requires_forensics_tool": True
+            })
+
+        if category and category.lower() == "forensics":
+            base_path = f"/storage/emulated/0/Android/data/{package}/files/FadCam"
+            storage_hint = None
+
         structure_result = await impl_fadcam_list_structure(ctx, device, package, include_counts=False)
         structure = json.loads(structure_result)
 
@@ -2823,6 +2871,8 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
                 is_custom_root = cat_name == "CustomRoot" or layout == "flat"
                 is_root_media = cat_name == "Root"
                 if cat_name == "Forensics":
+                    if "/Android/data/" not in base or not base.endswith("/files/FadCam"):
+                        continue
                     files = [f for f in _find_media_files(device, cat_info["path"]) if f.endswith('.jpg')]
                     for remote_path in files:
                         if effective_limit is not None and total_count >= effective_limit:
@@ -2930,3 +2980,190 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
 
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+async def impl_fadcam_browse_forensics(ctx: Optional[Context], device: str, package: str,
+                                       limit: int = 200, full_scan: bool = True) -> str:
+    """Browse forensic snapshots only (metadata)."""
+    try:
+        base_path = f"/storage/emulated/0/Android/data/{package}/files/FadCam"
+        root = _forensics_root(package)
+        if not _path_exists(device, root):
+            return json.dumps({
+                "device": device,
+                "package": package,
+                "base_path": base_path,
+                "forensics_root": root,
+                "total_files": 0,
+                "total_size_bytes": 0,
+                "files": []
+            })
+
+        total_files = _count_forensics_files(device, root) if full_scan else None
+        total_size = _sum_forensics_sizes(device, root) if full_scan else None
+
+        files = _find_forensics_files(device, root, None if full_scan else limit)
+        if full_scan and limit:
+            files = files[:limit]
+
+        files_info = []
+        for remote_path in files:
+            metadata = _build_metadata_from_filename(remote_path, None)
+            files_info.append({
+                "filename": metadata["filename"],
+                "category": "Forensics",
+                "subcategory": "Snapshots",
+                "remote_path": remote_path,
+                "base_path": base_path,
+                "storage_type": "default_internal",
+                "metadata": metadata
+            })
+
+        return json.dumps({
+            "device": device,
+            "package": package,
+            "base_path": base_path,
+            "forensics_root": root,
+            "total_files": total_files,
+            "total_size_bytes": total_size,
+            "total_files_returned": None if full_scan else len(files_info),
+            "files": files_info,
+            "limit_applied": None if full_scan else limit,
+            "truncated": False if full_scan else len(files_info) >= limit,
+            "note": None if full_scan else "total_files_returned reflects the limited result set; it is not the full total."
+        })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+async def impl_fadcam_browse_camera(ctx: Optional[Context], device: str, package: str,
+                                   camera: Optional[str] = None, limit: int = 200,
+                                   base_path: Optional[str] = None,
+                                   storage_hint: Optional[str] = None,
+                                   full_scan: bool = True) -> str:
+    return await impl_fadcam_browse_files(
+        ctx, device, package,
+        category="Camera",
+        camera=camera,
+        limit=limit,
+        base_path=base_path,
+        storage_hint=storage_hint,
+        full_scan=full_scan
+    )
+
+
+async def impl_fadcam_browse_fadshot(ctx: Optional[Context], device: str, package: str,
+                                    camera: Optional[str] = None, limit: int = 200,
+                                    base_path: Optional[str] = None,
+                                    storage_hint: Optional[str] = None,
+                                    full_scan: bool = True) -> str:
+    return await impl_fadcam_browse_files(
+        ctx, device, package,
+        category="FadShot",
+        camera=camera,
+        limit=limit,
+        base_path=base_path,
+        storage_hint=storage_hint,
+        full_scan=full_scan
+    )
+
+
+async def impl_fadcam_browse_dual(ctx: Optional[Context], device: str, package: str,
+                                 limit: int = 200,
+                                 base_path: Optional[str] = None,
+                                 storage_hint: Optional[str] = None,
+                                 full_scan: bool = True) -> str:
+    return await impl_fadcam_browse_files(
+        ctx, device, package,
+        category="Dual",
+        camera=None,
+        limit=limit,
+        base_path=base_path,
+        storage_hint=storage_hint,
+        full_scan=full_scan
+    )
+
+
+async def impl_fadcam_browse_screen(ctx: Optional[Context], device: str, package: str,
+                                   limit: int = 200,
+                                   base_path: Optional[str] = None,
+                                   storage_hint: Optional[str] = None,
+                                   full_scan: bool = True) -> str:
+    return await impl_fadcam_browse_files(
+        ctx, device, package,
+        category="Screen",
+        camera=None,
+        limit=limit,
+        base_path=base_path,
+        storage_hint=storage_hint,
+        full_scan=full_scan
+    )
+
+
+async def impl_fadcam_browse_stream(ctx: Optional[Context], device: str, package: str,
+                                   limit: int = 200,
+                                   base_path: Optional[str] = None,
+                                   storage_hint: Optional[str] = None,
+                                   full_scan: bool = True) -> str:
+    return await impl_fadcam_browse_files(
+        ctx, device, package,
+        category="Stream",
+        camera=None,
+        limit=limit,
+        base_path=base_path,
+        storage_hint=storage_hint,
+        full_scan=full_scan
+    )
+
+
+async def impl_fadcam_browse_faditor(ctx: Optional[Context], device: str, package: str,
+                                    limit: int = 200,
+                                    base_path: Optional[str] = None,
+                                    storage_hint: Optional[str] = None,
+                                    full_scan: bool = True) -> str:
+    return await impl_fadcam_browse_files(
+        ctx, device, package,
+        category="Faditor",
+        camera=None,
+        limit=limit,
+        base_path=base_path,
+        storage_hint=storage_hint,
+        full_scan=full_scan
+    )
+
+
+async def impl_fadcam_browse_root(ctx: Optional[Context], device: str, package: str,
+                                 limit: int = 200,
+                                 base_path: Optional[str] = None,
+                                 storage_hint: Optional[str] = None,
+                                 full_scan: bool = True) -> str:
+    return await impl_fadcam_browse_files(
+        ctx, device, package,
+        category="Root",
+        camera=None,
+        limit=limit,
+        base_path=base_path,
+        storage_hint=storage_hint,
+        full_scan=full_scan
+    )
+
+
+async def impl_fadcam_pull_forensics(ctx: Optional[Context], device: str, package: str,
+                                     output_dir: str = "./fadcam_files",
+                                     limit: Optional[int] = None,
+                                     confirm: bool = False) -> str:
+    base_path = f"/storage/emulated/0/Android/data/{package}/files/FadCam"
+    return await impl_fadcam_pull_files(
+        ctx,
+        device,
+        package,
+        output_dir=output_dir,
+        category="Forensics",
+        camera=None,
+        limit=limit,
+        date_from=None,
+        date_to=None,
+        base_path=base_path,
+        confirm=confirm,
+        storage_hint=None
+    )

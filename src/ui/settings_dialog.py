@@ -918,7 +918,7 @@ class SettingsDialog(QDialog):
         tools_lay.setSpacing(6)
 
         tools_text = QLabel(
-            "• <b>20 Tools:</b> Pull media, browse files, logcat, system info, performance (memory only)<br>"
+            "• <b>28 Tools:</b> Purpose-specific FadCam tools, logcat, system info, performance (memory only)<br>"
             "• <b>6 Prompts:</b> Pre-built AI workflows for common tasks"
         )
         tools_text.setWordWrap(True)
@@ -949,6 +949,8 @@ class SettingsDialog(QDialog):
 
         examples_text = QLabel(
             "• <i>\"Browse my FadCam media and show me a summary by location\"</i><br>"
+            "• <i>\"Browse camera recordings (metadata only)\"</i><br>"
+            "• <i>\"Browse forensic snapshots (metadata only)\"</i><br>"
             "• <i>\"Analyze app crash logs and suggest the root cause\"</i><br>"
             "• <i>\"Summarize the latest logcat warnings and errors\"</i><br>"
             "• <i>\"Show running processes and find high memory usage\"</i><br>"
