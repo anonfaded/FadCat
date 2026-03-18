@@ -45,7 +45,12 @@ async def _ctx_warning(ctx: Context, message: str) -> None:
 # TOOLS - Android Debugging Operations
 # ============================================================================
 
-@server.tool()
+@server.tool(annotations={
+    "title": "List Devices",
+    "readOnlyHint": True,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def get_devices(ctx: Context) -> str:
     """Get list of connected Android devices"""
     await _ctx_info(ctx, "Tool called: get_devices")
@@ -95,7 +100,12 @@ async def get_devices(ctx: Context) -> str:
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Get Logcat",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def get_logcat_stream(
     ctx: Context,
     device: str,
@@ -123,7 +133,12 @@ async def get_logcat_stream(
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Search Logcat",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def search_logs(
     ctx: Context,
     query: str,
@@ -151,7 +166,12 @@ async def search_logs(
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Filter Logcat by Level",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def filter_by_level(ctx: Context, device: str, level: str) -> str:
     """Filter current logcat by severity level
     
@@ -171,7 +191,12 @@ async def filter_by_level(ctx: Context, device: str, level: str) -> str:
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Get App Processes",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def get_app_processes(ctx: Context, device: str, package: str) -> str:
     """Get running processes for an app
     
@@ -191,7 +216,12 @@ async def get_app_processes(ctx: Context, device: str, package: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "List Installed Packages",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def get_connected_packages(ctx: Context, device: str) -> str:
     """Get all packages connected to ADB on device
     
@@ -210,7 +240,12 @@ async def get_connected_packages(ctx: Context, device: str) -> str:
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Parse Stacktrace",
+    "readOnlyHint": True,
+    "idempotentHint": True,
+    "openWorldHint": False
+})
 async def parse_stacktrace(ctx: Context, stacktrace: str) -> str:
     """Parse Android stacktrace and identify issues
     
@@ -229,7 +264,12 @@ async def parse_stacktrace(ctx: Context, stacktrace: str) -> str:
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Detect Error Type",
+    "readOnlyHint": True,
+    "idempotentHint": True,
+    "openWorldHint": False
+})
 async def detect_error_type(ctx: Context, logs: str) -> str:
     """Detect error types from logs
     
@@ -248,7 +288,12 @@ async def detect_error_type(ctx: Context, logs: str) -> str:
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Analyze Performance (Memory)",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def analyze_performance(ctx: Context, device: str, package: str, duration: int = 10) -> str:
     """Analyze app performance metrics (memory only)
     
@@ -269,7 +314,13 @@ async def analyze_performance(ctx: Context, device: str, package: str, duration:
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Clear Logcat",
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def clear_logcat(ctx: Context, device: str) -> str:
     """Clear logcat buffer on device
     
@@ -288,7 +339,13 @@ async def clear_logcat(ctx: Context, device: str) -> str:
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Export Logcat",
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def export_logs(ctx: Context, device: str, format: str = "json", lines: int = 1000) -> str:
     """Export logcat to file
     
@@ -309,7 +366,12 @@ async def export_logs(ctx: Context, device: str, format: str = "json", lines: in
         return f"Error: {str(e)}"
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Get System Info",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def get_system_info(ctx: Context, device: str) -> str:
     """Get comprehensive system information
     
@@ -328,7 +390,13 @@ async def get_system_info(ctx: Context, device: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Pull FadCam Media (Batch)",
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def pull_fadcam_media(ctx: Context, device: str, package: str, media_type: str = "all",
                            output_dir: str = "./fadcam_media", limit: Optional[int] = None,
                            base_path: Optional[str] = None, confirm: bool = False,
@@ -369,7 +437,12 @@ async def pull_fadcam_media(ctx: Context, device: str, package: str, media_type:
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "List FadCam Packages",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def fadcam_list_packages(ctx: Context, device: str) -> str:
     """List all FadCam packages installed on a device"""
     await _ctx_info(ctx, f"Tool called: fadcam_list_packages for device {device}")
@@ -384,7 +457,12 @@ async def fadcam_list_packages(ctx: Context, device: str) -> str:
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Detect FadCam Storage",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def fadcam_detect_storage(ctx: Context, device: str, package: str, include_counts: bool = False) -> str:
     """Detect FadCam storage configuration for a package
 
@@ -405,7 +483,12 @@ async def fadcam_detect_storage(ctx: Context, device: str, package: str, include
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "List FadCam Structure",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def fadcam_list_structure(ctx: Context, device: str, package: str, include_counts: bool = False) -> str:
     """List FadCam directory structure and file counts
 
@@ -426,7 +509,12 @@ async def fadcam_list_structure(ctx: Context, device: str, package: str, include
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Get FadCam File Metadata",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def fadcam_get_metadata(ctx: Context, device: str, package: str, file_path: str) -> str:
     """Get metadata for a specific FadCam video file"""
     await _ctx_info(ctx, f"Tool called: fadcam_get_metadata for device {device}, package {package}, path {file_path}")
@@ -441,7 +529,13 @@ async def fadcam_get_metadata(ctx: Context, device: str, package: str, file_path
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Pull FadCam File",
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def fadcam_pull_file(ctx: Context, device: str, package: str, file_path: str,
                           output_dir: str = "./fadcam_files",
                           confirm: bool = False,
@@ -473,7 +567,13 @@ async def fadcam_pull_file(ctx: Context, device: str, package: str, file_path: s
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Pull FadCam Files (Filtered)",
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def fadcam_pull_files(ctx: Context, device: str, package: str, output_dir: str = "./fadcam_files",
                            category: Optional[str] = None, camera: Optional[str] = None,
                            limit: Optional[int] = None, date_from: Optional[str] = None,
@@ -499,7 +599,13 @@ async def fadcam_pull_files(ctx: Context, device: str, package: str, output_dir:
         return json.dumps({"error": str(e)})
 
 
-@server.tool()
+@server.tool(annotations={
+    "title": "Browse FadCam Files",
+    "readOnlyHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True,
+    
+})
 async def fadcam_browse_files(ctx: Context, device: str, package: str, category: Optional[str] = None,
                              camera: Optional[str] = None, limit: int = 50,
                              base_path: Optional[str] = None, storage_hint: Optional[str] = None) -> str:
