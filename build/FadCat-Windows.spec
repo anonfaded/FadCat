@@ -26,21 +26,28 @@ platform_tools_dir = project_root / "build" / "platform-tools"
 
 windows_binaries = []
 
-# Windows x86_64 - copy file to directory
-adb_x86_64 = platform_tools_dir / "windows_x86_64" / "adb.exe"
-if adb_x86_64.exists():
-    windows_binaries.append((str(adb_x86_64), 'platform-tools/windows_x86_64/'))
-    print("✓ Bundling ADB for Windows x86_64")
-else:
-    print("✗ Missing: Windows x86_64 ADB")
+def _collect_windows_platform_tools(arch_name: str):
+    arch_dir = platform_tools_dir / arch_name
+    if not arch_dir.exists():
+        print(f"✗ Missing: {arch_name} folder")
+        return
 
-# Windows ARM64 - copy file to directory
-adb_arm64 = platform_tools_dir / "windows_arm64" / "adb.exe"
-if adb_arm64.exists():
-    windows_binaries.append((str(adb_arm64), 'platform-tools/windows_arm64/'))
-    print("✓ Bundling ADB for Windows ARM64")
-else:
-    print("✗ Missing: Windows ARM64 ADB")
+    payload_files = [
+        path for path in arch_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in {".exe", ".dll"}
+    ]
+    if not payload_files:
+        print(f"✗ Missing: {arch_name} ADB payload files")
+        return
+
+    for payload_file in payload_files:
+        windows_binaries.append((str(payload_file), f'platform-tools/{arch_name}/'))
+
+    print(f"✓ Bundling ADB for {arch_name}")
+
+
+_collect_windows_platform_tools("windows_x86_64")
+_collect_windows_platform_tools("windows_arm64")
 
 block_cipher = None
 

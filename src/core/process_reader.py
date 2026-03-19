@@ -60,9 +60,9 @@ class ProcessReader(QtCore.QThread):
         Qt thread safety issues with subprocess calls inside exec().
         """
         import sys as _sys
-        import os
         import platform
         from pathlib import Path
+        from src.utils.adb_path import get_arch_suffix
 
         pidcat_file = Path(pidcat_path)
 
@@ -73,10 +73,17 @@ class ProcessReader(QtCore.QThread):
 
         # Determine bundled ADB path
         system = platform.system()
-        if hasattr(_sys, '_MEIPASS'):
-            base_path = Path(_sys._MEIPASS) / "platform-tools" / system.lower()
+        arch_suffix = get_arch_suffix()
+        if arch_suffix is None:
+            self.line_ready.emit(f"❌ Error: unsupported architecture for bundled ADB on {system}\n")
+            self.finished.emit()
+            return
+
+        meipass_root = getattr(_sys, "_MEIPASS", None)
+        if meipass_root:
+            base_path = Path(meipass_root) / "platform-tools" / arch_suffix
         else:
-            base_path = Path(_sys.executable).parent.parent / "Resources" / "platform-tools" / system.lower()
+            base_path = Path(_sys.executable).parent.parent / "Resources" / "platform-tools" / arch_suffix
 
         adb_binary = "adb.exe" if system == "Windows" else "adb"
         bundled_adb_path = str(base_path / adb_binary)
@@ -101,7 +108,7 @@ class ProcessReader(QtCore.QThread):
                     _sys.path.insert(0, str(_internal_path))
 
             # Read pidcat code
-            with open(pidcat_path, 'r') as f:
+            with open(pidcat_path, 'r', encoding='utf-8') as f:
                 pidcat_code = f.read()
 
             # Create namespace for execution

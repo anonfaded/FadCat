@@ -13,6 +13,7 @@ build/FadCat-*/
 
 # Exception: Keep bundled ADB binaries
 !build/platform-tools/**/*.exe
+!build/platform-tools/**/*.dll
 !build/platform-tools/**/adb
 
 # IDE

@@ -1,22 +1,21 @@
 """Utility to get the correct ADB binary path (bundled only)."""
-import sys
 import platform
-import os
 import subprocess
+import sys
 from pathlib import Path
 
 
 def get_current_arch():
     """Detect current machine architecture."""
     machine = platform.machine().lower()
-    
+
     if machine in ("aarch64", "arm64", "armv8l"):
         return "arm64"
-    elif machine in ("x86_64", "amd64"):
+    if machine in ("x86_64", "amd64"):
         return "x86_64"
-    elif machine in ("i386", "i686"):
+    if machine in ("i386", "i686"):
         return "x86"
-    elif machine in ("armv7l", "armv7"):
+    if machine in ("armv7l", "armv7"):
         return "armv7"
     return machine
 
@@ -25,27 +24,22 @@ def get_arch_suffix():
     """Get architecture-specific suffix for ADB directory."""
     arch = get_current_arch()
     system = platform.system().lower()
-    
+
     if system == "darwin":
-        if arch == "arm64":
-            return "macos_arm64"
-        else:
-            return "macos_x86_64"
-    elif system == "linux":
+        return "macos_arm64" if arch == "arm64" else "macos_x86_64"
+    if system == "linux":
         if arch == "arm64":
             return "linux_aarch64"
-        elif arch == "x86_64":
+        if arch == "x86_64":
             return "linux_x86_64"
-        else:
-            return None
-    elif system == "windows":
+        return None
+    if system == "windows":
         if arch == "arm64":
             return "windows_arm64"
-        elif arch == "x86_64":
+        if arch == "x86_64":
             return "windows_x86_64"
-        else:
-            return None
-    
+        return None
+
     return None
 
 
@@ -55,110 +49,80 @@ def is_binary_compatible(adb_path):
         result = subprocess.run(
             [adb_path, "version"],
             capture_output=True,
-            timeout=5
+            timeout=5,
+            check=False,
         )
         return result.returncode == 0
     except (OSError, subprocess.SubprocessError, FileNotFoundError):
         return False
 
 
+def _windows_adb_companion_dlls_present(adb_path: Path) -> bool:
+    """Windows adb needs companion DLLs in the same directory to start."""
+    if platform.system() != "Windows":
+        return True
+    required = ("AdbWinApi.dll", "AdbWinUsbApi.dll")
+    return all((adb_path.parent / dll_name).exists() for dll_name in required)
+
+
+def _bundled_adb_path(base_dir: Path, system: str, arch_suffix: str) -> Path:
+    adb_binary = "adb.exe" if system == "Windows" else "adb"
+    return base_dir / "platform-tools" / arch_suffix / adb_binary
+
+
 def get_adb_path():
     """
-    Get the path to the ADB binary (bundled only - no system fallback).
+    Get the path to the ADB binary.
 
-    FadCat bundles ADB for all supported architectures:
+    FadCat uses bundled ADB only:
     - Linux: x86_64, ARM64 (aarch64)
     - macOS: x86_64 (Intel), ARM64 (Apple Silicon)
     - Windows: x86_64, ARM64
 
-    Priority:
-    1. Environment variable FADCAT_ADB_PATH (set by ProcessReader for bundled mode)
-    2. Bundled ADB for current architecture
-
-    Returns:
-        str: Full path to adb executable
-
-    Raises:
-        RuntimeError: If ADB cannot be found
+    The Windows bundle must also include AdbWinApi.dll and AdbWinUsbApi.dll.
     """
-    # Check for environment variable override (set by ProcessReader in bundled mode)
-    if 'FADCAT_ADB_PATH' in os.environ:
-        adb_path = os.environ['FADCAT_ADB_PATH']
-        if os.path.exists(adb_path) and is_binary_compatible(adb_path):
-            return adb_path
-        raise RuntimeError(
-            f"FADCAT_ADB_PATH points to invalid binary: {adb_path}\n"
-            f"Please ensure the path is correct and the binary is executable."
-        )
-
     system = platform.system()
-    is_bundled = getattr(sys, 'frozen', False)
     arch_suffix = get_arch_suffix()
-
     if arch_suffix is None:
         raise RuntimeError(
             f"Unsupported architecture: {get_current_arch()} on {system}\n"
             f"FadCat supports x86_64 and ARM64 on Linux, macOS, and Windows."
         )
 
-    # Determine path based on bundled vs development mode
-    if is_bundled:
-        # Running as bundled app (PyInstaller)
-        # macOS: Resources/platform-tools/{arch}/adb
-        # Linux: _internal/platform-tools/{arch}/adb
-        # Windows: _internal/platform-tools/{arch}/adb.exe
+    if getattr(sys, "frozen", False):
         if system == "Darwin":
-            # macOS .app bundle structure
-            base_path = Path(sys.executable).parent.parent / "Resources" / "platform-tools" / arch_suffix
-        elif system == "Linux":
-            # Linux folder-based distribution
-            base_path = Path(sys.executable).parent / "_internal" / "platform-tools" / arch_suffix
-        elif system == "Windows":
-            # Windows folder-based distribution
-            base_path = Path(sys.executable).parent / "_internal" / "platform-tools" / arch_suffix
+            base_dir = Path(sys.executable).parent.parent / "Resources"
+        elif system in ("Linux", "Windows"):
+            base_dir = Path(sys.executable).parent / "_internal"
         else:
             raise RuntimeError(f"Unsupported platform: {system}")
-
-        adb_binary = "adb.exe" if system == "Windows" else "adb"
-        adb_path = base_path / adb_binary
-
-        if adb_path.exists() and is_binary_compatible(adb_path):
-            return str(adb_path)
-
-        # Fallback for Linux: try without _internal
-        if system == "Linux":
-            base_path_fallback = Path(sys.executable).parent / "platform-tools" / arch_suffix
-            adb_path_fallback = base_path_fallback / adb_binary
-            if adb_path_fallback.exists() and is_binary_compatible(adb_path_fallback):
-                return str(adb_path_fallback)
-
-        raise RuntimeError(
-            f"Bundled ADB not found or incompatible.\n"
-            f"Architecture: {get_current_arch()} ({arch_suffix})\n"
-            f"Expected: {adb_path}\n"
-            f"This is a build error. Please report to the developers."
-        )
     else:
-        # Development mode: use bundled ADB from build/platform-tools
-        project_root = Path(__file__).parent.parent.parent
+        base_dir = Path(__file__).parent.parent.parent / "build"
 
-        if system == "Darwin":
-            adb_path = project_root / "build" / "platform-tools" / arch_suffix / "adb"
-        elif system == "Linux":
-            adb_path = project_root / "build" / "platform-tools" / arch_suffix / "adb"
-        elif system == "Windows":
-            adb_path = project_root / "build" / "platform-tools" / arch_suffix / "adb.exe"
-        else:
-            raise RuntimeError(f"Unsupported platform: {system}")
+    adb_path = _bundled_adb_path(base_dir, system, arch_suffix)
 
-        if adb_path.exists() and is_binary_compatible(adb_path):
-            return str(adb_path)
-
+    if not adb_path.exists():
         raise RuntimeError(
             f"ADB not found for architecture {get_current_arch()}.\n"
             f"Tried: {adb_path}\n"
-            f"\nRun 'python build/download_adb.py' to download ADB binaries."
+            f"Windows builds must include AdbWinApi.dll and AdbWinUsbApi.dll in the same folder.\n"
+            f"Rebuild the Windows ADB bundle so build/platform-tools/windows_* contains adb.exe and the required DLLs."
         )
+
+    if system == "Windows" and not _windows_adb_companion_dlls_present(adb_path):
+        raise RuntimeError(
+            f"Windows ADB bundle is incomplete.\n"
+            f"Missing AdbWinApi.dll and/or AdbWinUsbApi.dll next to: {adb_path}\n"
+            f"Rebuild the Windows ADB bundle so the DLLs are copied beside adb.exe."
+        )
+
+    if not is_binary_compatible(adb_path):
+        raise RuntimeError(
+            f"Bundled ADB failed to start for architecture {get_current_arch()}.\n"
+            f"Tried: {adb_path}"
+        )
+
+    return str(adb_path)
 
 
 def get_adb_command():
