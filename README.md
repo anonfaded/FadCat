@@ -26,15 +26,24 @@ FadCam repository: [FadCam](https://github.com/anonfaded/FadCam)
 |--|-------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 
 ## `>_` Features
-- **Logcat sessions**: multi‑device capture with dedicated tabs per device/session
+- **Multi‑device logcat sessions**: dedicated tabs per device/session
+- **Search with modes**: regex, fuzzy search, grep mode, and case toggle
+- **Highlighting**: matches are highlighted with clear current‑match focus
+- **Log level chips**: filter by V/D/I/W/E/F instantly
+- **Package picker**: searchable package list for fast targeting
+- **Visual clarity**: colored log levels/tags and readable UI defaults
+- **Customizable**: tag padding, ignored tags, and UI options via settings
 - **Bundled ADB**: architecture‑aware selection without relying on system ADB
-- **MCP server**: AI assistants can inspect devices, logs, processes, and media safely
-- **FadCam integration**: deep integration to browse and pull FadCam media for backups
+- **MCP server**: AI assistants can inspect devices, logs, processes, and media
+- **FadCam integration**: browse and pull FadCam media for backups
 - **Cross‑platform utility**: macOS, Linux, and Windows
 
 ## `>_` What FadCat Is For
 FadCat is designed for fast daily Android debugging: logcat exploration, device inspection, and structured AI workflows via MCP.  
 It is also a **specialized companion for FadCam**, built to browse and manage FadCam media and pull backups to your PC.
+
+There are many logcat wrappers, but most are CLI‑heavy and feel too manual for daily work.  
+FadCat adds a clean, feature‑rich GUI with options that are easy to use.
 
 ## `>_` Modes
 
@@ -184,6 +193,9 @@ pip3 install -r requirements.txt
 python3 FadCat.py
 ```
 </details>
+
+## `>_` Credits
+- Built on top of [pidcat](https://github.com/JakeWharton/pidcat)
 
 ## `>_` License
 Apache 2.0
