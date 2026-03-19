@@ -248,6 +248,73 @@ def _count_media_files(device: str, path: str, maxdepth: Optional[int] = None,
         return 0
 
 
+def _count_files_by_ext(device: str, path: str, ext: str) -> int:
+    output = _run_adb_command(
+        device,
+        ['shell', 'find', path, '-type', 'f', '-name', f'*.{ext}']
+    )
+    if "No such file" in output or "Permission denied" in output:
+        return 0
+    return len([line for line in output.split('\n') if line.strip()])
+
+
+def _count_media_files_direct(device: str, path: str) -> int:
+    return _count_files_by_ext(device, path, "mp4") + _count_files_by_ext(device, path, "jpg")
+
+
+def _get_category_roots(base: str, category: Optional[str], camera: Optional[str]) -> Dict[str, List[str]]:
+    cat = (category or "").lower().strip()
+    camera_sel = (camera or "").lower().strip()
+    roots: Dict[str, List[str]] = {"videos": [], "images": []}
+
+    if cat in ("camera", ""):
+        for sub in ("Back", "Front", "Dual"):
+            if camera_sel and sub.lower() != camera_sel:
+                continue
+            roots["videos"].append(f"{base}/Camera/{sub}")
+
+    if cat in ("dual", ""):
+        roots["videos"].append(f"{base}/Dual")
+
+    if cat in ("screen", ""):
+        roots["videos"].append(f"{base}/Screen")
+
+    if cat in ("stream", ""):
+        roots["videos"].append(f"{base}/Stream")
+
+    if cat in ("faditor", ""):
+        roots["videos"].append(f"{base}/Faditor/Converted")
+        roots["videos"].append(f"{base}/Faditor/Merge")
+
+    if cat in ("fadshot", ""):
+        for sub in ("Back", "Selfie", "FadRec"):
+            if camera_sel and sub.lower() != camera_sel:
+                continue
+            roots["images"].append(f"{base}/FadShot/{sub}")
+
+    if cat in ("forensics", ""):
+        roots["images"].append(f"{base}/Forensics/Snapshots")
+
+    if cat in ("root",):
+        roots["videos"] = [base]
+        roots["images"] = [base]
+
+    if category and cat not in ("camera", "dual", "screen", "stream", "faditor", "fadshot", "forensics", "root"):
+        roots["videos"] = [base]
+        roots["images"] = [base]
+
+    return roots
+
+
+def _sum_path_size_bytes(device: str, path: str) -> Optional[int]:
+    output = _run_adb_command(device, ['shell', 'du', '-sk', path])
+    try:
+        size_kb = int(output.strip().split()[0])
+        return size_kb * 1024
+    except Exception:
+        return None
+
+
 def _find_media_files(device: str, path: str, fadcam_only: bool = False,
                       maxdepth: Optional[int] = None) -> List[str]:
     qpath = _shell_quote(path)
@@ -330,7 +397,7 @@ def _list_media_files_from_ls(device: str, path: str) -> List[str]:
 
 def _list_media_entries_from_ls(device: str, path: str,
                                 fadcam_only: bool = False) -> List[Dict[str, Optional[object]]]:
-    ls_cmd = _run_adb_command(device, ['shell', 'ls', '-l', path])
+    ls_cmd = _run_adb_command(device, ['shell', 'ls', '-lt', path])
     if "No such file" in ls_cmd or "Permission denied" in ls_cmd:
         return []
     entries: List[Dict[str, Optional[object]]] = []
@@ -2228,49 +2295,14 @@ async def impl_fadcam_pull_file(ctx: Optional[Context], device: str, package: st
         from pathlib import Path
         if "/" not in file_path:
             filename = file_path
-            if not base_path and storage_hint:
-                storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
-                storage_info = json.loads(storage_result)
-                if "error" in storage_info:
-                    return storage_result
-                resolved = await _resolve_or_elicit_base_path(
-                    ctx,
-                    storage_info,
-                    storage_hint,
-                    base_path,
-                    "Pull by filename requires base_path."
-                )
-                if resolved.get("response"):
-                    return json.dumps({
-                        "device": device,
-                        "package": package,
-                        **resolved["response"]
-                    })
-                base_path = resolved.get("base_path")
-
             if not base_path:
-                await _ctx_info(ctx, "Need a base_path (or storage_hint) to resolve filename.")
-                storage_result = await impl_fadcam_detect_storage(ctx, device, package, include_counts=False)
-                storage_info = json.loads(storage_result)
-                if "error" in storage_info:
-                    return storage_result
-                base_paths = [
-                    entry.get("base_path")
-                    for pkg_info in storage_info.get("packages", [])
-                    for entry in pkg_info.get("storage_entries", [])
-                    if entry.get("base_path")
-                ]
-                chosen = await _elicit_base_path(ctx, base_paths, "Select base_path to resolve filename.")
-                if chosen:
-                    base_path = chosen
-                else:
-                    return json.dumps({
-                        "device": device,
-                        "package": package,
-                        "message": "Filename needs a base_path. Choose one from available locations.",
-                        "available_locations": base_paths,
-                        "requires_selection": True
-                    })
+                await _ctx_info(ctx, "Filename requires an explicit base_path to resolve.")
+                return json.dumps({
+                    "device": device,
+                    "package": package,
+                    "message": "Filename-only pull requires base_path. Provide an explicit base_path or full file path.",
+                    "requires_selection": True
+                })
 
             matches = _find_fadcam_file_matches(device, base_path, filename)
             if not matches:
@@ -2767,7 +2799,10 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
 
         files_info = []
         total_count = 0
+        total_videos = 0
+        total_images = 0
         total_size = 0
+        summary_only = limit is not None and limit <= 0
         effective_limit = None if full_scan else limit
         seen_any_location = False
 
@@ -2780,6 +2815,40 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
             storage_type = location.get("storage_type")
             base = location.get("base_path")
             layout = location.get("layout")
+
+            if summary_only:
+                effective_category = category
+                if not category and camera:
+                    effective_category = "camera"
+                roots = _get_category_roots(base, effective_category, camera)
+                video_paths = [p for p in roots["videos"] if _path_exists(device, p)]
+                image_paths = [p for p in roots["images"] if _path_exists(device, p)]
+                total_videos = sum(_count_files_by_ext(device, p, "mp4") for p in video_paths)
+                total_images = sum(_count_files_by_ext(device, p, "jpg") for p in image_paths)
+                total_count = total_videos + total_images
+
+                size_target = base
+                if effective_category:
+                    cat = effective_category.lower()
+                    if cat == "camera":
+                        size_target = f"{base}/Camera"
+                    elif cat == "fadshot":
+                        size_target = f"{base}/FadShot"
+                    elif cat == "dual":
+                        size_target = f"{base}/Dual"
+                    elif cat == "screen":
+                        size_target = f"{base}/Screen"
+                    elif cat == "stream":
+                        size_target = f"{base}/Stream"
+                    elif cat == "faditor":
+                        size_target = f"{base}/Faditor"
+                    elif cat == "forensics":
+                        size_target = f"{base}/Forensics/Snapshots"
+                if _path_exists(device, size_target):
+                    total_size = _sum_path_size_bytes(device, size_target) or 0
+                else:
+                    total_size = 0
+                break
 
             if category and category.lower() == "fadshot":
                 fadshot_root = f"{base}/FadShot"
@@ -3044,13 +3113,17 @@ async def impl_fadcam_browse_files(ctx: Optional[Context], device: str, package:
         return json.dumps({
             "device": device,
             "package": package,
-            "total_files": total_count if full_scan else None,
-            "total_files_returned": total_count if not full_scan else None,
-            "total_size_bytes": total_size if full_scan else None,
+            "total_files": total_count if (full_scan or summary_only) else None,
+            "total_files_returned": None if summary_only else (total_count if not full_scan else None),
+            "total_size_bytes": total_size if (full_scan or summary_only) else None,
+            "total_videos": total_videos if summary_only else None,
+            "total_images": total_images if summary_only else None,
             "files": files_info,
-            "limit_applied": None if full_scan else limit,
-            "truncated": False if full_scan else total_count >= limit,
-            "note": None if full_scan else "total_files_returned reflects the limited result set; it is not the full total.",
+            "limit_applied": None if (full_scan or summary_only) else limit,
+            "truncated": False if (full_scan or summary_only) else total_count >= limit,
+            "note": "summary_only=true (limit=0). Counts reflect matching paths only; no file listing returned." if summary_only else (
+                None if full_scan else "total_files_returned reflects the limited result set; it is not the full total."
+            ),
             "filters_applied": {
                 "category": category,
                 "camera": camera,

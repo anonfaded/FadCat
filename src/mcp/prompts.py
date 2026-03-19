@@ -158,6 +158,8 @@ Rules:
 - Prefer purpose-specific browse tools (fadcam_browse_camera, fadcam_browse_fadshot, fadcam_browse_forensics, etc.).
 - If the user already provides a package (e.g., com.fadcam.beta), do not call any package listing tool.
 - For forensics, report counts and size only from tool output; do not infer categories or locations.
+- For a quick internal-only summary, call a single browse tool with limit=0 (summary_only) and do not chain multiple category tools.
+- When summary_only is used, prefer total_videos/total_images from tool output; do not infer counts from filenames.
 
 Recommended flow:
 1) Use a purpose-specific browse tool (camera/fadshot/forensics/etc).

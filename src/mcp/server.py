@@ -415,7 +415,7 @@ async def fadcam_pull_file(ctx: Context, device: str, package: str, file_path: s
     """Pull a specific FadCam file by exact path or filename.
 
     confirm: Set true to perform the pull. If false, returns a preview.
-    base_path/storage_hint: Used to resolve filename-only requests.
+    base_path: Required to resolve filename-only requests.
     """
     await _ctx_info(ctx, f"Tool called: fadcam_pull_file for device {device}, package {package}, path {file_path}")
     logger.info(f"Tool called: fadcam_pull_file for device {device}, package {package}, path {file_path}")
