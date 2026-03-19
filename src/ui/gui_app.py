@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import os
 import sys
-import resource
+import ctypes
 from threading import Thread
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, pyqtSignal, QUrl
 from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence, QCursor, QIcon
@@ -21,6 +26,46 @@ from src.ui.logcat_tab import LogcatTab
 from src.core.settings import Settings
 from src.core.update_checker import UpdateChecker
 from src.ui.update_check_dialog import UpdateCheckDialog
+
+
+def _process_memory_mb() -> float:
+    """Return the current process RSS in MB across supported platforms."""
+    if sys.platform == "win32":
+        class _PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.c_ulong),
+                ("PageFaultCount", ctypes.c_ulong),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        counters = _PROCESS_MEMORY_COUNTERS()
+        counters.cb = ctypes.sizeof(_PROCESS_MEMORY_COUNTERS)
+        handle = ctypes.windll.kernel32.GetCurrentProcess()
+        result = ctypes.windll.psapi.GetProcessMemoryInfo(
+            handle,
+            ctypes.byref(counters),
+            counters.cb,
+        )
+        if result:
+            return counters.WorkingSetSize / (1024 * 1024)
+        return 0.0
+
+    if resource is None:
+        return 0.0
+    try:
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if sys.platform == "darwin":
+            return usage / (1024 * 1024)
+        return usage / 1024.0
+    except Exception:
+        return 0.0
 
 
 # ── Custom Tab Bar with proper close buttons ──────────────────────────────────
@@ -524,10 +569,7 @@ class LogcatGUI(QMainWindow):
 
     @staticmethod
     def _mem_mb() -> float:
-        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        if sys.platform == "darwin":
-            return usage / (1024 * 1024)
-        return usage / 1024.0
+        return _process_memory_mb()
 
     # ── Tab helpers ────────────────────────────────────────────────────────────
 
