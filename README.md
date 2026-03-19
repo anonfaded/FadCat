@@ -4,7 +4,7 @@
 
 # `>_` FadCat
 
-FadCat is a lightweight, cross‑platform Android debugging companion that makes daily dev work faster by replacing the logcat experience without the bloat of Android Studio. It bundles ADB for supported architectures and runs in GUI, CLI, or MCP server mode.
+FadCat is a lightweight, feature-rich, cross‑platform Android logcat replacement for Android Studio, without the bloat. It bundles ADB for supported architectures and runs in GUI, CLI, or MCP server mode.
 
 [![GitHub all releases](https://img.shields.io/github/downloads/anonfaded/FadCat/total?label=Downloads&logo=github)](https://github.com/anonfaded/FadCat/releases/)
 [![Patreon](https://img.shields.io/badge/Patreon-Support-orange?logo=patreon&label=Patreon)](https://www.patreon.com/cw/Fadedx/shop)
