@@ -22,7 +22,7 @@ FadCat is a lightweight, cross‑platform Android debugging companion that makes
 FadCat also ships **specialized FadCam media tools** to browse and pull FadCam media for backups.  
 FadCam repository: [FadCam](https://github.com/anonfaded/FadCam)
 
-| ⭐ |<img src="https://github.com/user-attachments/assets/c730eda3-5887-458d-8df1-971a74807b73" style="width: 100px; height: auto;" > | *From the FadSec-Lab suite:* <br> Also, check out our Windows app: [FadCrypt](https://github.com/anonfaded/FadCrypt) |
+| ⭐ |<img src="https://github.com/user-attachments/assets/c730eda3-5887-458d-8df1-971a74807b73" style="width: 100px; height: auto;" > | *From the FadSec-Lab suite:* <br> Also, check out our Desktop app/file/folder locker: [FadCrypt](https://github.com/anonfaded/FadCrypt) |
 |--|-------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 
 ## `>_` Features
@@ -54,7 +54,7 @@ fadcat --mcp
 ```
 
 ## `>_` MCP Overview
-FadCat exposes a FastMCP server so AI assistants can use your device tools safely.
+FadCat exposes a FastMCP server so AI assistants can use FadCat’s MCP tools.
 
 **Core MCP capabilities**
 - Device discovery and system info
@@ -63,9 +63,9 @@ FadCat exposes a FastMCP server so AI assistants can use your device tools safel
 - FadCam media browsing and selective pulls
 
 **Roadmap direction**
-MCP in FadCat is evolving toward more autonomous Android workflows. Planned areas include:
+FadCat MCP is evolving toward more autonomous Android workflows. Planned areas include:
 - Device automation and capture flows (e.g., integration with open‑source tools like scrcpy)
-- APK‑level inspection and reverse‑engineering helpers (open‑source tooling only)
+- APK‑level inspection and reverse‑engineering helpers
 - Richer device diagnostics and automated debugging routines
 
 ## `>_` MCP Setup (IDE)
@@ -119,17 +119,17 @@ On macOS, the CLI command is registered on first launch.
 ## `>_` MCP Prompt Examples
 
 ### `>_` FadCam MCP
-- “Browse FadCam beta camera recordings in internal storage.”
-- “Browse FadCam Pro+ recordings on the SD card.”
-- “Browse FadCam media and tell me total videos and space used.”
-- “Browse the forensic gallery, then pull the latest 5 forensic snapshots.”
-- “Pull this exact file: FadCam_YYYYMMDD_HHMMSS.mp4”
+- `Browse FadCam beta camera recordings in internal storage.`
+- `Browse FadCam Pro+ recordings on the SD card.`
+- `Browse FadCam media and tell me total videos and space used.`
+- `Browse the forensic gallery, then pull the latest 5 forensic snapshots.`
+- `Pull this exact file: FadCam_YYYYMMDD_HHMMSS.mp4`
 
 ### `>_` General MCP
-- “Summarize the latest logcat warnings and errors.”
-- “Analyze app crash logs and suggest the root cause.”
-- “List connected devices and show device details.”
-- “Show system info and storage stats for the selected device.”
+- `Summarize the latest logcat warnings and errors.`
+- `Analyze app crash logs and suggest the root cause.`
+- `List connected devices and show device details.`
+- `Show system info and storage stats for the selected device.`
 
 ## `>_` 📱 Screenshots
 
@@ -153,11 +153,6 @@ On macOS, the CLI command is registered on first launch.
 Download the latest release from the [releases page](https://github.com/anonfaded/FadCat/releases).
 
 [<img src="https://raw.githubusercontent.com/vadret/android/master/assets/get-github.png" alt="Get it on GitHub" height="70">](https://github.com/anonfaded/FadCat/releases)
-
-## `>_` Upcoming Features:
-- **Scheduled Recording:** Automatically start/stop recordings at set times.
-- **In‑App Video Editor:** Quick trim/edit with Faditor Mini (coming soon).
-- **Enhanced Remote Features:** Additional remote control capabilities.
 
 ## `>_` Join Community
 Join our [Discord server](https://discord.gg/kvAZvdkuuN) to share ideas, seek help, or connect with other users. Your feedback and contributions are welcome!
