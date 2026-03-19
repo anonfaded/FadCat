@@ -3,17 +3,18 @@ Setup script for FadCat - Advanced Android logcat viewer
 """
 from setuptools import setup, find_packages
 from pathlib import Path
+from src.version import __description__, __version__, __author__
 
 # Read README
 readme = (Path(__file__).parent / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="fadcat",
-    version="1.0.0",
-    description="Advanced lightweight Cross-Platform Logcat viewer — Multi-Tab sessions, filtering, device packages list, and customizable settings",
+    version=__version__,
+    description=__description__,
     long_description=readme,
     long_description_content_type="text/markdown",
-    author="FadSecLab",
+    author=__author__,
     url="https://github.com/anonfaded/FadCat",
     license="MIT",
     packages=find_packages(),

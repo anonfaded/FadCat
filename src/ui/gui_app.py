@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sys
 import resource
+from threading import Thread
 
 from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, pyqtSignal, QUrl
 from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence, QCursor, QIcon
@@ -18,6 +19,8 @@ from PyQt6.QtGui import QDesktopServices
 from src.ui import theme, icons
 from src.ui.logcat_tab import LogcatTab
 from src.core.settings import Settings
+from src.core.update_checker import UpdateChecker
+from src.ui.update_check_dialog import UpdateCheckDialog
 
 
 # ── Custom Tab Bar with proper close buttons ──────────────────────────────────
@@ -148,6 +151,8 @@ class ClickableLabel(QLabel):
 
 class LogcatGUI(QMainWindow):
     """Main application window."""
+    
+    update_available = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -157,6 +162,10 @@ class LogcatGUI(QMainWindow):
         self.setMinimumSize(800, 550)
         self.setStyleSheet(theme.get_stylesheet())
         self._center_on_screen()
+
+        # Initialize update state
+        self._update_available = False
+        self._latest_version = None
 
         self._build_menubar()
         self._build_toolbar()
@@ -171,6 +180,12 @@ class LogcatGUI(QMainWindow):
 
         # Restore previous sessions or start fresh
         self._load_sessions()
+        
+        # Connect update signal to show badge
+        self.update_available.connect(self._show_update_badge)
+        
+        # Check for updates asynchronously (non-blocking)
+        self._check_updates_async()
 
     def _center_on_screen(self):
         screen = self.screen()
@@ -352,6 +367,25 @@ class LogcatGUI(QMainWindow):
         self._sb_pause_divider.setStyleSheet("color: #333333; padding: 0 1px;")
         self._sb_pause_divider.setVisible(False)
         
+        # Update available badge
+        self._sb_update_badge = QPushButton("⬆ Update Available")
+        self._sb_update_badge.setObjectName("updateBadge")
+        self._sb_update_badge.setFixedHeight(22)
+        self._sb_update_badge.setVisible(False)
+        self._sb_update_badge.setToolTip("New version available. Click to update.")
+        self._sb_update_badge.setStyleSheet(
+            "QPushButton#updateBadge { background: #1a2b2a; color: #44dd88; border: 1px solid #2a7a3a; "
+            "border-radius: 9px; padding: 1px 6px; font-size: 10px; }"
+            "QPushButton#updateBadge:hover { background: #1c331c; }"
+        )
+        self._sb_update_badge.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sb_update_badge.clicked.connect(self._on_update_badge_clicked)
+        
+        # Small divider after update badge (only visible when update badge is visible)
+        self._sb_update_divider = QLabel("|")
+        self._sb_update_divider.setStyleSheet("color: #333333; padding: 0 1px;")
+        self._sb_update_divider.setVisible(False)
+        
         # Copyright and website link (left side)
         copyright_label = QLabel("© 2024–2026")
         copyright_label.setStyleSheet("color: #666666; padding: 0 2px; font-size: 10px;")
@@ -369,6 +403,8 @@ class LogcatGUI(QMainWindow):
         self._sb_lines_icon, lines_item = self._sb_item(icons.icon_lines(), self.lbl_status_lines)
         sb.addPermanentWidget(self._sb_pause_badge)
         sb.addPermanentWidget(self._sb_pause_divider)
+        sb.addPermanentWidget(self._sb_update_badge)
+        sb.addPermanentWidget(self._sb_update_divider)
         sb.addPermanentWidget(lines_item)
         sb.addPermanentWidget(self._sb_sep())
         self._sb_mem_icon, mem_item = self._sb_item(icons.icon_memory(), self.lbl_status_mem)
@@ -608,3 +644,35 @@ class LogcatGUI(QMainWindow):
                 w = self.tabs.widget(i)
                 if isinstance(w, LogcatTab):
                     w.reload_packages()
+
+    def _check_updates_async(self):
+        """Check for updates in background without blocking UI"""
+        from src.version import __version__
+        
+        def check():
+            try:
+                result = UpdateChecker.check_for_updates(__version__)
+                # Only proceed if no error
+                if not result.is_error and result.has_update:
+                    self._update_available = True
+                    self._latest_version = result.latest_version
+                    # Emit signal to update badge on main thread
+                    self.update_available.emit()
+            except (OSError, ValueError, AttributeError):
+                # Silently ignore any exception during background check
+                pass
+        
+        # Run check in background thread
+        thread = Thread(target=check, daemon=True)
+        thread.start()
+
+    def _show_update_badge(self):
+        """Show the update available badge in statusbar"""
+        if hasattr(self, "_sb_update_badge"):
+            self._sb_update_badge.setVisible(True)
+            self._sb_update_divider.setVisible(True)
+
+    def _on_update_badge_clicked(self):
+        """When update badge is clicked, open update check dialog"""
+        dlg = UpdateCheckDialog(self)
+        dlg.exec()

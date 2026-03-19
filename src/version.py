@@ -6,7 +6,7 @@ Update this file to change the version across the entire application
 
 __version__ = "1.0"
 __app_name__ = "FadCat"
-__description__ = "Advanced lightweight Cross-Platform Logcat viewer — Multi-Tab sessions, filtering, device packages list, and customizable settings"
+__description__ = "A lightweight, feature‑rich Android logcat utility that replaces Android Studio's bloat, with MCP automation and FadCam‑specialized media tools"
 __author__ = "Faded"
 __company__ = "FadSec Lab"
 __github_username__ = "anofaded"
