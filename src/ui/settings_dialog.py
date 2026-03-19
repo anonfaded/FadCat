@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import requests
+import webbrowser
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -370,6 +372,30 @@ class SettingsDialog(QDialog):
         links_lay.addWidget(create_link_button("🌐 Website", __website_url__, "#007AFF"))
         links_lay.addWidget(create_link_button("💻 GitHub Repository", __github_url__, "#333"))
         links_lay.addWidget(create_link_button("💬 Discord Community", __discord_url__, "#5865F2"))
+        
+        # Check for Updates button
+        check_update_btn = QPushButton("🔄 Check for Updates")
+        check_update_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ff3333;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 14px;
+                font-size: 11px;
+                color: white;
+                text-align: center;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #ff5555;
+            }
+            QPushButton:pressed {
+                background-color: #cc0000;
+            }
+        """)
+        check_update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        check_update_btn.clicked.connect(self._check_for_updates)
+        links_lay.addWidget(check_update_btn)
         
         about_lay.addWidget(links_container)
         
@@ -1057,6 +1083,111 @@ class SettingsDialog(QDialog):
             clipboard = QApplication.clipboard()
             clipboard.setText(config_text)
             QMessageBox.information(self, "Copied", "MCP config copied to clipboard!")
+
+    def _check_for_updates(self):
+        """Check for latest version on GitHub"""
+        from src.version import __version__
+        
+        releases_url = "https://github.com/anonfaded/FadCat/releases"
+        try:
+            # Get redirect from latest release
+            response = requests.head(
+                "https://github.com/anonfaded/FadCat/releases/latest",
+                allow_redirects=True,
+                timeout=5
+            )
+            response.raise_for_status()
+            
+            # Extract tag from final URL (format: .../releases/tag/v1.0)
+            final_url = response.url
+            if "/releases/tag/" in final_url:
+                latest_version = final_url.split("/releases/tag/")[-1]
+            else:
+                QMessageBox.warning(self, "Error", "Could not parse version information.")
+                return
+            
+            current_version = __version__
+            
+            if latest_version:
+                # Compare versions (strip 'v' prefix, 2-digit only)
+                latest_ver = latest_version.lstrip('v')
+                current_ver = current_version.lstrip('v')
+                
+                # Split and compare (major.minor format)
+                try:
+                    latest_parts = [int(x) for x in latest_ver.split('.')[:2]]
+                    current_parts = [int(x) for x in current_ver.split('.')[:2]]
+                    
+                    # Pad to 2 digits if needed
+                    while len(latest_parts) < 2:
+                        latest_parts.append(0)
+                    while len(current_parts) < 2:
+                        current_parts.append(0)
+                    
+                    if latest_parts > current_parts:
+                        # Update available
+                        msg_box = QMessageBox(self)
+                        msg_box.setIcon(QMessageBox.Icon.Information)
+                        msg_box.setWindowTitle("Update Available")
+                        msg_box.setText(f"New version {latest_version} is available!")
+                        msg_box.setInformativeText(f"Current: v{current_version}\nAvailable: {latest_version}")
+                        
+                        # Add custom button to open GitHub
+                        open_github_btn = msg_box.addButton(
+                            "Open GitHub Releases",
+                            QMessageBox.ButtonRole.AcceptRole
+                        )
+                        msg_box.addButton(QMessageBox.StandardButton.Close)
+                        
+                        msg_box.exec()
+                        
+                        # Check which button was clicked
+                        if msg_box.clickedButton() == open_github_btn:
+                            webbrowser.open(releases_url)
+                    else:
+                        # Already up to date
+                        msg_box = QMessageBox(self)
+                        msg_box.setIcon(QMessageBox.Icon.Information)
+                        msg_box.setWindowTitle("Up to Date")
+                        msg_box.setText("Your application is up to date.")
+                        msg_box.setInformativeText(f"Version: v{current_version}")
+                        
+                        # Add custom button to visit releases page
+                        open_github_btn = msg_box.addButton(
+                            "Visit GitHub Releases",
+                            QMessageBox.ButtonRole.AcceptRole
+                        )
+                        msg_box.addButton(QMessageBox.StandardButton.Close)
+                        
+                        msg_box.exec()
+                        
+                        # Check which button was clicked
+                        if msg_box.clickedButton() == open_github_btn:
+                            webbrowser.open(releases_url)
+                except ValueError:
+                    QMessageBox.warning(
+                        self,
+                        "Error",
+                        "Could not parse version information."
+                    )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Error",
+                    "Could not retrieve version information from GitHub."
+                )
+        except requests.ConnectionError:
+            QMessageBox.warning(
+                self,
+                "Connection Error",
+                "Unable to check for updates. Please check your internet connection."
+            )
+        except requests.RequestException as req_err:
+            QMessageBox.warning(
+                self,
+                "Request Error",
+                f"An error occurred while checking for updates:\n{req_err}"
+            )
 
     def closeEvent(self, event):
         """Clean up when dialog closes."""
