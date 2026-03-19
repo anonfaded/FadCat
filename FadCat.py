@@ -163,10 +163,9 @@ def main():
     # MCP (Model Context Protocol) server mode
     if '--mcp' in sys.argv:
         try:
-            import asyncio
             from src.mcp.server import main as run_mcp
             print("Starting FadCat MCP Server...", file=sys.stderr)
-            asyncio.run(run_mcp())
+            run_mcp()
         except ImportError as e:
             print(f"MCP dependencies not installed: {e}", file=sys.stderr)
             print("Run: pip install -r requirements.txt", file=sys.stderr)

@@ -2271,8 +2271,8 @@ class LogcatTab(QWidget):
                 self._reader.stop()
             except Exception:
                 pass
-        # Always wait for thread to finish to prevent "QThread: Destroyed while thread is still running"
-        if self._reader:
+        # Wait for thread to finish to prevent "QThread: Destroyed while thread is still running"
+        if self._reader and wait:
             self._reader.wait(1000)  # Wait up to 1 second
 
     def _on_reader_finished(self):
