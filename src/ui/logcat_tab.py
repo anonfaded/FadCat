@@ -1699,7 +1699,10 @@ class LogcatTab(QWidget):
         self.device_combo = CustomComboBox()
         self.device_combo.setMinimumWidth(120)
         self.device_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.device_combo.setFixedHeight(24)
+        # Compute a comfortable height based on font metrics to avoid clipping on Windows
+        fm = self.fontMetrics()
+        combo_h = max(24, int(fm.height() + 10))
+        self.device_combo.setFixedHeight(combo_h)
         self.device_combo.setToolTip("Select ADB device")
         h.addWidget(self.device_combo, stretch=2)
 
@@ -1723,7 +1726,8 @@ class LogcatTab(QWidget):
         self.pkg_combo = PackageComboBox()
         self.pkg_combo.setMinimumWidth(120)
         self.pkg_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.pkg_combo.setFixedHeight(24)
+        # Match package combo height to device combo to keep layout consistent
+        self.pkg_combo.setFixedHeight(combo_h)
         self.pkg_combo.setToolTip("Package name (select 'Global' for all logs)")
         if self.pkg_combo.lineEdit():
             self.pkg_combo.lineEdit().setPlaceholderText("Select a package or Global")

@@ -12,7 +12,7 @@ except ImportError:
     resource = None
 
 from PyQt6.QtCore import Qt, QTimer, QSize, QRect, QPoint, pyqtSignal, QUrl
-from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence, QCursor, QIcon
+from PyQt6.QtGui import QAction, QPainter, QColor, QFont, QPolygon, QKeySequence, QCursor, QIcon, QFontMetrics
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QToolBar, QStatusBar,
     QLabel, QWidget, QSizePolicy, QTabBar, QPushButton, QInputDialog, QFrame, QHBoxLayout,
@@ -78,8 +78,13 @@ class CustomTabBar(QTabBar):
         self._close_button_rects: dict[int, QRect] = {}
         self._hover_close_idx: int | None = None
         self.setMouseTracking(True)
-        # Set compact height for the tab bar
-        self.setFixedHeight(32)
+        # Compute tab bar height from the current font to avoid vertical clipping
+        fm = QFontMetrics(self.font())
+        # Account for tab vertical padding (4px top + 4px bottom) and
+        # tab margins (6px top + 6px bottom) defined in the stylesheet.
+        # Add a small extra gap to avoid platform rounding/DPI clipping.
+        desired = max(36, int(fm.height() + 4 + 4 + 6 + 6 + 4))
+        self.setFixedHeight(desired)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     
     def paintEvent(self, event):
