@@ -18,28 +18,28 @@ FadCat is a lightweight, feature-rich, cross‑platform Android logcat replaceme
 <div align="center">
 <table>
   <tr>
-    <td align="center">
-      <img src="src/images/fadcat.png" alt="FadCat Main Window" width="350" />
+    <td align="center" colspan="2">
+      <img src="src/images/fadcat.png" alt="FadCat Main Window" width="700" />
       <br><sub><b>Main FadCat GUI window</b><br>Multi-device logcat, color-coded logs, and search</sub>
     </td>
+  </tr>
+  <tr>
     <td align="center">
-      <img src="src/images/packages-filter.png" alt="FadCat Package Filter" width="350" />
+      <img src="src/images/packages-filter.png" alt="FadCat Package Filter" width="250" />
       <br><sub><b>Package picker</b><br>Quickly filter and select app packages</sub>
     </td>
-  </tr>
-  <tr>
     <td align="center">
-      <img src="src/images/settings.png" alt="FadCat Settings" width="350" />
+      <img src="src/images/settings.png" alt="FadCat Settings" width="250" />
       <br><sub><b>Settings</b><br>Customize logcat display, ignored tags, and UI options</sub>
     </td>
-    <td align="center">
-      <img src="src/images/mcp.png" alt="FadCat MCP Server" width="350" />
-      <br><sub><b>MCP server</b><br>Automation, device/media inspection, and FadCam integration</sub>
-    </td>
   </tr>
   <tr>
-    <td align="center" colspan="2">
-      <img src="src/images/customization.png" alt="FadCat Customization" width="350" />
+    <td align="center">
+      <img src="src/images/mcp.png" alt="FadCat MCP Server" width="250" />
+      <br><sub><b>MCP server</b><br>Automation, device/media inspection, and FadCam integration</sub>
+    </td>
+    <td align="center">
+      <img src="src/images/customization.png" alt="FadCat Customization" width="250" />
       <br><sub><b>Advanced customization</b><br>Tailor FadCat to your workflow</sub>
     </td>
   </tr>
