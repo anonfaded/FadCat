@@ -19,9 +19,13 @@ except ImportError:
     __app_name__ = "FadCat"
     __company__ = "FadSec Lab"
 
+
 # Collect all fastmcp data and binaries (CRITICAL for bundling MCP support)
 # This properly collects fastmcp, mcp, and all their dependencies
 datas_fastmcp, binaries_fastmcp, hiddenimports_fastmcp = collect_all('fastmcp')
+
+# Collect jsonschema data files for MCP JSON schema validation (parity with Windows)
+datas_jsonschema = collect_data_files('jsonschema_specifications')
 
 # Bundle ADB for ALL Linux architectures
 platform_tools_dir = project_root / "build" / "platform-tools"
@@ -56,7 +60,7 @@ a = Analysis(
         (str(project_root / 'FadCat.py'), '.'),
         (str(project_root / 'icon-assets'), 'icon-assets'),
         (str(project_root / 'build/linux/uninstall.sh'), 'build/linux'),
-    ] + datas_fastmcp,
+    ] + datas_fastmcp + datas_jsonschema,
     hiddenimports=[
         'PyQt6',
         'PyQt6.QtCore',
@@ -73,11 +77,26 @@ a = Analysis(
         'mcp.server',
         'mcp.server.stdio',
         'mcp.types',
-        # Additional dependencies
+        # Additional dependencies (from macOS/Windows)
+        'authlib',
+        'cyclopts',
+        'exceptiongroup',
+        'httpx',
+        'httpx_sse',
+        'jsonschema',
+        'jsonref',
+        'jsonschema_path',
+        'openapi_pydantic',
+        'opentelemetry',
+        'packaging',
+        'platformdirs',
         'pydantic',
         'pydantic_core',
         'pydantic_settings',
+        'pyperclip',
+        'python_dotenv',
         'pyyaml',
+        'requests',
         'rich',
         'starlette',
         'sse_starlette',
@@ -85,12 +104,6 @@ a = Analysis(
         'watchfiles',
         'websockets',
         'anyio',
-        'httpx',
-        'httpx_sse',
-        'jsonschema',
-        'packaging',
-        'platformdirs',
-        'python_dotenv',
     ],
     hookspath=[],
     hooksconfig={},
