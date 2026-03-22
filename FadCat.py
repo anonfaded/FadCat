@@ -145,13 +145,47 @@ def main():
         try:
             with open(pidcat_path, 'r', encoding='utf-8') as f:
                 pidcat_code = f.read()
-            # Execute pidcat code with proper namespace including required modules
+            # Execute pidcat code with a safe print/input to avoid OSError
+            # when stdout/stderr are not standard consoles (bundled GUI).
             import os as _os
             import sys as _sys
+
+            def _safe_print(*args, **kwargs):
+                sep = kwargs.get('sep', ' ')
+                end = kwargs.get('end', '\n')
+                text = sep.join(str(a) for a in args) + end
+                try:
+                    # Try writing str to stdout
+                    _sys.stdout.write(text)
+                    _sys.stdout.flush()
+                except Exception:
+                    try:
+                        # Fallback: write encoded bytes to buffer if available
+                        if hasattr(_sys.stdout, 'buffer'):
+                            _sys.stdout.buffer.write(text.encode('utf-8', errors='replace'))
+                            _sys.stdout.buffer.flush()
+                        else:
+                            # Last resort: attempt stderr
+                            _sys.stderr.write(text)
+                            _sys.stderr.flush()
+                    except Exception:
+                        # Give up silently to avoid cascading exceptions during shutdown
+                        pass
+
+            def _safe_input(prompt=''):
+                try:
+                    return input(prompt)
+                except EOFError:
+                    raise
+                except Exception:
+                    return ''
+
             exec(compile(pidcat_code, pidcat_path, 'exec'), {
                 '__name__': '__main__',
                 'os': _os,
                 'sys': _sys,
+                'print': _safe_print,
+                'input': _safe_input,
             })
         except Exception as e:
             import traceback

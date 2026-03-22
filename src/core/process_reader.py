@@ -222,12 +222,14 @@ class ProcessReader(QtCore.QThread):
                             decoded = line.decode('utf-8', errors='replace')
                         except Exception:
                             decoded = line.decode('latin-1', errors='replace')
+                        # Decoded with utf-8 (errors='replace') above; emit directly.
                         self.line_ready.emit(decoded + '\n')
                 if buf:
                     try:
                         decoded = buf.decode('utf-8', errors='replace')
                     except Exception:
                         decoded = buf.decode('latin-1', errors='replace')
+                    # Decoded with utf-8 (errors='replace') above; emit directly.
                     self.line_ready.emit(decoded)
                 try:
                     os.close(master)

@@ -163,13 +163,32 @@ def run_pidcat_child():
         try:
             p = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, env=env
+                text=True, encoding='utf-8', errors='replace', env=env
             )
             for line in iter(p.stdout.readline, ''):
                 if not line:
                     break
-                sys.stdout.write(line)
-                sys.stdout.flush()
+                try:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                except UnicodeEncodeError:
+                    # sys.stdout may use a narrow Windows codepage (cp1252).
+                    # Fall back to writing UTF-8 bytes directly to the underlying
+                    # buffer to ensure emojis and other non-encodable chars are
+                    # preserved (with replacement) instead of raising.
+                    try:
+                        buf = getattr(sys.stdout, 'buffer', None)
+                        if buf is not None:
+                            buf.write(line.encode('utf-8', errors='replace'))
+                            buf.flush()
+                        else:
+                            # As a last resort, replace unencodable characters
+                            safe = line.encode(sys.getdefaultencoding(), errors='replace').decode(sys.getdefaultencoding(), errors='replace')
+                            sys.stdout.write(safe)
+                            sys.stdout.flush()
+                    except Exception:
+                        # give up silently to avoid crashing the whole app
+                        pass
             try:
                 p.stdout.close()
             except OSError:

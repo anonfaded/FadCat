@@ -1001,7 +1001,7 @@ class SettingsDialog(QDialog):
         json_widget.setMaximumHeight(160)
         
         # Syntax highlighting via HTML
-        json_str = json.dumps(data, indent=8)
+        json_str = json.dumps(data, indent=8, ensure_ascii=False)
         
         # Simple colorization
         html = json_str

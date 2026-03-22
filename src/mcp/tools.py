@@ -855,9 +855,9 @@ async def impl_get_devices(ctx: Optional[Context]) -> str:
             "selected_device": selected_device,
             "has_real_devices": len(real_devices) > 0,
             "has_emulators": len(emulators) > 0
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e), "devices": []})
+        return json.dumps({"error": str(e), "devices": []}, ensure_ascii=False)
 
 
 async def impl_get_logcat_stream(ctx: Optional[Context], device: str, package: Optional[str] = None, 
@@ -896,9 +896,9 @@ async def impl_get_logcat_stream(ctx: Optional[Context], device: str, package: O
             "level": level,
             "count": len(log_lines),
             "logs": log_lines
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e), "logs": []})
+        return json.dumps({"error": str(e), "logs": []}, ensure_ascii=False)
 
 
 async def impl_search_logs(ctx: Optional[Context], query: str, tag_filter: Optional[str] = None,
@@ -943,9 +943,9 @@ async def impl_search_logs(ctx: Optional[Context], query: str, tag_filter: Optio
             "level_filter": level_filter,
             "count": len(results),
             "results": results[:limit]
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e), "results": []})
+        return json.dumps({"error": str(e), "results": []}, ensure_ascii=False)
 
 
 async def impl_filter_by_level(ctx: Optional[Context], device: str, level: str) -> str:
@@ -981,9 +981,9 @@ async def impl_filter_by_level(ctx: Optional[Context], device: str, level: str) 
             "filter_level": level,
             "count": len(log_lines),
             "logs": log_lines
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e), "logs": []})
+        return json.dumps({"error": str(e), "logs": []}, ensure_ascii=False)
 
 
 async def impl_get_app_processes(ctx: Optional[Context], device: str, package: str) -> str:
@@ -1034,9 +1034,9 @@ async def impl_get_app_processes(ctx: Optional[Context], device: str, package: s
             "package": package,
             "count": len(processes),
             "processes": processes
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e), "processes": []})
+        return json.dumps({"error": str(e), "processes": []}, ensure_ascii=False)
 
 
 async def impl_get_connected_packages(ctx: Optional[Context], device: str) -> str:
@@ -1070,9 +1070,9 @@ async def impl_get_connected_packages(ctx: Optional[Context], device: str) -> st
             "device": device,
             "count": len(packages),
             "packages": packages
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e), "packages": []})
+        return json.dumps({"error": str(e), "packages": []}, ensure_ascii=False)
 
 
 async def impl_parse_stacktrace(ctx: Optional[Context], trace: str) -> str:
@@ -1136,9 +1136,9 @@ async def impl_parse_stacktrace(ctx: Optional[Context], trace: str) -> str:
             stack_frames=frames
         )
         
-        return json.dumps(stack_trace.model_dump())
+        return json.dumps(stack_trace.model_dump(), ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 async def impl_detect_error_type(ctx: Optional[Context], logcat: str) -> str:
@@ -1203,9 +1203,9 @@ async def impl_detect_error_type(ctx: Optional[Context], logcat: str) -> str:
             suggested_fix=f"Review logcat output for {error_type} details and check recent code changes"
         )
         
-        return json.dumps(error_analysis.model_dump())
+        return json.dumps(error_analysis.model_dump(), ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 async def impl_analyze_performance(ctx: Optional[Context], device: str, package: str, duration: int = 10) -> str:
@@ -1262,9 +1262,9 @@ async def impl_analyze_performance(ctx: Optional[Context], device: str, package:
             )
         )
         
-        return json.dumps(report.model_dump())
+        return json.dumps(report.model_dump(), ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 async def impl_clear_logcat(ctx: Optional[Context], device: str) -> str:
     """
@@ -1280,15 +1280,15 @@ async def impl_clear_logcat(ctx: Optional[Context], device: str) -> str:
         output = _run_adb_command(device, ['logcat', '-c'])
         
         if output.startswith('Error'):
-            return json.dumps({"success": False, "error": output})
+            return json.dumps({"success": False, "error": output}, ensure_ascii=False)
         
         return json.dumps({
             "success": True,
             "device": device,
             "message": "Logcat cleared successfully"
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"success": False, "error": str(e)})
+        return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
 
 async def impl_export_logs(ctx: Optional[Context], device: str, format: str = "json", lines: int = 1000) -> str:
@@ -1347,9 +1347,9 @@ async def impl_export_logs(ctx: Optional[Context], device: str, format: str = "j
             "count": len(log_lines),
             "filepath": filepath,
             "message": f"Exported {len(log_lines)} log lines to {filepath}"
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"success": False, "error": str(e)})
+        return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
 
 async def impl_get_system_info(ctx: Optional[Context], device: str) -> str:

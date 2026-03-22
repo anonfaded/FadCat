@@ -314,22 +314,26 @@ def tag_in_tags_regex(tag, tags):
   return any(re.match(r'^' + t + r'$', tag, re.IGNORECASE) for t in map(str.strip, tags))
 
 # Initialize ADB connection - always run the actual adb logcat subprocess
-adb = subprocess.Popen(adb_command, stdin=PIPE, stdout=PIPE, text=True)
+adb = subprocess.Popen(adb_command, stdin=PIPE, stdout=PIPE, text=True, encoding='utf-8', errors='replace')
 
 if not args.all:
     ps_command = base_adb_command + ['shell', 'ps']
     try:
-        ps_output = subprocess.check_output(ps_command, universal_newlines=True)
-        for line in ps_output.splitlines():
-            pid_match = PID_LINE.match(line)
-            if pid_match:
-                pid, proc = pid_match.groups()
-                if match_packages(proc):
-                    pids.add(pid)
-        
-        # Inform user if app is not currently running
-        if not pids:
-            print(f"⏳ Waiting for app to start... (will capture logs once '{', '.join(package)}' launches)\n", file=sys.stderr)
+      # Force UTF-8 decoding and replace invalid characters to avoid
+      # 'charmap' codec errors on Windows when adb output contains
+      # non-CP1252 bytes (e.g., emojis). Use text=True, encoding,
+      # and errors='replace' which is available on Python 3.7+.
+      ps_output = subprocess.check_output(ps_command, text=True, encoding='utf-8', errors='replace')
+      for line in ps_output.splitlines():
+        pid_match = PID_LINE.match(line)
+        if pid_match:
+          pid, proc = pid_match.groups()
+          if match_packages(proc):
+            pids.add(pid)
+
+      # Inform user if app is not currently running
+      if not pids:
+        print(f"⏳ Waiting for app to start... (will capture logs once '{', '.join(package)}' launches)\n", file=sys.stderr)
     except FileNotFoundError:
         print("❌ ERROR: Could not find a running ADB process. Please check the connection.", file=sys.stderr)
         sys.exit(1)

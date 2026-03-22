@@ -88,8 +88,8 @@ async def get_devices(ctx: Context) -> str:
                         "tool_loop_detected": True,
                         "error": "Tool loop detected: stop calling get_devices and use selected_device."
                     })
-                return json.dumps(cached)
-            return json.dumps(_last_devices_cache)
+                    return json.dumps(cached, ensure_ascii=False)
+                return json.dumps(_last_devices_cache, ensure_ascii=False)
 
         result = await tools.impl_get_devices(ctx)
         if isinstance(result, str):
@@ -107,7 +107,7 @@ async def get_devices(ctx: Context) -> str:
             _last_devices_cache = result
         _last_devices_at = now
         _get_devices_repeat = 0
-        return json.dumps(result) if isinstance(result, dict) else result
+        return json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in get_devices")
         await _ctx_warning(ctx, f"Error in get_devices: {e}")
@@ -140,7 +140,7 @@ async def get_logcat_stream(
     try:
         from src.mcp import tools
         result = await tools.impl_get_logcat_stream(ctx, device, package, level, lines)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in get_logcat_stream")
         await _ctx_warning(ctx, f"Error in get_logcat_stream: {e}")
@@ -173,7 +173,7 @@ async def search_logs(
     try:
         from src.mcp import tools
         result = await tools.impl_search_logs(ctx, query, tag_filter, level_filter, limit)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in search_logs")
         await _ctx_warning(ctx, f"Error in search_logs: {e}")
@@ -198,7 +198,7 @@ async def filter_by_level(ctx: Context, device: str, level: str) -> str:
     try:
         from src.mcp import tools
         result = await tools.impl_filter_by_level(ctx, device, level)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in filter_by_level")
         await _ctx_warning(ctx, f"Error in filter_by_level: {e}")
@@ -223,11 +223,11 @@ async def get_app_processes(ctx: Context, device: str, package: str) -> str:
     try:
         from src.mcp import tools
         result = await tools.impl_get_app_processes(ctx, device, package)
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in get_app_processes")
         await _ctx_warning(ctx, f"Error in get_app_processes: {e}")
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 @server.tool(annotations={
@@ -247,7 +247,7 @@ async def parse_stacktrace(ctx: Context, stacktrace: str) -> str:
     try:
         from src.mcp import tools
         result = await tools.impl_parse_stacktrace(ctx, stacktrace)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in parse_stacktrace")
         await _ctx_warning(ctx, f"Error in parse_stacktrace: {e}")
@@ -271,7 +271,7 @@ async def detect_error_type(ctx: Context, logs: str) -> str:
     try:
         from src.mcp import tools
         result = await tools.impl_detect_error_type(ctx, logs)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in detect_error_type")
         await _ctx_warning(ctx, f"Error in detect_error_type: {e}")
@@ -297,11 +297,11 @@ async def analyze_performance(ctx: Context, device: str, package: str, duration:
     try:
         from src.mcp import tools
         result = await tools.impl_analyze_performance(ctx, device, package, duration)
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in analyze_performance")
         await _ctx_warning(ctx, f"Error in analyze_performance: {e}")
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 @server.tool(annotations={
@@ -322,7 +322,7 @@ async def clear_logcat(ctx: Context, device: str) -> str:
     try:
         from src.mcp import tools
         result = await tools.impl_clear_logcat(ctx, device)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in clear_logcat")
         await _ctx_warning(ctx, f"Error in clear_logcat: {e}")
@@ -349,7 +349,7 @@ async def export_logs(ctx: Context, device: str, format: str = "json", lines: in
     try:
         from src.mcp import tools
         result = await tools.impl_export_logs(ctx, device, format, lines)
-        return json.dumps(result) if isinstance(result, dict) else result
+        return json.dumps(result, ensure_ascii=False) if isinstance(result, dict) else result
     except Exception as e:
         logger.exception("Error in export_logs")
         await _ctx_warning(ctx, f"Error in export_logs: {e}")
@@ -373,7 +373,7 @@ async def get_system_info(ctx: Context, device: str) -> str:
     try:
         from src.mcp import tools
         result = await tools.impl_get_system_info(ctx, device)
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in get_system_info")
         await _ctx_warning(ctx, f"Error in get_system_info: {e}")
@@ -393,7 +393,7 @@ async def fadcam_get_metadata(ctx: Context, device: str, package: str, file_path
     try:
         from src.mcp import tools
         result = await tools.impl_fadcam_get_metadata(ctx, device, package, file_path)
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in fadcam_get_metadata")
         await _ctx_warning(ctx, f"Error in fadcam_get_metadata: {e}")
@@ -431,7 +431,7 @@ async def fadcam_pull_file(ctx: Context, device: str, package: str, file_path: s
             base_path,
             storage_hint
         )
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in fadcam_pull_file")
         await _ctx_warning(ctx, f"Error in fadcam_pull_file: {e}")
@@ -457,7 +457,7 @@ async def fadcam_browse_camera(ctx: Context, device: str, package: str,
         result = await tools.impl_fadcam_browse_camera(
             ctx, device, package, camera, limit, base_path, storage_hint, full_scan
         )
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in fadcam_browse_camera")
         await _ctx_warning(ctx, f"Error in fadcam_browse_camera: {e}")
@@ -483,7 +483,7 @@ async def fadcam_browse_fadshot(ctx: Context, device: str, package: str,
         result = await tools.impl_fadcam_browse_fadshot(
             ctx, device, package, camera, limit, base_path, storage_hint, full_scan
         )
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in fadcam_browse_fadshot")
         await _ctx_warning(ctx, f"Error in fadcam_browse_fadshot: {e}")
@@ -509,11 +509,11 @@ async def fadcam_browse_dual(ctx: Context, device: str, package: str,
         result = await tools.impl_fadcam_browse_dual(
             ctx, device, package, limit, base_path, storage_hint, full_scan
         )
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in fadcam_browse_dual")
         await _ctx_warning(ctx, f"Error in fadcam_browse_dual: {e}")
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 @server.tool(annotations={
@@ -535,11 +535,11 @@ async def fadcam_browse_screen(ctx: Context, device: str, package: str,
         result = await tools.impl_fadcam_browse_screen(
             ctx, device, package, limit, base_path, storage_hint, full_scan
         )
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in fadcam_browse_screen")
         await _ctx_warning(ctx, f"Error in fadcam_browse_screen: {e}")
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 @server.tool(annotations={
@@ -561,11 +561,11 @@ async def fadcam_browse_stream(ctx: Context, device: str, package: str,
         result = await tools.impl_fadcam_browse_stream(
             ctx, device, package, limit, base_path, storage_hint, full_scan
         )
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in fadcam_browse_stream")
         await _ctx_warning(ctx, f"Error in fadcam_browse_stream: {e}")
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 @server.tool(annotations={
@@ -587,11 +587,11 @@ async def fadcam_browse_faditor(ctx: Context, device: str, package: str,
         result = await tools.impl_fadcam_browse_faditor(
             ctx, device, package, limit, base_path, storage_hint, full_scan
         )
-        return result if isinstance(result, str) else json.dumps(result)
+        return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error in fadcam_browse_faditor")
         await _ctx_warning(ctx, f"Error in fadcam_browse_faditor: {e}")
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 @server.tool(annotations={

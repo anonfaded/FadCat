@@ -633,8 +633,16 @@ class VirtualLogView(QAbstractScrollArea):
                     last_line.tag_width = self.fontMetrics().horizontalAdvance(last_line.tag)
                 else:
                     last_line.tag_width = 0
+            old_tag_cache = self._tag_col_width_cache
             if last_line is not None:
                 self._tag_col_width_cache = max(self._tag_col_width_cache, last_line.tag_width)
+            # If the cached tag column width increased, previous lines need full relayout
+            if self._tag_col_width_cache != old_tag_cache:
+                # Clear cached layouts to force full recalculation
+                for l in self._lines:
+                    l.layout_cache.clear()
+                # Fall back to non-incremental full recompute
+                return self._recompute_layout_cache(incremental=False)
             self._prefix_heights = heights
             self._total_height = total
             # When not wrapping, account for tag column width + gap for scrollbar
@@ -752,10 +760,28 @@ class VirtualLogView(QAbstractScrollArea):
                 pad_px = max(0, tag_col_w - tag_text_width)
                 pad_len = max(0, int(round(pad_px / char_w)))
                 gap_len = max(1, int(round(6 / char_w)))
+                # Determine badge background color so we can fill the entire
+                # tag column area (pad + tag text) with the same background
+                # color. This ensures the colored badge appears as a fixed
+                # width block regardless of tag text length.
+                badge_bg = None
+                # badge_idx chunk holds the level badge (e.g., ' I ')
+                if badge_idx is not None:
+                    # badge chunk is at badge_idx in original chunks
+                    try:
+                        badge_bg = line.chunks[badge_idx][2]
+                    except Exception:
+                        badge_bg = _DEFAULT_BG
+
                 display_chunks = []
                 if pad_len:
-                    display_chunks.append((" " * pad_len, _DEFAULT_FG, _DEFAULT_BG, False, False))
-                display_chunks.extend(tag_chunks)
+                    display_chunks.append((" " * pad_len, _DEFAULT_FG, badge_bg if badge_bg is not None else _DEFAULT_BG, False, False))
+                # Ensure tag chunks are rendered with badge background when present
+                if badge_bg is not None:
+                    for ct, fg, bg, b, i in tag_chunks:
+                        display_chunks.append((ct, fg, badge_bg, b, i))
+                else:
+                    display_chunks.extend(tag_chunks)
                 display_chunks.append((" " * gap_len, _DEFAULT_FG, _DEFAULT_BG, False, False))
                 display_chunks.extend(rest_chunks)
 

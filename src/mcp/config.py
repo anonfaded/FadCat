@@ -132,4 +132,4 @@ def generate_config_for_ide(ide: str) -> str:
     config = generate_mcp_config()
     
     # Most IDEs use mcpServers format
-    return json.dumps(config, indent=2)
+    return json.dumps(config, indent=2, ensure_ascii=False)

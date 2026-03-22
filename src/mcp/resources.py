@@ -49,9 +49,9 @@ async def read_logcat_device_resource(device_serial: str) -> str:
             "type": "logcat_stream",
             "line_count": len(lines),
             "lines": lines
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 async def read_android_devices_resource() -> str:
@@ -91,9 +91,9 @@ async def read_android_devices_resource() -> str:
             "type": "device_list",
             "count": len(devices),
             "devices": devices
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 async def read_android_packages_resource(device_serial: str) -> str:
@@ -117,9 +117,9 @@ async def read_android_packages_resource(device_serial: str) -> str:
             "type": "package_list",
             "count": len(packages),
             "packages": packages
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 async def read_android_processes_resource(device_serial: str) -> str:
@@ -156,6 +156,6 @@ async def read_android_processes_resource(device_serial: str) -> str:
             "type": "process_list",
             "count": len(processes),
             "processes": processes
-        })
+        }, ensure_ascii=False)
     except Exception as e:
-        return json.dumps({"error": str(e)})
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
