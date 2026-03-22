@@ -28,17 +28,20 @@ DMG_FILE=$(ls -t *.dmg 2>/dev/null | head -1)
 if [ -n "$DMG_FILE" ]; then
     mv "$DMG_FILE" "FadCat-v${VERSION}-macOS.dmg"
     SIZE=$(du -h "FadCat-v${VERSION}-macOS.dmg" | awk '{print $1}')
+    FULL_DMG_PATH="$(pwd)/FadCat-v${VERSION}-macOS.dmg"
 
     # Clean up: remove the app since it's now packaged in the DMG
     rm -rf FadCat.app 2>/dev/null
 
     echo ""
+    echo "\033[1;32m✔ Created \"FadCat ${VERSION}.dmg\"\033[0m"
+    echo ""
     echo "✅ Professional FadCat installer created!"
-    echo "   📁 FadCat-v${VERSION}-macOS.dmg ($SIZE)"
+    echo "   📁 $FULL_DMG_PATH ($SIZE)"
     echo "   📦 Version: ${VERSION}"
     echo ""
     echo "Installation:"
-    echo "   open ${DMG_FILE}"
+    echo "   open \"$FULL_DMG_PATH\""
     echo "   # Drag FadCat.app to /Applications/"
     echo "   # (Optional) Run Install CLI Command.command for CLI without launching"
     echo ""
