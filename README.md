@@ -143,18 +143,22 @@ On macOS, the CLI command is registered on first launch.
 ## `>_` 📱 Screenshots
 
 <div align="center">
-    <br><br>
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
-    <img src="icon-assets/fadcat.png" style="width: 200px; height: auto;" >
- <br>
+  <br><br>
+  <img src="src/images/fadcat.png" alt="FadCat Main Window" style="width: 600px; height: auto;" >
+  <div><em>Main FadCat GUI window: multi-device logcat, color-coded logs, and search features</em></div>
+  <br><br>
+  <img src="src/images/packages-filter.png" alt="FadCat Package Filter" style="width: 600px; height: auto;" >
+  <div><em>Package picker: quickly filter and select app packages for targeted logcat</em></div>
+  <br><br>
+  <img src="src/images/settings.png" alt="FadCat Settings" style="width: 600px; height: auto;" >
+  <div><em>Settings: save packages for quick access, adjust ignored tags</em></div>
+  <br><br>
+  <img src="src/images/mcp.png" alt="FadCat MCP Server" style="width: 600px; height: auto;" >
+  <div><em>MCP server: automation, device/media inspection, and FadCam integration</em></div>
+  <br><br>
+  <img src="src/images/customization.png" alt="FadCat Customization" style="width: 600px; height: auto;" >
+  <div><em>Display: customize fadcat display</em></div>
+  <br>
 </div>
 
 ## `>_` ⬇️ Download
