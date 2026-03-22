@@ -126,6 +126,17 @@ def icon_memory() -> QIcon:
 
 
 def app_icon() -> QIcon:
-    """Load the main app icon from PNG."""
-    path = Path(__file__).parent.parent.parent / "icon-assets" / "fadcat.png"
-    return QIcon(str(path))
+    """Load the main app icon from ICO (Windows compatible)."""
+    # Try multiple paths to handle both development and bundled modes
+    paths_to_try = [
+        Path(__file__).parent.parent.parent / "icon-assets" / "fadcat.ico",  # Development mode
+        Path(__file__).parent.parent / "icon-assets" / "fadcat.ico",  # Bundled by PyInstaller
+        Path.cwd() / "icon-assets" / "fadcat.ico",  # Current directory
+    ]
+    
+    for path in paths_to_try:
+        if path.exists():
+            return QIcon(str(path))
+    
+    # Fallback: return empty icon if all paths fail
+    return QIcon()

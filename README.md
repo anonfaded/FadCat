@@ -192,6 +192,15 @@ Support development via Patreon.
 pip3 install -r requirements.txt
 python3 FadCat.py
 ```
+
+**Build for Production**
+
+| Platform | Command |
+|----------|---------|
+| **Windows** | `powershell -ExecutionPolicy Bypass -File .\build\windows\build.ps1` |
+| **macOS** | `bash build/macos/build.sh` |
+| **Linux** | `bash build/linux/build.sh` |
+
 </details>
 
 ## `>_` Credits

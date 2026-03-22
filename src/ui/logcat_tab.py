@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 import tempfile
 import shutil
 import re
 from datetime import datetime
 from collections import deque
+from threading import Thread
 
 try:
     from rapidfuzz import fuzz as rapidfuzz_fuzz
@@ -1729,7 +1731,9 @@ class LogcatTab(QWidget):
         self._btn_save = self._icon_btn(icons.icon_save(), "Save", self.save_log, "Save log to file")
         h.addWidget(self._btn_save, stretch=0)
 
-        self.refresh_devices()
+        # Don't auto-refresh devices on init - only when user explicitly clicks refresh button
+        # This prevents ADB from starting before the user actually needs it
+        # self.refresh_devices()
         return bar
 
     def _icon_btn(self, icon, text, slot, tip=None) -> QPushButton:
@@ -2032,22 +2036,36 @@ class LogcatTab(QWidget):
     # ── Device management ─────────────────────────────────────────────────────
 
     def refresh_devices(self):
-        current = self.device_combo.currentText()
-        self.device_combo.blockSignals(True)
-        self.device_combo.clear()
-        devices = get_adb_devices()
-        if devices:
-            self.device_combo.addItems(devices)
-            idx = self.device_combo.findText(current)
-            if idx >= 0:
-                self.device_combo.setCurrentIndex(idx)
+        """Refresh devices list in background to prevent UI freeze."""
+        # Run adb devices in a background thread to avoid blocking UI
+        def _fetch_devices():
+            try:
+                devices = get_adb_devices()
+                return devices
+            except Exception as e:
+                print(f"Error fetching devices: {e}", file=sys.stderr)
+                return []
+        
+        def _update_ui(devices):
+            current = self.device_combo.currentText()
+            self.device_combo.blockSignals(True)
+            self.device_combo.clear()
+            if devices:
+                self.device_combo.addItems(devices)
+                idx = self.device_combo.findText(current)
+                if idx >= 0:
+                    self.device_combo.setCurrentIndex(idx)
+                else:
+                    self.device_combo.setCurrentIndex(0)
             else:
-                self.device_combo.setCurrentIndex(0)
-        else:
-            self.device_combo.addItem("(no devices)")
-        self.device_combo.blockSignals(False)
-        self._on_device_changed(self.device_combo.currentText())
-        self.status_changed.emit()
+                self.device_combo.addItem("(no devices)")
+            self.device_combo.blockSignals(False)
+            self._on_device_changed(self.device_combo.currentText())
+            self.status_changed.emit()
+        
+        # Run in thread to prevent blocking UI
+        thread = Thread(target=lambda: _update_ui(_fetch_devices()), daemon=True)
+        thread.start()
 
     def _on_device_changed(self, device: str):
         if not device or device == "(no devices)":

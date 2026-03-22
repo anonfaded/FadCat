@@ -1,47 +1,76 @@
 [Setup]
-; NOTE: Version must be kept in sync with src/version.py (__version__)
-; TODO: Automate this by parsing src/version.py before build
-AppName=FadCat
-AppVersion=1.0.0
-DefaultDirName={userappdata}\FadCat
-OutputDir=dist
-OutputBaseFilename=FadCat-Setup
-WizardStyle=modern
-UninstallDisplayIcon={app}\FadCat.exe
-LicenseFile=LICENSE
+; Values are injected by build/windows/build.ps1 from src/version.py.
+AppName={#AppName}
+AppVerName={#AppName} {#AppVersion}
+AppVersion={#AppVersion}
+AppPublisher={#AppCompany}
+AppPublisherURL={#AppWebsiteURL}
+AppSupportURL={#AppWebsiteURL}
+AppUpdatesURL={#AppGithubURL}
+AppComments={#AppDescription}
+DefaultDirName={userappdata}\{#AppName}
+DefaultGroupName={#AppName}
+OutputDir=..\..\dist
+OutputBaseFilename={#AppName}-v{#AppVersion}-Windows-Setup
+WizardStyle=modern dynamic
+WizardImageFile=..\..\icon-assets\fadcat-wizard.png
+WizardSmallImageFile=..\..\icon-assets\fadcat-small.png
+SetupIconFile=..\..\icon-assets\fadcat.ico
+UninstallDisplayIcon={app}\{#AppName}.exe,0
+LicenseFile=..\..\LICENSE
+VersionInfoVersion={#AppVersionInfo}
+VersionInfoProductVersion={#AppVersionInfo}
+VersionInfoProductName={#AppName}
+VersionInfoDescription={#AppDescription}
+VersionInfoCompany={#AppCompany}
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=commandline
 
 [Files]
-Source: "dist\FadCat\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+Source: "..\..\dist\FadCat\*"; DestDir: "{app}"; Flags: recursesubdirs replacesameversion
+Source: "..\..\icon-assets\fadcat.png"; DestDir: "{app}\icon-assets"; Flags: replacesameversion
+Source: "..\..\build\windows\fadcat.bat"; DestDir: "{app}"; Flags: replacesameversion
 
 [Dirs]
 Name: "{app}"
 
-[Tasks]
-Name: addToPath; Description: "Add fadcat to PATH"; Flags: exclusive
+[Icons]
+Name: "{group}\{#AppName}"; Filename: "{app}\FadCat.exe"; Comment: "Launch FadCat"
+
+
+[Run]
+Filename: "{app}\FadCat.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\icon-assets"
+Type: filesandordirs; Name: "{app}"
 
 [Code]
-procedure CurStepChanged(CurStep: TSetupStep);
+// Add the application directory to PATH during installation
+procedure AddAppToPath();
 var
-  Path: string;
+  AppPath: string;
+  OldPath: string;
+  NewPath: string;
 begin
-  if CurStep = ssFinished then
+  AppPath := ExpandConstant('{app}');
+  
+  if RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'PATH', OldPath) then
   begin
-    if IsTaskSelected('addToPath') then
+    if Pos(AppPath, OldPath) = 0 then
     begin
-      // Create batch file
-      SetLength(Path, 260);
-      ExpandEnvironmentStrings('{app}\fadcat.bat', Path, Length(Path));
-      SetLength(Path, StrLen(PChar(Path)));
-      
-      // Write fadcat command wrapper
-      SaveStringToFile('{app}\fadcat.bat', '@echo off' + #13#10 + '"{app}\FadCat.exe" %*', False);
-      
-      // Add to PATH
-      if RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'PATH', Path) then
-      begin
-        if Pos('{app}', Path) = 0 then
-          RegWriteStringValue(HKEY_CURRENT_USER, 'Environment', 'PATH', Path + ';{app}');
-      end;
+      NewPath := AppPath + ';' + OldPath;
+      RegWriteStringValue(HKEY_CURRENT_USER, 'Environment', 'PATH', NewPath);
     end;
+  end
+  else
+  begin
+    RegWriteStringValue(HKEY_CURRENT_USER, 'Environment', 'PATH', AppPath);
   end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    AddAppToPath();
 end;

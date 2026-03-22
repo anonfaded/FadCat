@@ -47,16 +47,23 @@ def _install_cli():
 
 _install_cli()
 
-from src.core.pidcat_runner import run_pidcat_child
+# Check for CLI/MCP modes BEFORE importing PyQt6 (which captures stdin)
+# This prevents "RuntimeError: lost sys.stdin" when using --cli or --mcp
+_is_cli_mode = '--cli' in sys.argv or '--mcp' in sys.argv or '--child-pidcat' in sys.argv
+_is_pidcat_mode = len(sys.argv) > 1 and 'pidcat.py' in sys.argv[1]
 
-try:
-    from PyQt6.QtWidgets import QApplication, QSplashScreen
-    from PyQt6.QtGui import QPixmap
-    from PyQt6.QtCore import Qt, QTimer
-    from pathlib import Path
-    QT_AVAILABLE = True
-except ImportError as e:
-    QT_AVAILABLE = False
+from src.core.pidcat_runner import run_pidcat_child
+from pathlib import Path
+
+QT_AVAILABLE = False
+if not _is_cli_mode and not _is_pidcat_mode:
+    try:
+        from PyQt6.QtWidgets import QApplication, QSplashScreen
+        from PyQt6.QtGui import QPixmap
+        from PyQt6.QtCore import Qt, QTimer
+        QT_AVAILABLE = True
+    except ImportError as e:
+        QT_AVAILABLE = False
 
 
 def launch_gui():
@@ -136,7 +143,7 @@ def main():
         sys.argv = [pidcat_path] + pidcat_args
 
         try:
-            with open(pidcat_path, 'r') as f:
+            with open(pidcat_path, 'r', encoding='utf-8') as f:
                 pidcat_code = f.read()
             # Execute pidcat code with proper namespace including required modules
             import os as _os

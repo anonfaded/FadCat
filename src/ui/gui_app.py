@@ -718,3 +718,25 @@ class LogcatGUI(QMainWindow):
         """When update badge is clicked, open update check dialog"""
         dlg = UpdateCheckDialog(self)
         dlg.exec()
+
+    def closeEvent(self, event):
+        """Stop all running logcat readers when GUI closes to prevent orphaned ADB processes."""
+        try:
+            # Stop all open tabs
+            for i in range(self.tabs.count()):
+                tab = self.tabs.widget(i)
+                if hasattr(tab, 'stop_capture'):
+                    try:
+                        tab.stop_capture(wait=True)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        
+        # Save sessions before closing
+        try:
+            self._save_sessions()
+        except Exception:
+            pass
+        
+        event.accept()

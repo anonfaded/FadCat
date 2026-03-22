@@ -1,7 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for FadCat on Windows
+# PyInstaller spec for FadCat CLI on Windows
+# This creates a CLI/MCP version with console=True for proper stdin/stdout
 # Bundles ADB for ALL Windows architectures (x86_64 and ARM64)
-# Build with: pyinstaller build/FadCat-Windows.spec
+# Build with: pyinstaller build/FadCat-Windows-CLI.spec
 
 from PyInstaller.utils.hooks import collect_data_files, collect_all
 from PyInstaller.building.api import EXE, COLLECT
@@ -131,13 +132,13 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='FadCat',
+    name='FadCat-CLI',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
@@ -153,5 +154,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='FadCat',
+    name='FadCat-CLI',
 )

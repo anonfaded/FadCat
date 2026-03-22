@@ -32,7 +32,16 @@ class ProcessReader(QtCore.QThread):
             pass
         if self.process:
             try:
-                self.process.terminate()
+                # On Windows, terminate the entire process tree
+                if os.name == 'nt':
+                    import subprocess as sp
+                    try:
+                        sp.run(['taskkill', '/F', '/T', '/PID', str(self.process.pid)], 
+                               check=False, capture_output=True, timeout=2)
+                    except Exception:
+                        pass
+                else:
+                    self.process.terminate()
             except Exception:
                 pass
             # Hard kill fallback if terminate doesn't exit quickly
