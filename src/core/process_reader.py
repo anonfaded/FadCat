@@ -249,7 +249,13 @@ class ProcessReader(QtCore.QThread):
         # Fallback: use PIPE and text mode
         stdin_pipe = subprocess.PIPE if self.input_text else None
         try:
-            self.process = subprocess.Popen(self.cmd, stdin=stdin_pipe, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, bufsize=1)
+            # On Windows, force UTF-8 decoding to avoid locale 'charmap' errors when
+            # reading binary output from adb/pidcat which may contain emojis or
+            # other non-CP1252 characters. Use errors='replace' to avoid exceptions.
+            if os.name == 'nt':
+                self.process = subprocess.Popen(self.cmd, stdin=stdin_pipe, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace', env=env, bufsize=1)
+            else:
+                self.process = subprocess.Popen(self.cmd, stdin=stdin_pipe, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, bufsize=1)
             if self.input_text and self.process.stdin:
                 try:
                     self.process.stdin.write(self.input_text + '\n')
@@ -260,6 +266,8 @@ class ProcessReader(QtCore.QThread):
                 for line in iter(self.process.stdout.readline, ''):
                     if self._stop_requested or self.isInterruptionRequested():
                         break
+                    # Emit lines directly; encoding configured on Popen ensures
+                    # emojis and special characters are preserved or replaced safely.
                     self.line_ready.emit(line)
             if self.process:
                 try:

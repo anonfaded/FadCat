@@ -45,8 +45,23 @@ else:
 from src.utils.adb_path import get_adb_path
 from src.version import __version__
 
-# Initialize colorama to process ANSI escape codes
-colorama.init()
+# Initialize colorama to process ANSI escape codes.
+# On Windows, when stdout is not a TTY (e.g., when pidcat is run inside the GUI and
+# its output is piped), preserve raw ANSI escape sequences so the GUI can parse
+# them itself. When running interactively in a console, keep the default behavior
+# so colorama converts ANSI sequences for native Windows consoles.
+if os.name == 'nt':
+  try:
+    if sys.stdout.isatty():
+      colorama.init()
+    else:
+      # Preserve ANSI sequences when output is piped
+      colorama.init(strip=False, convert=False)
+  except Exception:
+    # Fallback to safe init
+    colorama.init()
+else:
+  colorama.init()
 
 # A sensible version bump reflecting new features.
 VERSION = __version__
