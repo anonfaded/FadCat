@@ -16,7 +16,7 @@ WizardStyle=modern dynamic
 WizardImageFile=..\..\icon-assets\fadcat-wizard.png
 WizardSmallImageFile=..\..\icon-assets\fadcat-small.png
 SetupIconFile=..\..\icon-assets\fadcat.ico
-UninstallDisplayIcon={app}\{#AppName}.exe,0
+UninstallDisplayIcon={app}\FadCat-GUI.exe,0
 LicenseFile=..\..\LICENSE
 VersionInfoVersion={#AppVersionInfo}
 VersionInfoProductVersion={#AppVersionInfo}
@@ -27,19 +27,19 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=commandline
 
 [Files]
-Source: "..\..\dist\FadCat\*"; DestDir: "{app}"; Flags: recursesubdirs replacesameversion
+Source: "..\..\dist\FadCat-GUI\*"; DestDir: "{app}"; Flags: recursesubdirs replacesameversion
 Source: "..\..\icon-assets\fadcat.png"; DestDir: "{app}\icon-assets"; Flags: replacesameversion
-Source: "..\..\build\windows\fadcat.bat"; DestDir: "{app}"; Flags: replacesameversion
+; Note: do not install wrapper batch files. Default `fadcat.exe` will be the CLI binary.
 
 [Dirs]
 Name: "{app}"
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\FadCat.exe"; Comment: "Launch FadCat"
+Name: "{group}\{#AppName}"; Filename: "{app}\FadCat-GUI.exe"; Comment: "Launch FadCat"
 
 
 [Run]
-Filename: "{app}\FadCat.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\FadCat-GUI.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\icon-assets"

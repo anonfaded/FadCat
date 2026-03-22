@@ -126,11 +126,17 @@ if (-not $SkipPyInstaller) {
 
     $distPath = Join-Path $projectRoot 'dist'
     $cliExeSrc = Join-Path (Join-Path $distPath 'FadCat-CLI') 'FadCat-CLI.exe'
-    $cliExeDest = Join-Path (Join-Path $distPath 'FadCat') 'FadCat-CLI.exe'
+    # GUI spec now outputs into 'FadCat-GUI' folder and GUI exe is 'FadCat-GUI.exe'
+    $guiDistFolder = Join-Path $distPath 'FadCat-GUI'
+    $cliExeDest = Join-Path $guiDistFolder 'fadcat.exe'
 
     if (Test-Path $cliExeSrc) {
-        Copy-Item -Path $cliExeSrc -Destination $cliExeDest -Force
-        Write-Host "Copied FadCat-CLI.exe to bundle" -ForegroundColor Green
+        if (-not (Test-Path $guiDistFolder)) {
+            Write-Host "Warning: GUI dist folder not found at $guiDistFolder" -ForegroundColor Yellow
+        } else {
+            Copy-Item -Path $cliExeSrc -Destination $cliExeDest -Force
+            Write-Host "Copied FadCat-CLI.exe to GUI bundle as fadcat.exe" -ForegroundColor Green
+        }
     }
     else {
         Write-Host "Warning: FadCat-CLI.exe not found at $cliExeSrc" -ForegroundColor Yellow
